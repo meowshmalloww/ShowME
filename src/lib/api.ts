@@ -45,7 +45,8 @@ export const desktop = {
     command<LessonPlan>("generate_lesson", { request }),
   presentLesson: (presentation: LessonPresentation) =>
     command<void>("present_lesson", { presentation }),
-  setPetExpanded: (expanded: boolean) => command<void>("set_pet_expanded", { expanded }),
+  setLauncherMode: (mode: "peek" | "ready" | "menu" | "panel") =>
+    command<void>("set_launcher_mode", { mode }),
   endLessonContext: () => command<void>("end_lesson_context"),
   transcribe: (mimeType: string, audioBase64: string) =>
     command<string>("transcribe_audio", { mimeType, audioBase64 }),

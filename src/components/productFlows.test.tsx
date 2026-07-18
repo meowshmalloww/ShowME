@@ -25,7 +25,7 @@ describe("product recovery flows", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Capture screen area/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Select from screen/i }));
 
     expect(onNew).toHaveBeenCalledOnce();
     expect(screen.queryByText(/sample lesson/i)).not.toBeInTheDocument();

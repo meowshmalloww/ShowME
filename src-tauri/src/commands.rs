@@ -4,8 +4,8 @@ use crate::{
     images,
     models::{
         AppBootstrap, AppSettings, AppState, CapturePayload, GenerateLessonRequest, ImageAsset,
-        LessonPlan, LessonPresentation, LessonReceipt, PermissionStatus, PreparedContext,
-        ProviderId, ProviderSummary, SelectionRegion, StoredLesson,
+        LauncherMode, LessonPlan, LessonPresentation, LessonReceipt, PermissionStatus,
+        PreparedContext, ProviderId, ProviderSummary, SelectionRegion, StoredLesson,
     },
     providers, safety, windows,
 };
@@ -172,13 +172,13 @@ pub fn present_lesson(app: AppHandle, presentation: LessonPresentation) -> Comma
 }
 
 #[tauri::command]
-pub fn set_pet_expanded(
+pub fn set_launcher_mode(
     app: AppHandle,
     state: State<'_, AppState>,
-    expanded: bool,
+    mode: LauncherMode,
 ) -> CommandResult<()> {
     let settings = db::get_settings(&state.database_path)?;
-    windows::set_pet_expanded(&app, expanded, settings.pet_scale)
+    windows::set_launcher_mode(&app, mode, settings.pet_scale)
 }
 
 #[tauri::command]

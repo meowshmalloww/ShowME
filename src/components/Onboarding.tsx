@@ -18,7 +18,7 @@ import { desktop, isTauriRuntime } from "../lib/api";
 import { TEACHING_STYLE_LABELS, VOICES } from "../lib/defaults";
 import { commandErrorMessage } from "../lib/errors";
 import type { AppBootstrap, AppSettings, PermissionStatus, ProviderId } from "../lib/types";
-import { Brand, Spinner, Toggle } from "./Chrome";
+import { Brand, BrandGlyph, Spinner, Toggle } from "./Chrome";
 
 export function Onboarding({
   bootstrap,
@@ -88,20 +88,21 @@ export function Onboarding({
       <aside className="onboarding-aside">
         <Brand />
         <div className="onboarding-art" aria-hidden="true">
-          <div className="art-window">
-            <span />
-            <span />
-            <span />
-            <div className="art-orbit">
-              <i />
-              <b />
-            </div>
+          <div className="onboarding-art-mark">
+            <BrandGlyph />
           </div>
-          <div className="art-pointer">
-            <MousePointer2 size={25} />
-          </div>
-          <div className="art-spark">
-            <ScanSearch size={28} />
+          <div className="onboarding-art-flow">
+            <span>
+              <b>01</b> Select
+            </span>
+            <i />
+            <span>
+              <b>02</b> Ask
+            </span>
+            <i />
+            <span>
+              <b>03</b> Explore
+            </span>
           </div>
         </div>
         <blockquote>
@@ -181,7 +182,7 @@ export function Onboarding({
                 <div>
                   <strong>Screen capture</strong>
                   <small>
-                    One snapshot after hotkey or pet click; selected pixels only are sent.
+                    One snapshot after a hotkey or launcher click; selected pixels only are sent.
                   </small>
                 </div>
                 <span className={`permission-state ${permission?.capture ?? "unknown"}`}>
@@ -233,10 +234,10 @@ export function Onboarding({
         {step === 2 && (
           <div className="onboarding-step">
             <span className="eyebrow">Connect a model</span>
-            <h1>Choose your lesson compiler.</h1>
+            <h1>Connect a model provider.</h1>
             <p className="lead">
-              OpenAI is the fully supported path for GPT-5.6 vision, strict scene output, web
-              grounding, transcription, and narration.
+              Choose who handles your lesson requests. OpenAI supports the complete workflow;
+              Alibaba Cloud Qwen is available as a direct US-region vision route.
             </p>
             <div className="onboarding-providers">
               {bootstrap.providers.map((item) => (
@@ -385,7 +386,7 @@ export function Onboarding({
                   <Spinner label="Finishing" />
                 ) : (
                   <>
-                    Meet your ShowME pet <MousePointer2 size={17} />
+                    Open ShowME <MousePointer2 size={17} />
                   </>
                 )}
               </button>

@@ -2,26 +2,26 @@ import { Archive, Crosshair, LayoutDashboard, Minus, Settings, X } from "lucide-
 import type { ReactNode } from "react";
 import { desktop, isTauriRuntime } from "../lib/api";
 
+export function BrandGlyph() {
+  return (
+    <svg viewBox="0 0 40 40" aria-hidden="true" focusable="false">
+      <path className="brand-glyph-page" d="m7 13 9-3.5v20L7 33z" />
+      <path className="brand-glyph-fold" d="m16 9.5 9 3.5v20l-9-3.5z" />
+      <path className="brand-glyph-reveal" d="m25 13 8-3.5v20L25 33z" />
+    </svg>
+  );
+}
+
 export function Brand({ compact = false }: { compact?: boolean }) {
   return (
     <div className={`brand ${compact ? "brand-compact" : ""}`}>
       <span className="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 48 48" role="img">
-          <title>ShowME</title>
-          <path d="M9 20c0-9 6-15 15-15s15 6 15 15v12c0 7-6 11-15 11S9 39 9 32V20Z" />
-          <path className="brand-mark-face" d="M16 26c2 2 4 3 8 3s6-1 8-3" />
-          <circle className="brand-mark-eye" cx="18" cy="20" r="2" />
-          <circle className="brand-mark-eye" cx="30" cy="20" r="2" />
-          <path
-            className="brand-mark-spark"
-            d="m38 7 1.5 4.5L44 13l-4.5 1.5L38 19l-1.5-4.5L32 13l4.5-1.5L38 7Z"
-          />
-        </svg>
+        <BrandGlyph />
       </span>
       {!compact && (
         <span className="brand-copy">
           <strong>ShowME</strong>
-          <small>visual workbench</small>
+          <small>visual lessons</small>
         </span>
       )}
     </div>
@@ -70,12 +70,9 @@ export function Sidebar({
   ];
   return (
     <aside className="sidebar">
-      <div className="sidebar-brand">
-        <Brand />
-      </div>
       <button className="new-lesson-button" type="button" onClick={onNew}>
         <Crosshair size={18} />
-        Capture region
+        New capture
       </button>
       <nav aria-label="Main navigation">
         {links.map((link) => (
@@ -94,8 +91,8 @@ export function Sidebar({
       <div className="sidebar-promise">
         <span className="privacy-dot" />
         <div>
-          <strong>Capture idle</strong>
-          <span>Starts only when invoked</span>
+          <strong>Screen access off</strong>
+          <span>Capture starts only when you ask</span>
         </div>
       </div>
     </aside>

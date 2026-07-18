@@ -10,7 +10,7 @@ The primary architectural decision is to treat model output as untrusted data cr
 
 ```mermaid
 flowchart LR
-    I["Explicit invocation<br/>pet, tray, or hotkey"] --> C["Rust capture broker<br/>one monitor snapshot"]
+    I["Explicit invocation<br/>launcher, tray, or hotkey"] --> C["Rust capture broker<br/>one monitor snapshot"]
     C --> S["Full-monitor selection window<br/>rectangle, lasso, point, annotations"]
     S --> P["Prepared context in RAM<br/>selected crop + optional context"]
     P --> A["Provider adapter<br/>image + question + schema"]
@@ -42,7 +42,7 @@ The frontend receives only the data needed for the current view through named Ta
 
 ### WebView frontend
 
-React owns interaction and presentation: onboarding, settings, capture markup, the pet-side question panel, history, lesson playback, citations, controls, feedback, and accessibility preferences. It never receives or persists provider API keys. Network destinations are reached from Rust, not with a general-purpose browser fetch surface.
+React owns interaction and presentation: onboarding, settings, capture markup, the launcher question panel, history, lesson playback, citations, controls, feedback, and accessibility preferences. It never receives or persists provider API keys. Network destinations are reached from Rust, not with a general-purpose browser fetch surface.
 
 ### Provider boundary
 
@@ -89,6 +89,8 @@ Invalid output is rejected with a typed remediation message. There is no fallbac
 
 OpenAI uses `POST /v1/responses` with GPT-5.6 Sol by default, structured output, image input, and optional `web_search`. URL annotations from the response are collected separately and reconciled with the plan.
 
+Alibaba Cloud Qwen uses the US (Virginia) pay-as-you-go OpenAI-compatible endpoint with the US-scoped `qwen3.7-plus-us` model by default. It receives documented Base64 `image_url` inputs in non-thinking JSON mode, followed by the same Rust parsing and semantic validation as every route.
+
 NVIDIA NIM, Groq, Cerebras, and OpenRouter use provider-specific OpenAI-compatible chat-completions endpoints. Capabilities are conservative defaults plus explicit user overrides because schema and image support depend on the exact model. OpenRouter requests `require_parameters` so a route cannot silently discard required structured-output parameters.
 
 No compatible-provider adapter is allowed to pretend it performed web research. The current grounded research route is OpenAI-only; other routes return a capability error when that switch is on.
@@ -126,7 +128,7 @@ Provider keys are separate from SQLite. The Rust `keyring` backend stores one cr
 ## Window model
 
 - `main`: frameless, resizable application window; close hides instead of terminating
-- `pet`: transparent, always-on-top, skip-taskbar invocation surface; expands from the compact character into the crop/question panel and follows the saved 80–145% scale
+- `pet`: transparent, always-on-top, skip-taskbar invocation surface; its native hit area is 48 × 24 while idle, grows only on hover/menu use, and expands into the crop/question panel
 - `selection`: ephemeral full-monitor physical-pixel overlay
 - tray: new lesson, open, settings, and explicit quit
 - global shortcut: `CommandOrControl+Shift+Space` by default and user-configurable

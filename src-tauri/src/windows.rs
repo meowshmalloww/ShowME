@@ -1,6 +1,6 @@
 use crate::{
     error::{CommandError, CommandResult},
-    models::AppSettings,
+    models::{AppSettings, LauncherMode},
 };
 use tauri::{
     App, AppHandle, LogicalSize, Manager, PhysicalPosition, Size, WebviewUrl, WebviewWindow,
@@ -9,15 +9,18 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 
-const PET_BASE_WIDTH: f64 = 208.0;
-const PET_BASE_HEIGHT: f64 = 226.0;
-const PET_PANEL_WIDTH: f64 = 430.0;
-const PET_PANEL_HEIGHT: f64 = 392.0;
+const LAUNCHER_PEEK_WIDTH: f64 = 48.0;
+const LAUNCHER_PEEK_HEIGHT: f64 = 24.0;
+const LAUNCHER_READY_WIDTH: f64 = 316.0;
+const LAUNCHER_READY_HEIGHT: f64 = 70.0;
+const LAUNCHER_MENU_HEIGHT: f64 = 154.0;
+const LAUNCHER_PANEL_WIDTH: f64 = 468.0;
+const LAUNCHER_PANEL_HEIGHT: f64 = 520.0;
 
 pub fn create(app: &App, settings: &AppSettings) -> CommandResult<()> {
     let main = create_main_window(app, settings.onboarding_complete)?;
     let pet = create_pet_window(app, settings.onboarding_complete, settings.pet_scale)?;
-    position_pet(&pet);
+    position_launcher(&pet);
     install_close_to_hide(&main);
     create_tray(app)?;
     Ok(())
@@ -41,7 +44,7 @@ fn create_pet_window(
     onboarding_complete: bool,
     pet_scale: f64,
 ) -> CommandResult<WebviewWindow> {
-    let (width, height) = pet_dimensions(false, pet_scale);
+    let (width, height) = launcher_dimensions(LauncherMode::Peek, pet_scale);
     WebviewWindowBuilder::new(app, "pet", WebviewUrl::App("index.html?view=pet".into()))
         .title("ShowME")
         .inner_size(width, height)
@@ -56,52 +59,57 @@ fn create_pet_window(
         .map_err(|error| CommandError::internal("create pet window", error))
 }
 
-fn position_pet(window: &WebviewWindow) {
+fn position_launcher(window: &WebviewWindow) {
     if let Ok(Some(monitor)) = window.primary_monitor() {
         let position = monitor.position();
         let size = monitor.size();
         let window_size = window.outer_size().unwrap_or_default();
-        let x = position.x + i32::try_from(size.width).unwrap_or(0)
-            - i32::try_from(window_size.width).unwrap_or(0)
-            - 24;
-        let y = position.y + i32::try_from(size.height).unwrap_or(0)
-            - i32::try_from(window_size.height).unwrap_or(0)
-            - 56;
+        let monitor_width = i32::try_from(size.width).unwrap_or(0);
+        let launcher_width = i32::try_from(window_size.width).unwrap_or(0);
+        let x = position.x + (monitor_width - launcher_width) / 2;
+        let y = position.y + 16;
         window.set_position(PhysicalPosition::new(x, y)).ok();
     }
 }
 
-fn pet_dimensions(expanded: bool, scale: f64) -> (f64, f64) {
+fn launcher_dimensions(mode: LauncherMode, scale: f64) -> (f64, f64) {
     let safe_scale = scale.clamp(0.8, 1.45);
-    if expanded {
-        (
-            PET_PANEL_WIDTH,
-            PET_PANEL_HEIGHT + (safe_scale - 1.0).max(0.0) * 36.0,
-        )
-    } else {
-        (PET_BASE_WIDTH * safe_scale, PET_BASE_HEIGHT * safe_scale)
+    match mode {
+        LauncherMode::Peek => (LAUNCHER_PEEK_WIDTH, LAUNCHER_PEEK_HEIGHT),
+        LauncherMode::Ready => (
+            LAUNCHER_READY_WIDTH * safe_scale,
+            LAUNCHER_READY_HEIGHT * safe_scale,
+        ),
+        LauncherMode::Menu => (
+            LAUNCHER_READY_WIDTH * safe_scale,
+            LAUNCHER_MENU_HEIGHT * safe_scale,
+        ),
+        LauncherMode::Panel => (
+            LAUNCHER_PANEL_WIDTH,
+            LAUNCHER_PANEL_HEIGHT + (safe_scale - 1.0).max(0.0) * 24.0,
+        ),
     }
 }
 
-pub fn set_pet_expanded(app: &AppHandle, expanded: bool, scale: f64) -> CommandResult<()> {
+pub fn set_launcher_mode(app: &AppHandle, mode: LauncherMode, scale: f64) -> CommandResult<()> {
     let window = app.get_webview_window("pet").ok_or_else(|| {
         CommandError::new(
             "WINDOW_UNAVAILABLE",
-            "The ShowME pet window is unavailable.",
+            "The ShowME launcher window is unavailable.",
         )
     })?;
     let previous_position = window.outer_position().ok();
     let previous_size = window.outer_size().ok();
-    let (width, height) = pet_dimensions(expanded, scale);
+    let (width, height) = launcher_dimensions(mode, scale);
     let factor = window.scale_factor().unwrap_or(1.0);
     window
         .set_size(Size::Logical(LogicalSize::new(width, height)))
-        .map_err(|error| CommandError::internal("resize pet window", error))?;
+        .map_err(|error| CommandError::internal("resize launcher window", error))?;
     if let (Some(position), Some(size)) = (previous_position, previous_size) {
         let target_width = (width * factor).round() as i32;
-        let target_height = (height * factor).round() as i32;
-        let next_x = position.x + i32::try_from(size.width).unwrap_or(0) - target_width;
-        let next_y = position.y + i32::try_from(size.height).unwrap_or(0) - target_height;
+        let previous_width = i32::try_from(size.width).unwrap_or(0);
+        let next_x = position.x + (previous_width - target_width) / 2;
+        let next_y = position.y;
         window
             .set_position(PhysicalPosition::new(next_x, next_y))
             .ok();
@@ -124,7 +132,7 @@ fn create_tray(app: &App) -> CommandResult<()> {
         .map_err(|error| CommandError::internal("create tray item", error))?;
     let open = MenuItem::with_id(app, "open", "Open ShowME", true, None::<&str>)
         .map_err(|error| CommandError::internal("create tray item", error))?;
-    let show_pet = MenuItem::with_id(app, "show-pet", "Show pet", true, None::<&str>)
+    let show_pet = MenuItem::with_id(app, "show-pet", "Show launcher", true, None::<&str>)
         .map_err(|error| CommandError::internal("create tray item", error))?;
     let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)
         .map_err(|error| CommandError::internal("create tray item", error))?;
@@ -229,17 +237,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn collapsed_pet_dimensions_follow_the_saved_scale() {
-        assert_eq!(pet_dimensions(false, 1.0), (208.0, 226.0));
-        assert_eq!(pet_dimensions(false, 1.25), (260.0, 282.5));
-        let clamped = pet_dimensions(false, 9.0);
-        assert!((clamped.0 - 301.6).abs() < 0.001);
-        assert!((clamped.1 - 327.7).abs() < 0.001);
+    fn launcher_peek_has_no_large_transparent_hit_area() {
+        assert_eq!(launcher_dimensions(LauncherMode::Peek, 1.0), (48.0, 24.0));
+        assert_eq!(launcher_dimensions(LauncherMode::Peek, 1.45), (48.0, 24.0));
+    }
+
+    #[test]
+    fn revealed_launcher_dimensions_follow_the_saved_scale() {
+        assert_eq!(launcher_dimensions(LauncherMode::Ready, 1.0), (316.0, 70.0));
+        assert_eq!(
+            launcher_dimensions(LauncherMode::Ready, 1.25),
+            (395.0, 87.5)
+        );
+        let clamped = launcher_dimensions(LauncherMode::Ready, 9.0);
+        assert!((clamped.0 - 458.2).abs() < 0.001);
+        assert!((clamped.1 - 101.5).abs() < 0.001);
     }
 
     #[test]
     fn expanded_request_panel_stays_compact() {
-        assert_eq!(pet_dimensions(true, 0.8), (430.0, 392.0));
-        assert_eq!(pet_dimensions(true, 1.45), (430.0, 408.2));
+        assert_eq!(
+            launcher_dimensions(LauncherMode::Panel, 0.8),
+            (468.0, 520.0)
+        );
+        assert_eq!(
+            launcher_dimensions(LauncherMode::Panel, 1.45),
+            (468.0, 530.8)
+        );
     }
 }

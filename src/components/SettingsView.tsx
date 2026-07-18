@@ -235,9 +235,9 @@ export function SettingsView({
                   <strong>Everything that can require an API key is here.</strong>
                   <span>
                     OpenAI powers GPT-5.6 vision, lesson planning, web research, microphone
-                    transcription, and cloud narration. NVIDIA NIM, Groq, Cerebras, and OpenRouter
-                    each use their own key for lesson generation. Wikimedia image search and system
-                    speech need no key.
+                    transcription, and cloud narration. Alibaba Cloud Qwen, NVIDIA NIM, Groq,
+                    Cerebras, and OpenRouter each use their own key for lesson generation. Wikimedia
+                    image search and system speech need no key.
                   </span>
                 </div>
                 <div className="settings-provider-list">
@@ -277,7 +277,7 @@ export function SettingsView({
                 <label className="settings-field">
                   <span>Model ID</span>
                   <input
-                    value={draft.models[selectedProvider]}
+                    value={draft.models[selectedProvider] ?? provider.model}
                     maxLength={200}
                     onChange={(event) =>
                       setDraft((current) => ({
@@ -286,6 +286,10 @@ export function SettingsView({
                       }))
                     }
                   />
+                </label>
+                <label className="settings-field">
+                  <span>Service endpoint</span>
+                  <input value={provider.baseUrl} readOnly aria-readonly="true" />
                 </label>
                 <label className="settings-field">
                   <span>{provider.configured ? "Replace API key" : "API key"}</span>
@@ -410,7 +414,7 @@ export function SettingsView({
                   </select>
                 </label>
                 <label className="settings-field">
-                  <span>Pet name</span>
+                  <span>Launcher label</span>
                   <input
                     value={draft.petName}
                     maxLength={32}
@@ -420,7 +424,7 @@ export function SettingsView({
                   />
                 </label>
                 <label className="settings-field pet-size-field">
-                  <span>Pet size: {Math.round(draft.petScale * 100)}%</span>
+                  <span>Launcher size: {Math.round(draft.petScale * 100)}%</span>
                   <input
                     type="range"
                     min="0.8"
@@ -434,7 +438,7 @@ export function SettingsView({
                       }))
                     }
                   />
-                  <small>The floating pet resizes as soon as you save.</small>
+                  <small>The floating screen launcher resizes as soon as you save.</small>
                 </label>
                 <label className="settings-field">
                   <span>Global hotkey</span>

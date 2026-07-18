@@ -265,7 +265,7 @@ export const lessonPlanSchema = z
     followUps: z.array(z.string().min(1).max(180)).max(6),
     provider: z
       .object({
-        id: z.enum(["openai", "nvidia", "groq", "cerebras", "openrouter"]),
+        id: z.enum(["openai", "alibaba", "nvidia", "groq", "cerebras", "openrouter"]),
         model: z.string().min(1).max(200),
       })
       .strict(),

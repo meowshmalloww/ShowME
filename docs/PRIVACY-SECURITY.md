@@ -26,7 +26,7 @@ Screen images and microphone bytes are not saved in ShowME’s database. A provi
 
 ## Consent boundaries
 
-- The floating pet, global shortcut, tray command, or visible main-app action starts one snapshot.
+- The hover-revealed top launcher, global shortcut, tray command, or visible main-app action starts one snapshot.
 - The selection window always appears before a model request. The user can cancel without sending.
 - Nearby-screen context, active-window context, web research, and external image aids are separate visible switches.
 - Voice recording uses hold-to-talk behavior. Releasing stops the recorder and begins transcription.
@@ -42,6 +42,7 @@ The UI only receives a configured/not-configured boolean. Saving, connection tes
 ## Network allowlist by feature
 
 - OpenAI: `https://api.openai.com/v1/responses`, model checks, audio transcription, and audio speech
+- Alibaba Cloud Qwen: `https://dashscope-us.aliyuncs.com/compatible-mode/v1/...`
 - NVIDIA NIM: `https://integrate.api.nvidia.com/v1/...`
 - Groq: `https://api.groq.com/openai/v1/...`
 - Cerebras: `https://api.cerebras.ai/v1/...`

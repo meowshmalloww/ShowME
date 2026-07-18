@@ -49,9 +49,23 @@ Primary references:
 - [ScreenCaptureKit](https://developer.apple.com/documentation/screencapturekit)
 - [Capturing screen content in macOS](https://developer.apple.com/documentation/screencapturekit/capturing-screen-content-in-macos)
 
+### Alibaba Cloud Qwen vision route
+
+Alibaba Cloud Model Studio exposes a pay-as-you-go OpenAI-compatible endpoint in US (Virginia) without a workspace-specific hostname. Its current guidance recommends `qwen3.7-plus` for visual understanding. The model accepts Base64 Data URLs and supports JSON object output in non-thinking mode, but Alibaba documents JSON mode rather than ShowME's strict JSON Schema contract.
+
+Implementation consequence: ShowME has a direct US-region Alibaba Cloud Qwen adapter. It sends selected screenshots using the documented `image_url` shape, forces `enable_thinking: false`, requests JSON mode, and still applies Rust deserialization and semantic validation. Grounded web research and voice remain disabled for this route. Connection testing performs a minimal model request because the chat endpoint is the documented compatibility surface.
+
+Primary references:
+
+- [Alibaba Cloud Model Studio overview and regional endpoints](https://www.alibabacloud.com/help/en/model-studio/what-is-model-studio)
+- [Visual understanding model guide](https://www.alibabacloud.com/help/en/model-studio/vision-model)
+- [Structured output](https://www.alibabacloud.com/help/en/model-studio/qwen-structured-output)
+- [OpenAI-compatible Chat API](https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions)
+- [Obtain an API key](https://www.alibabacloud.com/help/en/model-studio/get-api-key)
+
 ### Compatible providers are model-dependent
 
-NVIDIA NIM, Groq, Cerebras, and OpenRouter expose OpenAI-compatible APIs, but image input, tools, and JSON-schema enforcement differ by model and routing choice. OpenRouter can require requested parameters rather than allow a provider route to ignore them.
+Alibaba Cloud Qwen, NVIDIA NIM, Groq, Cerebras, and OpenRouter expose OpenAI-compatible APIs, but image input, tools, and JSON-schema enforcement differ by model and routing choice. OpenRouter can require requested parameters rather than allow a provider route to ignore them.
 
 Implementation consequence: each provider has a conservative capability profile and an inspectable per-provider override. A request is rejected when its required capability is absent. There is no silent text-only downgrade for a screenshot lesson, no silent removal of research, and no claim that a generic compatible route produced grounded citations.
 

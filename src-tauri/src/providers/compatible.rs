@@ -74,17 +74,21 @@ fn build_body(
         let mut content = vec![
             json!({"type":"text","text":prompt}),
             json!({"type":"text","text":"PRIMARY SELECTED CROP — learner-approved focus."}),
-            json!({"type":"image_url","image_url":{"url": format!("data:image/png;base64,{}", STANDARD.encode(&capture.png)), "detail":"high"}}),
+            image_content(provider.id, &capture.png, "high"),
         ];
         if request.include_nearby_context {
             content.push(json!({"type":"text","text":"APPROVED NEARBY SCREEN CONTEXT — disambiguation only."}));
-            content.push(json!({"type":"image_url","image_url":{"url": format!("data:image/png;base64,{}", STANDARD.encode(&capture.nearby_context_png)), "detail":"low"}}));
+            content.push(image_content(
+                provider.id,
+                &capture.nearby_context_png,
+                "low",
+            ));
         }
         if request.include_active_window
             && let Some(active_window) = &capture.active_window_png
         {
             content.push(json!({"type":"text","text":format!("APPROVED ACTIVE WINDOW CONTEXT — title: {}", capture.active_window_title.as_deref().unwrap_or("Unknown"))}));
-            content.push(json!({"type":"image_url","image_url":{"url": format!("data:image/png;base64,{}", STANDARD.encode(active_window)), "detail":"low"}}));
+            content.push(image_content(provider.id, active_window, "low"));
         }
         Value::Array(content)
     } else {
@@ -115,7 +119,19 @@ fn build_body(
     if provider.id == ProviderId::Openrouter && capabilities.structured_output {
         body["provider"] = json!({"require_parameters": true});
     }
+    if provider.id == ProviderId::Alibaba {
+        body["enable_thinking"] = Value::Bool(false);
+    }
     Ok(body)
+}
+
+fn image_content(provider: ProviderId, png: &[u8], detail: &str) -> Value {
+    let url = format!("data:image/png;base64,{}", STANDARD.encode(png));
+    if provider == ProviderId::Alibaba {
+        json!({"type":"image_url","image_url":{"url":url}})
+    } else {
+        json!({"type":"image_url","image_url":{"url":url,"detail":detail}})
+    }
 }
 
 fn extract_content(value: &Value) -> Option<String> {
@@ -158,5 +174,12 @@ mod tests {
             strip_markdown_fence("```json\n{\"ok\":true}\n```"),
             "{\"ok\":true}"
         );
+    }
+
+    #[test]
+    fn alibaba_images_use_the_documented_openai_compatible_shape() {
+        let content = image_content(ProviderId::Alibaba, b"png", "high");
+        assert!(content.pointer("/image_url/url").is_some());
+        assert!(content.pointer("/image_url/detail").is_none());
     }
 }

@@ -172,21 +172,25 @@ export const DEMO_BOOTSTRAP: AppBootstrap = {
       capabilityNote:
         "Best-supported path for vision, strict scene output, and approved web research.",
     },
-    ...(["nvidia", "groq", "cerebras", "openrouter"] as const).map((id) => ({
+    ...(["alibaba", "nvidia", "groq", "cerebras", "openrouter"] as const).map((id) => ({
       id,
-      name: { nvidia: "NVIDIA NIM", groq: "Groq", cerebras: "Cerebras", openrouter: "OpenRouter" }[
-        id
-      ],
+      name: {
+        alibaba: "Alibaba Cloud Qwen",
+        nvidia: "NVIDIA NIM",
+        groq: "Groq",
+        cerebras: "Cerebras",
+        openrouter: "OpenRouter",
+      }[id],
       configured: false,
       model: DEFAULT_SETTINGS.models[id],
       baseUrl: "",
       capabilities: {
         vision: id !== "cerebras",
-        structuredOutput: id !== "nvidia",
+        structuredOutput: id !== "nvidia" && id !== "alibaba",
         webSearch: false,
         speechToText: false,
         textToSpeech: false,
-        tools: id !== "nvidia",
+        tools: id !== "nvidia" && id !== "alibaba",
       },
       capabilityNote: "Capabilities depend on the selected provider model.",
     })),

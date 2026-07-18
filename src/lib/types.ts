@@ -1,4 +1,4 @@
-export type ProviderId = "openai" | "nvidia" | "groq" | "cerebras" | "openrouter";
+export type ProviderId = "openai" | "alibaba" | "nvidia" | "groq" | "cerebras" | "openrouter";
 
 export type TeachingStyle =
   | "visual-fast"

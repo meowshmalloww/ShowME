@@ -22,11 +22,11 @@ export function HomeView({
     <div className="home-page mothership-home">
       <header className="mothership-heading">
         <div>
-          <span className="eyebrow">ShowME mothership</span>
-          <h1>Ready when something is unclear.</h1>
+          <span className="eyebrow">Workspace</span>
+          <h1>Turn what you see into something you can explore.</h1>
           <p>
-            Most work starts from the floating pet. This window holds setup, lesson history, and the
-            finished visual lesson.
+            Select any part of your screen. ShowME builds a focused lesson with steps, controls, and
+            sources.
           </p>
         </div>
         <button type="button" className="connection-card" onClick={onSettings}>
@@ -41,18 +41,21 @@ export function HomeView({
 
       <section className="mothership-start">
         <div className="mothership-copy">
-          <span className="mothership-step">1</span>
+          <span className="mothership-step" aria-hidden="true">
+            <Crosshair size={24} />
+          </span>
           <div>
-            <h2>Select the confusing part.</h2>
+            <span className="eyebrow">Start here</span>
+            <h2>Select a region of your screen</h2>
             <p>
-              Capture one or more regions, then ask by microphone or text beside the pet. ShowME
-              opens this window only when the visual lesson is ready.
+              Mark the exact diagram, paragraph, interface, or problem you want to understand, then
+              ask by text or voice.
             </p>
           </div>
         </div>
         <div className="mothership-actions">
           <button type="button" className="primary-action" onClick={onNew}>
-            <Crosshair size={18} /> Capture screen area
+            <Crosshair size={18} /> Select from screen
           </button>
           <kbd>
             <Command size={14} /> {shortcut}
@@ -60,7 +63,7 @@ export function HomeView({
         </div>
         <div className="mothership-trust">
           <span>
-            <ShieldCheck size={15} /> Captures only when invoked
+            <ShieldCheck size={15} /> Nothing is captured in the background
           </span>
           <span>
             <Mic size={15} /> Microphone only while pressed
@@ -95,7 +98,7 @@ export function HomeView({
           <div className="mothership-empty">
             <History size={20} />
             <span>
-              <strong>No lessons yet.</strong> Your first real generated lesson will appear here.
+              <strong>No saved lessons yet.</strong> Lessons you keep will appear here.
             </span>
           </div>
         )}

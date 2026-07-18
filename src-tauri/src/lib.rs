@@ -102,7 +102,7 @@ pub fn run() {
             commands::get_prepared_context,
             commands::generate_lesson,
             commands::present_lesson,
-            commands::set_pet_expanded,
+            commands::set_launcher_mode,
             commands::end_lesson_context,
             commands::transcribe_audio,
             commands::synthesize_speech,

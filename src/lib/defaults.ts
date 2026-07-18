@@ -2,6 +2,7 @@ import type { AppSettings, ProviderId, TeachingStyle } from "./types";
 
 export const DEFAULT_MODELS: Record<ProviderId, string> = {
   openai: "gpt-5.6-sol",
+  alibaba: "qwen3.7-plus-us",
   nvidia: "meta/llama-4-maverick-17b-128e-instruct",
   groq: "meta-llama/llama-4-scout-17b-16e-instruct",
   cerebras: "gpt-oss-120b",

@@ -65,6 +65,20 @@ pub fn definition(id: ProviderId) -> ProviderDefinition {
             },
             capability_note: "Best-supported path: GPT-5.6 vision, strict scene output, and approved web search.",
         },
+        ProviderId::Alibaba => ProviderDefinition {
+            id,
+            name: "Alibaba Cloud Qwen",
+            base_url: "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions",
+            capabilities: ProviderCapabilities {
+                vision: true,
+                structured_output: false,
+                web_search: false,
+                speech_to_text: false,
+                text_to_speech: false,
+                tools: false,
+            },
+            capability_note: "US (Virginia) pay-as-you-go route with a US-scoped model. Qwen uses vision plus JSON mode; create the API key in the same region.",
+        },
         ProviderId::Nvidia => ProviderDefinition {
             id,
             name: "NVIDIA NIM",
@@ -157,6 +171,29 @@ pub async fn test_connection(
 ) -> CommandResult<String> {
     let api_key = credentials::get_key(provider_id)?;
     let provider = definition(provider_id);
+    if provider_id == ProviderId::Alibaba {
+        let response = client
+            .post(provider.base_url)
+            .bearer_auth(api_key)
+            .header("Content-Type", "application/json")
+            .json(&json!({
+                "model": model,
+                "messages": [{"role": "user", "content": "Reply with OK."}],
+                "enable_thinking": false,
+                "max_tokens": 8,
+                "stream": false
+            }))
+            .send()
+            .await
+            .map_err(|error| network_error(provider.name, error))?;
+        if !response.status().is_success() {
+            return Err(response_error(provider.name, response).await);
+        }
+        return Ok(format!(
+            "{} accepted the credential and completed a small model request.",
+            provider.name
+        ));
+    }
     let url = models_url(provider.base_url, provider_id, model)?;
     let response = client
         .get(url)
@@ -544,6 +581,8 @@ mod tests {
     fn provider_defaults_are_explicit() {
         let settings = AppSettings::default();
         assert!(effective_capabilities(ProviderId::Openai, &settings).web_search);
+        assert!(effective_capabilities(ProviderId::Alibaba, &settings).vision);
+        assert!(!effective_capabilities(ProviderId::Alibaba, &settings).structured_output);
         assert!(!effective_capabilities(ProviderId::Cerebras, &settings).vision);
     }
 }

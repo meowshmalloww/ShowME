@@ -60,8 +60,14 @@ pub fn get_settings(path: &Path) -> CommandResult<AppSettings> {
         .optional()
         .map_err(|error| CommandError::internal("read settings", error))?;
     match value {
-        Some(value) => serde_json::from_str(&value)
-            .map_err(|error| CommandError::internal("decode settings", error)),
+        Some(value) => {
+            let mut settings: AppSettings = serde_json::from_str(&value)
+                .map_err(|error| CommandError::internal("decode settings", error))?;
+            for (provider, model) in AppSettings::default().models {
+                settings.models.entry(provider).or_insert(model);
+            }
+            Ok(settings)
+        }
         None => Ok(AppSettings::default()),
     }
 }
@@ -249,6 +255,7 @@ fn parse_confidence(value: &str) -> Confidence {
 
 fn parse_provider(value: &str) -> ProviderId {
     match value {
+        "alibaba" => ProviderId::Alibaba,
         "nvidia" => ProviderId::Nvidia,
         "groq" => ProviderId::Groq,
         "cerebras" => ProviderId::Cerebras,

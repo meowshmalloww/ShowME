@@ -6,15 +6,26 @@ use std::{collections::HashMap, path::PathBuf, sync::Mutex};
 #[serde(rename_all = "lowercase")]
 pub enum ProviderId {
     Openai,
+    Alibaba,
     Nvidia,
     Groq,
     Cerebras,
     Openrouter,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LauncherMode {
+    Peek,
+    Ready,
+    Menu,
+    Panel,
+}
+
 impl ProviderId {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Openai,
+        Self::Alibaba,
         Self::Nvidia,
         Self::Groq,
         Self::Cerebras,
@@ -24,6 +35,7 @@ impl ProviderId {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Openai => "openai",
+            Self::Alibaba => "alibaba",
             Self::Nvidia => "nvidia",
             Self::Groq => "groq",
             Self::Cerebras => "cerebras",
@@ -128,6 +140,7 @@ impl Default for AppSettings {
             provider: ProviderId::Openai,
             models: HashMap::from([
                 (ProviderId::Openai, "gpt-5.6-sol".into()),
+                (ProviderId::Alibaba, "qwen3.7-plus-us".into()),
                 (
                     ProviderId::Nvidia,
                     "meta/llama-4-maverick-17b-128e-instruct".into(),

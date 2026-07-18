@@ -4,7 +4,7 @@
 
 ShowME is a native-feeling desktop visual lesson compiler for Windows and macOS. Invoke it over anything on screen, select the exact region that is confusing, ask by voice or text, and receive a validated, interactive lesson rather than a chat-shaped explanation.
 
-Version `0.2.0` is a working product build, not a mockup or simulated AI flow. It includes a Tauri 2 desktop shell, invocation-only screen capture, rectangle/lasso/point/annotation selection, real provider adapters, validated visual lesson rendering, deterministic subject simulations, structured citations, local memory controls, and Windows installers. The primary workflow now stays with a compact floating pet: capture, review the approved crop, ask by text or microphone, and open the completed lesson in the main window. The mothership is intentionally limited to setup, history, settings, and finished lessons.
+Version `0.2.0` is a working product build, not a mockup or simulated AI flow. It includes a Tauri 2 desktop shell, invocation-only screen capture, rectangle/lasso/point/annotation selection, real provider adapters, validated visual lesson rendering, deterministic subject simulations, structured citations, local memory controls, and Windows installers. The primary workflow starts from a small top-edge launcher that reveals its controls only on hover: capture, review the approved crop, ask by text or microphone, and open the completed lesson in the main window.
 
 ## Install on Windows
 
@@ -19,9 +19,9 @@ The installers are development artifacts and are not code-signed. Windows SmartS
 
 1. Open ShowME and complete the short privacy-first onboarding.
 2. Open **Settings → Providers**, select a provider, paste its API key, and run **Test connection**. Every provider credential is managed in this one screen. Keys go directly from the native settings command into the operating-system credential vault; they are not stored in frontend state, environment files, or SQLite.
-3. Press `Ctrl+Shift+Space`, click the floating pet, or choose **New visual lesson** from the tray.
+3. Press `Ctrl+Shift+Space`, hover the small top-edge ShowME tab and choose **Select from screen**, or use **New visual lesson** from the tray.
 4. Draw a rectangle or lasso around the relevant material. Point, circle, arrow, line, and label tools can make the intended focus explicit.
-5. The selected crop returns to the pet. Ask by text or microphone; optional nearby-screen, active-window, web-research, image-aid, copied-text, and source-URL context is available in the compact **Context** panel.
+5. The selected crop opens the compact question panel. Ask by text or microphone; optional nearby-screen, active-window, web-research, image-aid, copied-text, and source-URL context is available under **Context**.
 6. Press **Make it visible**. There is no fake or offline response path: generation requires a configured provider and validates the returned lesson before showing it.
 7. Manipulate the generated controls, step through the visual, play narration, inspect evidence, or expand the visualization into a focused full-workspace view.
 
@@ -30,12 +30,13 @@ The installers are development artifacts and are not code-signed. Windows SmartS
 | Provider | Default route | Screenshot input | Strict scene output | Grounded web research | Voice |
 | --- | --- | ---: | ---: | ---: | ---: |
 | OpenAI | Responses API, `gpt-5.6-sol` | Yes | Yes | Yes | OpenAI transcription and speech endpoints |
+| Alibaba Cloud Qwen | US (Virginia) OpenAI-compatible chat, `qwen3.7-plus-us` | Yes | JSON mode plus Rust validation | No ShowME-grounded route | No |
 | NVIDIA NIM | OpenAI-compatible chat completions | Model-dependent | Model-dependent; conservative default is off | No | No |
 | Groq | OpenAI-compatible chat completions | Model-dependent | Model-dependent | No | No |
 | Cerebras | OpenAI-compatible chat completions | No by default; paste text | Model-dependent | No | No |
 | OpenRouter | OpenAI-compatible chat completions | Routed-model dependent | Routed-model dependent; parameters are required | No ShowME-grounded route | No |
 
-Capability overrides are exposed because compatible providers evolve at model granularity. ShowME fails closed when a requested capability is unavailable instead of silently dropping the screenshot, schema, or research requirement. Voice transcription and narration currently require an OpenAI key even when another provider compiles the lesson.
+Capability overrides are exposed because compatible providers evolve at model granularity. ShowME fails closed when a requested capability is unavailable instead of silently dropping the screenshot, schema, or research requirement. Microphone transcription and optional cloud narration require an OpenAI key even when another provider compiles the lesson; typed questions, Wikimedia image aids, and system narration require no extra key.
 
 ## What is trusted
 

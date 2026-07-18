@@ -4,6 +4,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { type MainSection, Sidebar, Spinner, Titlebar } from "./components/Chrome";
 import { HomeView } from "./components/HomeView";
 import { desktop, isTauriRuntime } from "./lib/api";
+import { DEMO_BOOTSTRAP, DEMO_PLAN } from "./lib/demo";
 import { commandErrorMessage } from "./lib/errors";
 import type {
   AppBootstrap,
@@ -43,25 +44,33 @@ const loadingView = (
 
 function MainApp() {
   const params = new URLSearchParams(window.location.search);
+  const previewMode = params.get("preview");
+  const browserPreview = import.meta.env.DEV && (previewMode === "1" || previewMode === "lesson");
   const [bootstrap, setBootstrap] = useState<AppBootstrap>();
   const [section, setSection] = useState<MainSection>(() => {
     const requested = params.get("section");
     return requested === "settings" || requested === "history" ? requested : "learn";
   });
-  const [lesson, setLesson] = useState<LessonPlan>();
+  const [lesson, setLesson] = useState<LessonPlan | undefined>(() =>
+    previewMode === "lesson" ? DEMO_PLAN : undefined,
+  );
   const [request, setRequest] = useState<GenerateLessonRequest>();
   const [loading, setLoading] = useState(true);
   const [capturing, setCapturing] = useState(false);
   const [error, setError] = useState<string>();
 
   const refresh = useCallback(async () => {
+    if (browserPreview) {
+      setBootstrap(DEMO_BOOTSTRAP);
+      return DEMO_BOOTSTRAP;
+    }
     if (!isTauriRuntime()) {
       throw new Error("ShowME must run inside its native desktop application.");
     }
     const value = await desktop.bootstrap();
     setBootstrap(value);
     return value;
-  }, []);
+  }, [browserPreview]);
 
   useEffect(() => {
     document.body.classList.add("main-root");
@@ -212,7 +221,7 @@ function MainApp() {
 
   return (
     <div className={`desktop-shell ${bootstrap.settings.reducedMotion ? "reduce-motion" : ""}`}>
-      <Titlebar preview={!isTauriRuntime()} />
+      <Titlebar preview={browserPreview} />
       <Sidebar
         section={section}
         onSection={(next) => {
