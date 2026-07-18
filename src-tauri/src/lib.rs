@@ -95,6 +95,7 @@ pub fn run() {
             commands::set_provider_key,
             commands::delete_provider_key,
             commands::test_provider,
+            commands::list_provider_models,
             commands::begin_capture,
             commands::get_pending_capture,
             commands::commit_selection,

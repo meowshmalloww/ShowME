@@ -7,6 +7,14 @@ export interface Bounds {
   height: number;
 }
 
+export interface ArrowGeometry {
+  angleDegrees: number;
+  length: number;
+  shaftEnd: Point;
+  left: Point;
+  right: Point;
+}
+
 export function clampCoordinate(value: number): number {
   return Math.min(1000, Math.max(0, value));
 }
@@ -33,6 +41,85 @@ export function normalizedToClient(
   return {
     x: (clampCoordinate(point.x) / 1000) * viewportWidth,
     y: (clampCoordinate(point.y) / 1000) * viewportHeight,
+  };
+}
+
+export function snapNormalizedPoint(
+  start: Point,
+  end: Point,
+  viewportWidth: number,
+  viewportHeight: number,
+  incrementDegrees = 45,
+): Point {
+  if (viewportWidth <= 0 || viewportHeight <= 0 || incrementDegrees <= 0) return end;
+  const startClient = normalizedToClient(start, viewportWidth, viewportHeight);
+  const endClient = normalizedToClient(end, viewportWidth, viewportHeight);
+  const dx = endClient.x - startClient.x;
+  const dy = endClient.y - startClient.y;
+  const length = Math.hypot(dx, dy);
+  if (length === 0) return end;
+  const increment = (incrementDegrees * Math.PI) / 180;
+  const angle = Math.round(Math.atan2(dy, dx) / increment) * increment;
+  return clientToNormalized(
+    {
+      x: startClient.x + Math.cos(angle) * length,
+      y: startClient.y + Math.sin(angle) * length,
+    },
+    viewportWidth,
+    viewportHeight,
+  );
+}
+
+export function squareNormalizedPoint(
+  start: Point,
+  end: Point,
+  viewportWidth: number,
+  viewportHeight: number,
+): Point {
+  if (viewportWidth <= 0 || viewportHeight <= 0) return end;
+  const startClient = normalizedToClient(start, viewportWidth, viewportHeight);
+  const endClient = normalizedToClient(end, viewportWidth, viewportHeight);
+  const dx = endClient.x - startClient.x;
+  const dy = endClient.y - startClient.y;
+  const side = Math.max(Math.abs(dx), Math.abs(dy));
+  return clientToNormalized(
+    {
+      x: startClient.x + Math.sign(dx || 1) * side,
+      y: startClient.y + Math.sign(dy || 1) * side,
+    },
+    viewportWidth,
+    viewportHeight,
+  );
+}
+
+export function arrowGeometry(
+  start: Point,
+  end: Point,
+  strokeWidth = 3,
+): ArrowGeometry | undefined {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 2) return undefined;
+  const ux = dx / length;
+  const uy = dy / length;
+  const headLength = Math.min(22, Math.max(10, length * 0.22, strokeWidth * 4));
+  const headWidth = Math.min(16, Math.max(7, headLength * 0.58, strokeWidth * 2.4));
+  const base = {
+    x: end.x - ux * headLength,
+    y: end.y - uy * headLength,
+  };
+  const nx = -uy;
+  const ny = ux;
+  return {
+    angleDegrees: (Math.atan2(-dy, dx) * 180) / Math.PI,
+    length,
+    shaftEnd: {
+      x: end.x - ux * Math.max(2, headLength * 0.72),
+      y: end.y - uy * Math.max(2, headLength * 0.72),
+    },
+    left: { x: base.x + nx * headWidth, y: base.y + ny * headWidth },
+    right: { x: base.x - nx * headWidth, y: base.y - ny * headWidth },
   };
 }
 

@@ -74,6 +74,11 @@ export interface ProviderSummary {
   capabilityNote: string;
 }
 
+export interface ProviderModel {
+  id: string;
+  name: string;
+}
+
 export interface AppSettings {
   onboardingComplete: boolean;
   petName: string;

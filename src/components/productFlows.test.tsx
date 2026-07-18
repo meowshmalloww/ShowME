@@ -3,10 +3,12 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEMO_BOOTSTRAP, DEMO_CONTEXT } from "../lib/demo";
+import { TEST_BOOTSTRAP, TEST_CONTEXT } from "../lib/testFixtures";
 import { buildLessonRequest } from "../lib/lessonRequest";
 import { HistoryView } from "./HistoryView";
 import { HomeView } from "./HomeView";
+import { moveSelectionPoints } from "./CaptureOverlay";
+import { SettingsView } from "./SettingsView";
 
 afterEach(() => {
   cleanup();
@@ -18,7 +20,7 @@ describe("product recovery flows", () => {
     const onNew = vi.fn();
     render(
       <HomeView
-        bootstrap={DEMO_BOOTSTRAP}
+        bootstrap={TEST_BOOTSTRAP}
         onNew={onNew}
         onSettings={vi.fn()}
         onOpenRecent={vi.fn(async () => undefined)}
@@ -41,7 +43,7 @@ describe("product recovery flows", () => {
   });
 
   it("builds a capability-safe request for the active provider", () => {
-    const baseProvider = DEMO_BOOTSTRAP.providers.find((item) => item.id === "openai");
+    const baseProvider = TEST_BOOTSTRAP.providers.find((item) => item.id === "openai");
     if (!baseProvider) throw new Error("OpenAI fixture is missing");
     const provider = {
       ...baseProvider,
@@ -52,8 +54,8 @@ describe("product recovery flows", () => {
       },
     };
     const request = buildLessonRequest(
-      DEMO_CONTEXT,
-      DEMO_BOOTSTRAP.settings,
+      TEST_CONTEXT,
+      TEST_BOOTSTRAP.settings,
       provider,
       "  Explain the selected relationship.  ",
       {
@@ -70,5 +72,32 @@ describe("product recovery flows", () => {
     expect(request.includeNearbyContext).toBe(false);
     expect(request.includeActiveWindow).toBe(false);
     expect(request.allowWebResearch).toBe(false);
+  });
+
+  it("guides nontechnical provider setup without endpoint or model ID fields", () => {
+    render(<SettingsView bootstrap={TEST_BOOTSTRAP} onSaved={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Alibaba Cloud Qwen/i }));
+
+    expect(screen.queryByText("Model ID")).not.toBeInTheDocument();
+    expect(screen.queryByText("Service endpoint")).not.toBeInTheDocument();
+    expect(screen.getByText("1. Paste API key")).toBeInTheDocument();
+    expect(screen.getByText("2. Choose a model")).toBeInTheDocument();
+  });
+
+  it("moves capture regions as one shape and clamps them to the screen", () => {
+    expect(
+      moveSelectionPoints(
+        [
+          { x: 100, y: 200 },
+          { x: 300, y: 400 },
+        ],
+        { x: 200, y: 300 },
+        { x: -100, y: 950 },
+      ),
+    ).toEqual([
+      { x: 0, y: 800 },
+      { x: 200, y: 1000 },
+    ]);
   });
 });

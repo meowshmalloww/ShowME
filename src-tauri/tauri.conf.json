@@ -35,7 +35,7 @@
     "shortDescription": "Turn confusing screen content into interactive visual lessons.",
     "longDescription": "ShowME is a voice-first, screen-aware visual lesson compiler for Windows and macOS.",
     "copyright": "Copyright 2026 ShowME contributors",
-    "icon": ["icons/icon.ico"],
+    "icon": ["icons/icon.ico", "icons/icon.icns"],
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper",

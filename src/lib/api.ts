@@ -12,6 +12,7 @@ import type {
   PermissionStatus,
   PreparedContext,
   ProviderId,
+  ProviderModel,
   ProviderSummary,
   SelectionRegion,
   StoredLesson,
@@ -35,6 +36,8 @@ export const desktop = {
     command<ProviderSummary[]>("delete_provider_key", { provider }),
   testProvider: (provider: ProviderId, model: string) =>
     command<string>("test_provider", { provider, model }),
+  listProviderModels: (provider: ProviderId) =>
+    command<ProviderModel[]>("list_provider_models", { provider }),
   beginCapture: () => command<CapturePayload>("begin_capture"),
   pendingCapture: () => command<CapturePayload>("get_pending_capture"),
   commitSelection: (captureId: string, regions: SelectionRegion[]) =>

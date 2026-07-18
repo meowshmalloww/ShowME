@@ -1,9 +1,10 @@
 import { DEFAULT_SETTINGS } from "./defaults";
 import type { AppBootstrap, LessonPlan, PreparedContext } from "./types";
 
-export const DEMO_CONTEXT: PreparedContext = {
-  captureId: "preview-capture",
-  previewDataUrl: "/demo-context.svg",
+export const TEST_CONTEXT: PreparedContext = {
+  captureId: "test-capture",
+  previewDataUrl:
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
   regions: [
     {
       id: "region-orbit",
@@ -19,9 +20,9 @@ export const DEMO_CONTEXT: PreparedContext = {
   containsAnnotations: false,
 };
 
-export const DEMO_PLAN: LessonPlan = {
+export const TEST_PLAN: LessonPlan = {
   version: 1,
-  id: "preview-orbit-lesson",
+  id: "test-orbit-lesson",
   title: "Orbit is a fall that keeps missing",
   concept: "Orbital motion",
   summary:
@@ -152,7 +153,7 @@ export const DEMO_PLAN: LessonPlan = {
   provider: { id: "openai", model: "gpt-5.6-sol" },
 };
 
-export const DEMO_BOOTSTRAP: AppBootstrap = {
+export const TEST_BOOTSTRAP: AppBootstrap = {
   settings: { ...DEFAULT_SETTINGS, onboardingComplete: true },
   providers: [
     {
@@ -196,7 +197,7 @@ export const DEMO_BOOTSTRAP: AppBootstrap = {
     })),
   ],
   recentLessons: [],
-  platform: "browser-preview",
-  appVersion: "0.1.3",
+  platform: "windows",
+  appVersion: "0.2.0",
   captureSupported: false,
 };

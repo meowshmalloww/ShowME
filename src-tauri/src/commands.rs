@@ -5,7 +5,7 @@ use crate::{
     models::{
         AppBootstrap, AppSettings, AppState, CapturePayload, GenerateLessonRequest, ImageAsset,
         LauncherMode, LessonPlan, LessonPresentation, LessonReceipt, PermissionStatus,
-        PreparedContext, ProviderId, ProviderSummary, SelectionRegion, StoredLesson,
+        PreparedContext, ProviderId, ProviderModel, ProviderSummary, SelectionRegion, StoredLesson,
     },
     providers, safety, windows,
 };
@@ -179,6 +179,14 @@ pub fn set_launcher_mode(
 ) -> CommandResult<()> {
     let settings = db::get_settings(&state.database_path)?;
     windows::set_launcher_mode(&app, mode, settings.pet_scale)
+}
+
+#[tauri::command]
+pub async fn list_provider_models(
+    state: State<'_, AppState>,
+    provider: ProviderId,
+) -> CommandResult<Vec<ProviderModel>> {
+    providers::list_models(&state.http, provider).await
 }
 
 #[tauri::command]

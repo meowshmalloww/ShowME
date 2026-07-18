@@ -12,8 +12,9 @@ coverage/
 test-results/
 release/
 
-# `tauri icon` creates mobile, Store, and platform raster variants. Keep only
-# the editable vector source and the Windows desktop bundle icon in Git.
+# `tauri icon` creates mobile and Store raster variants. Keep only the editable
+# source plus the two desktop bundle formats required by Windows and macOS.
 src-tauri/icons/*
 !src-tauri/icons/icon.svg
 !src-tauri/icons/icon.ico
+!src-tauri/icons/icon.icns

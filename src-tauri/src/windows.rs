@@ -9,11 +9,13 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 
-const LAUNCHER_PEEK_WIDTH: f64 = 48.0;
-const LAUNCHER_PEEK_HEIGHT: f64 = 24.0;
-const LAUNCHER_READY_WIDTH: f64 = 316.0;
-const LAUNCHER_READY_HEIGHT: f64 = 70.0;
-const LAUNCHER_MENU_HEIGHT: f64 = 154.0;
+const LAUNCHER_PEEK_WIDTH: f64 = 96.0;
+const LAUNCHER_PEEK_HEIGHT: f64 = 26.0;
+const LAUNCHER_READY_WIDTH: f64 = 320.0;
+const LAUNCHER_READY_HEIGHT: f64 = 58.0;
+const LAUNCHER_MENU_HEIGHT: f64 = 178.0;
+const MAC_CAMERA_SAFE_PEEK_WIDTH: f64 = 220.0;
+const MAC_CAMERA_SAFE_READY_WIDTH: f64 = 448.0;
 const LAUNCHER_PANEL_WIDTH: f64 = 468.0;
 const LAUNCHER_PANEL_HEIGHT: f64 = 520.0;
 
@@ -67,21 +69,41 @@ fn position_launcher(window: &WebviewWindow) {
         let monitor_width = i32::try_from(size.width).unwrap_or(0);
         let launcher_width = i32::try_from(window_size.width).unwrap_or(0);
         let x = position.x + (monitor_width - launcher_width) / 2;
-        let y = position.y + 16;
+        let y = position.y;
         window.set_position(PhysicalPosition::new(x, y)).ok();
     }
 }
 
 fn launcher_dimensions(mode: LauncherMode, scale: f64) -> (f64, f64) {
+    launcher_dimensions_for_platform(mode, scale, std::env::consts::OS)
+}
+
+fn launcher_dimensions_for_platform(mode: LauncherMode, scale: f64, platform: &str) -> (f64, f64) {
     let safe_scale = scale.clamp(0.8, 1.45);
+    let macos = platform == "macos";
     match mode {
-        LauncherMode::Peek => (LAUNCHER_PEEK_WIDTH, LAUNCHER_PEEK_HEIGHT),
+        LauncherMode::Peek => (
+            if macos {
+                MAC_CAMERA_SAFE_PEEK_WIDTH
+            } else {
+                LAUNCHER_PEEK_WIDTH
+            },
+            if macos { 34.0 } else { LAUNCHER_PEEK_HEIGHT },
+        ),
         LauncherMode::Ready => (
-            LAUNCHER_READY_WIDTH * safe_scale,
+            (if macos {
+                MAC_CAMERA_SAFE_READY_WIDTH
+            } else {
+                LAUNCHER_READY_WIDTH
+            }) * safe_scale,
             LAUNCHER_READY_HEIGHT * safe_scale,
         ),
         LauncherMode::Menu => (
-            LAUNCHER_READY_WIDTH * safe_scale,
+            (if macos {
+                MAC_CAMERA_SAFE_READY_WIDTH
+            } else {
+                LAUNCHER_READY_WIDTH
+            }) * safe_scale,
             LAUNCHER_MENU_HEIGHT * safe_scale,
         ),
         LauncherMode::Panel => (
@@ -132,19 +154,14 @@ fn create_tray(app: &App) -> CommandResult<()> {
         .map_err(|error| CommandError::internal("create tray item", error))?;
     let open = MenuItem::with_id(app, "open", "Open ShowME", true, None::<&str>)
         .map_err(|error| CommandError::internal("create tray item", error))?;
-    let show_pet = MenuItem::with_id(app, "show-pet", "Show launcher", true, None::<&str>)
-        .map_err(|error| CommandError::internal("create tray item", error))?;
-    let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)
+    let show_pet = MenuItem::with_id(app, "show-pet", "Show capture bar", true, None::<&str>)
         .map_err(|error| CommandError::internal("create tray item", error))?;
     let separator = PredefinedMenuItem::separator(app)
         .map_err(|error| CommandError::internal("create tray separator", error))?;
     let quit = MenuItem::with_id(app, "quit", "Quit ShowME", true, None::<&str>)
         .map_err(|error| CommandError::internal("create tray item", error))?;
-    let menu = Menu::with_items(
-        app,
-        &[&new_lesson, &open, &show_pet, &settings, &separator, &quit],
-    )
-    .map_err(|error| CommandError::internal("create tray menu", error))?;
+    let menu = Menu::with_items(app, &[&new_lesson, &open, &show_pet, &separator, &quit])
+        .map_err(|error| CommandError::internal("create tray menu", error))?;
 
     let mut builder = TrayIconBuilder::new()
         .tooltip("ShowME — Don’t explain it. Make it visible.")
@@ -156,9 +173,6 @@ fn create_tray(app: &App) -> CommandResult<()> {
                 show_main(app, None).ok();
             }
             "show-pet" => reveal_pet(app),
-            "settings" => {
-                show_main(app, Some("settings")).ok();
-            }
             "quit" => app.exit(0),
             _ => {}
         })
@@ -238,20 +252,37 @@ mod tests {
 
     #[test]
     fn launcher_peek_has_no_large_transparent_hit_area() {
-        assert_eq!(launcher_dimensions(LauncherMode::Peek, 1.0), (48.0, 24.0));
-        assert_eq!(launcher_dimensions(LauncherMode::Peek, 1.45), (48.0, 24.0));
+        assert_eq!(
+            launcher_dimensions_for_platform(LauncherMode::Peek, 1.0, "windows"),
+            (96.0, 26.0)
+        );
+        assert_eq!(
+            launcher_dimensions_for_platform(LauncherMode::Peek, 1.45, "windows"),
+            (96.0, 26.0)
+        );
+        assert_eq!(
+            launcher_dimensions_for_platform(LauncherMode::Peek, 1.0, "macos"),
+            (220.0, 34.0)
+        );
     }
 
     #[test]
     fn revealed_launcher_dimensions_follow_the_saved_scale() {
-        assert_eq!(launcher_dimensions(LauncherMode::Ready, 1.0), (316.0, 70.0));
         assert_eq!(
-            launcher_dimensions(LauncherMode::Ready, 1.25),
-            (395.0, 87.5)
+            launcher_dimensions_for_platform(LauncherMode::Ready, 1.0, "windows"),
+            (320.0, 58.0)
         );
-        let clamped = launcher_dimensions(LauncherMode::Ready, 9.0);
-        assert!((clamped.0 - 458.2).abs() < 0.001);
-        assert!((clamped.1 - 101.5).abs() < 0.001);
+        assert_eq!(
+            launcher_dimensions_for_platform(LauncherMode::Ready, 1.25, "windows"),
+            (400.0, 72.5)
+        );
+        let clamped = launcher_dimensions_for_platform(LauncherMode::Ready, 9.0, "windows");
+        assert!((clamped.0 - 464.0).abs() < 0.001);
+        assert!((clamped.1 - 84.1).abs() < 0.001);
+        assert_eq!(
+            launcher_dimensions_for_platform(LauncherMode::Ready, 1.0, "macos"),
+            (448.0, 58.0)
+        );
     }
 
     #[test]

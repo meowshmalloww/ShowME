@@ -2,7 +2,7 @@ import type { AppSettings, ProviderId, TeachingStyle } from "./types";
 
 export const DEFAULT_MODELS: Record<ProviderId, string> = {
   openai: "gpt-5.6-sol",
-  alibaba: "qwen3.7-plus-us",
+  alibaba: "qwen3.7-plus",
   nvidia: "meta/llama-4-maverick-17b-128e-instruct",
   groq: "meta-llama/llama-4-scout-17b-16e-instruct",
   cerebras: "gpt-oss-120b",
@@ -46,3 +46,21 @@ export const VOICES = [
   { id: "onyx", label: "Onyx — grounded" },
   { id: "shimmer", label: "Shimmer — bright" },
 ];
+
+export const LANGUAGES = [
+  { id: "en", label: "English" },
+  { id: "zh-CN", label: "Chinese (Simplified)" },
+  { id: "zh-TW", label: "Chinese (Traditional)" },
+  { id: "es", label: "Spanish" },
+  { id: "fr", label: "French" },
+  { id: "de", label: "German" },
+  { id: "ja", label: "Japanese" },
+  { id: "ko", label: "Korean" },
+  { id: "pt-BR", label: "Portuguese (Brazil)" },
+] as const;
+
+export const HOTKEYS = [
+  { id: "CommandOrControl+Shift+Space", label: "Ctrl/Cmd + Shift + Space" },
+  { id: "CommandOrControl+Shift+S", label: "Ctrl/Cmd + Shift + S" },
+  { id: "CommandOrControl+Alt+Space", label: "Ctrl/Cmd + Alt + Space" },
+] as const;

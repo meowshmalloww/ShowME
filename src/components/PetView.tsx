@@ -1,11 +1,11 @@
 import { listen } from "@tauri-apps/api/event";
 import {
-  Crosshair,
+  ChevronDown,
   EyeOff,
   Mic,
   MicOff,
-  MoreHorizontal,
   RefreshCw,
+  ScanLine,
   Send,
   Settings,
   SlidersHorizontal,
@@ -42,6 +42,7 @@ export function PetView() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string>();
   const recordingSession = useRef<RecordingSession | undefined>(undefined);
+  const hoverTimer = useRef<number | undefined>(undefined);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const settings = bootstrap?.settings;
   const launcherScale = settings?.petScale;
@@ -50,7 +51,7 @@ export function PetView() {
   const launcherRevealed = launcherHovered || menuOpen || capturing || Boolean(error);
   const launcherMode = expanded
     ? "panel"
-    : menuOpen || capturing || error
+    : menuOpen || error
       ? "menu"
       : launcherRevealed
         ? "ready"
@@ -68,6 +69,7 @@ export function PetView() {
     document.documentElement.classList.add("pet-window-root");
     document.body.classList.add("pet-window-root");
     return () => {
+      if (hoverTimer.current) window.clearTimeout(hoverTimer.current);
       document.documentElement.classList.remove("pet-window-root");
       document.body.classList.remove("pet-window-root");
     };
@@ -224,7 +226,13 @@ export function PetView() {
   };
 
   const hideLauncherControls = () => {
+    if (hoverTimer.current) window.clearTimeout(hoverTimer.current);
     if (!menuOpen) setLauncherHovered(false);
+  };
+
+  const revealLauncherControls = () => {
+    if (hoverTimer.current) window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setLauncherHovered(true), 180);
   };
 
   if (expanded && context) {
@@ -415,10 +423,9 @@ export function PetView() {
 
   return (
     <main
-      className={`pet-view pet-view-collapsed ${launcherRevealed ? "pet-view-ready" : "pet-view-peek"}`}
+      className={`pet-view pet-view-collapsed ${launcherRevealed ? "pet-view-ready" : "pet-view-peek"} ${bootstrap?.platform === "macos" ? "pet-platform-macos" : ""}`}
       style={{ "--pet-scale": settings?.petScale ?? 1 } as React.CSSProperties}
-      data-tauri-drag-region
-      onPointerEnter={() => setLauncherHovered(true)}
+      onPointerEnter={revealLauncherControls}
       onPointerLeave={hideLauncherControls}
     >
       {!launcherRevealed ? (
@@ -428,24 +435,36 @@ export function PetView() {
           aria-label="Show ShowME controls"
           title="ShowME"
           onFocus={() => setLauncherHovered(true)}
+          onClick={() => setLauncherHovered(true)}
         >
-          <span aria-hidden="true">
+          <span className="pet-peek-brand" aria-hidden="true">
             <BrandGlyph />
+            <strong>ShowME</strong>
           </span>
+          <span className="pet-camera-safe" aria-hidden="true" />
+          <ChevronDown size={13} aria-hidden="true" />
         </button>
       ) : (
         <>
           {error && <div className="pet-error">{error}</div>}
           {capturing && <div className="pet-bubble visible">Drag around your focus area</div>}
           <div className="pet-launcher" data-tauri-drag-region>
+            <span className="pet-island-brand">
+              <BrandGlyph />
+              <strong>{launcherLabel}</strong>
+            </span>
+            <span className="pet-camera-safe" aria-hidden="true" />
             <button
-              className="pet-character"
+              className="pet-capture-button"
               type="button"
               onClick={startCapture}
               disabled={capturing}
               aria-label={`${launcherLabel}: select part of the screen`}
-              data-tauri-drag-region
             >
+              <ScanLine size={17} />
+              <span className="pet-capture-label">
+                {capturing ? "Drag to select" : "Capture area"}
+              </span>
               <span className="pet-launcher-mark" aria-hidden="true">
                 <BrandGlyph />
               </span>
@@ -454,7 +473,7 @@ export function PetView() {
                 <small>{capturing ? "Selecting…" : "Select from screen"}</small>
               </span>
               <span className="pet-launcher-action" aria-hidden="true">
-                <Crosshair size={18} />
+                <ScanLine size={18} />
               </span>
             </button>
             <div className="pet-quick-actions">
@@ -475,7 +494,7 @@ export function PetView() {
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((open) => !open)}
               >
-                <MoreHorizontal size={18} />
+                <ChevronDown size={17} />
               </button>
             </div>
           </div>

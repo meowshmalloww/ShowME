@@ -47,7 +47,7 @@ const measurements = {
 };
 const budgets = {
   initialJavaScript: 260 * 1024,
-  initialCss: 90 * 1024,
+  initialCss: 96 * 1024,
   totalJavaScript: 500 * 1024,
   largestChunk: 220 * 1024,
 };

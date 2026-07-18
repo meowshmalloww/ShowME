@@ -226,13 +226,15 @@ pub fn commit(
         .map_err(|error| CommandError::internal("decode pending capture", error))?;
     let (x, y, width, height) = crop_bounds(&regions, image.width(), image.height());
     let cropped = image.crop_imm(x, y, width, height).to_rgba8();
+    let crop_regions =
+        regions_to_crop_space(&regions, image.width(), image.height(), x, y, width, height);
     let prepared = PreparedCapture {
         capture_id: pending.capture_id,
         png: encode_rgba(&cropped)?,
         nearby_context_png: pending.png,
         active_window_png: pending.active_window_png,
         active_window_title: pending.active_window_title,
-        regions: regions.clone(),
+        regions: crop_regions,
         pixel_width: cropped.width(),
         pixel_height: cropped.height(),
         contains_annotations: regions.iter().any(|region| {
@@ -269,36 +271,82 @@ fn crop_bounds(
     image_width: u32,
     image_height: u32,
 ) -> (u32, u32, u32, u32) {
-    let mut min_x = 1000.0_f64;
-    let mut min_y = 1000.0_f64;
+    let image_width_f = f64::from(image_width);
+    let image_height_f = f64::from(image_height);
+    let mut min_x = image_width_f;
+    let mut min_y = image_height_f;
     let mut max_x = 0.0_f64;
     let mut max_y = 0.0_f64;
     for region in regions {
-        for point in &region.points {
-            min_x = min_x.min(point.x);
-            min_y = min_y.min(point.y);
-            max_x = max_x.max(point.x);
-            max_y = max_y.max(point.y);
+        if region.kind == SelectionKind::Circle && region.points.len() >= 2 {
+            let center = &region.points[0];
+            let edge = &region.points[region.points.len() - 1];
+            let center_x = (center.x / 1000.0) * image_width_f;
+            let center_y = (center.y / 1000.0) * image_height_f;
+            let edge_x = (edge.x / 1000.0) * image_width_f;
+            let edge_y = (edge.y / 1000.0) * image_height_f;
+            let radius = (edge_x - center_x).hypot(edge_y - center_y);
+            min_x = min_x.min(center_x - radius);
+            min_y = min_y.min(center_y - radius);
+            max_x = max_x.max(center_x + radius);
+            max_y = max_y.max(center_y + radius);
+        } else {
+            for point in &region.points {
+                let point_x = (point.x / 1000.0) * image_width_f;
+                let point_y = (point.y / 1000.0) * image_height_f;
+                min_x = min_x.min(point_x);
+                min_y = min_y.min(point_y);
+                max_x = max_x.max(point_x);
+                max_y = max_y.max(point_y);
+            }
         }
         if matches!(region.kind, SelectionKind::Point | SelectionKind::Label) {
-            min_x -= 35.0;
-            min_y -= 35.0;
-            max_x += 35.0;
-            max_y += 35.0;
+            min_x -= 56.0;
+            min_y -= 56.0;
+            max_x += 56.0;
+            max_y += 56.0;
         }
     }
-    let padding = 16.0;
-    min_x = (min_x - padding).clamp(0.0, 1000.0);
-    min_y = (min_y - padding).clamp(0.0, 1000.0);
-    max_x = (max_x + padding).clamp(0.0, 1000.0);
-    max_y = (max_y + padding).clamp(0.0, 1000.0);
-    let x = ((min_x / 1000.0) * f64::from(image_width)).floor() as u32;
-    let y = ((min_y / 1000.0) * f64::from(image_height)).floor() as u32;
-    let right = (((max_x / 1000.0) * f64::from(image_width)).ceil() as u32)
-        .clamp(x.saturating_add(1), image_width);
-    let bottom = (((max_y / 1000.0) * f64::from(image_height)).ceil() as u32)
-        .clamp(y.saturating_add(1), image_height);
+    let padding = 24.0;
+    min_x = (min_x - padding).clamp(0.0, image_width_f);
+    min_y = (min_y - padding).clamp(0.0, image_height_f);
+    max_x = (max_x + padding).clamp(0.0, image_width_f);
+    max_y = (max_y + padding).clamp(0.0, image_height_f);
+    let x = min_x.floor() as u32;
+    let y = min_y.floor() as u32;
+    let right = (max_x.ceil() as u32).clamp(x.saturating_add(1), image_width);
+    let bottom = (max_y.ceil() as u32).clamp(y.saturating_add(1), image_height);
     (x, y, right - x, bottom - y)
+}
+
+fn regions_to_crop_space(
+    regions: &[SelectionRegion],
+    image_width: u32,
+    image_height: u32,
+    crop_x: u32,
+    crop_y: u32,
+    crop_width: u32,
+    crop_height: u32,
+) -> Vec<SelectionRegion> {
+    let image_width = f64::from(image_width);
+    let image_height = f64::from(image_height);
+    let crop_x = f64::from(crop_x);
+    let crop_y = f64::from(crop_y);
+    let crop_width = f64::from(crop_width.max(1));
+    let crop_height = f64::from(crop_height.max(1));
+    regions
+        .iter()
+        .cloned()
+        .map(|mut region| {
+            for point in &mut region.points {
+                let screen_x = (point.x / 1000.0) * image_width;
+                let screen_y = (point.y / 1000.0) * image_height;
+                point.x = (((screen_x - crop_x) / crop_width) * 1000.0).clamp(0.0, 1000.0);
+                point.y = (((screen_y - crop_y) / crop_height) * 1000.0).clamp(0.0, 1000.0);
+            }
+            region
+        })
+        .collect()
 }
 
 pub fn prepared(state: &AppState) -> CommandResult<Option<PreparedContext>> {
@@ -368,5 +416,42 @@ mod tests {
         assert!(x < 500 && y < 100);
         assert!(width > 1000 && height > 500);
         assert!(x + width <= 2000 && y + height <= 1000);
+    }
+
+    #[test]
+    fn circle_crop_contains_the_entire_screen_space_radius() {
+        let regions = vec![SelectionRegion {
+            id: "circle".into(),
+            kind: SelectionKind::Circle,
+            points: vec![
+                crate::models::Point { x: 500.0, y: 500.0 },
+                crate::models::Point { x: 600.0, y: 500.0 },
+            ],
+            label: None,
+        }];
+        let (x, y, width, height) = crop_bounds(&regions, 2000, 1000);
+        assert!(x <= 800);
+        assert!(y <= 300);
+        assert!(x + width >= 1200);
+        assert!(y + height >= 700);
+    }
+
+    #[test]
+    fn selection_points_are_remapped_to_the_attached_crop() {
+        let regions = vec![SelectionRegion {
+            id: "arrow".into(),
+            kind: SelectionKind::Arrow,
+            points: vec![
+                crate::models::Point { x: 250.0, y: 250.0 },
+                crate::models::Point { x: 750.0, y: 750.0 },
+            ],
+            label: Some("velocity".into()),
+        }];
+        let mapped = regions_to_crop_space(&regions, 2000, 1000, 400, 200, 1200, 600);
+        assert!((mapped[0].points[0].x - 83.333).abs() < 0.01);
+        assert!((mapped[0].points[0].y - 83.333).abs() < 0.01);
+        assert!((mapped[0].points[1].x - 916.666).abs() < 0.01);
+        assert!((mapped[0].points[1].y - 916.666).abs() < 0.01);
+        assert_eq!(mapped[0].label.as_deref(), Some("velocity"));
     }
 }

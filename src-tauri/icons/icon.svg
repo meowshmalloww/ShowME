@@ -1,19 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <title>ShowME folded lesson mark</title>
-  <rect x="8" y="8" width="496" height="496" rx="116" fill="#15161B"/>
-  <rect
-    x="13"
-    y="13"
-    width="486"
-    height="486"
-    rx="111"
-    fill="none"
-    stroke="#FFFFFF"
-    stroke-opacity=".14"
-    stroke-width="10"
-  />
-  <path d="m88 158 112-43v244L88 402z" fill="#F4F1E8"/>
-  <path d="m200 115 112 43v244l-112-43z" fill="#8DA5FF"/>
-  <path d="m312 158 112-43v244l-112 43z" fill="#FF7861"/>
-  <path d="M200 115v244M312 158v244" fill="none" stroke="#15161B" stroke-opacity=".16" stroke-width="10"/>
+  <title>ShowME screen selection tool</title>
+  <rect x="8" y="8" width="496" height="496" rx="108" fill="#191918"/>
+  <path d="M196 112h-84v84m204-84h84v84m0 120v84h-84M196 400h-84v-84" fill="none" stroke="#F7F7F2" stroke-width="30" stroke-linecap="square" stroke-linejoin="miter"/>
+  <path d="M176 256h160M256 176v160" fill="none" stroke="#F7F7F2" stroke-width="26" stroke-linecap="square"/>
 </svg>

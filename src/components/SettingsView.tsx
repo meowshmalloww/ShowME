@@ -16,10 +16,10 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { desktop, isTauriRuntime } from "../lib/api";
-import { TEACHING_STYLE_LABELS, VOICES } from "../lib/defaults";
+import { HOTKEYS, LANGUAGES, TEACHING_STYLE_LABELS, VOICES } from "../lib/defaults";
 import { commandErrorMessage } from "../lib/errors";
-import type { AppBootstrap, AppSettings, ProviderId } from "../lib/types";
-import { Spinner, Toggle } from "./Chrome";
+import type { AppBootstrap, AppSettings, ProviderId, ProviderModel } from "../lib/types";
+import { ProviderGlyph, Spinner, Toggle } from "./Chrome";
 
 type SettingsTab = "providers" | "teaching" | "privacy" | "accessibility";
 
@@ -35,14 +35,42 @@ export function SettingsView({
   const [selectedProvider, setSelectedProvider] = useState<ProviderId>(bootstrap.settings.provider);
   const [key, setKey] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [models, setModels] = useState<ProviderModel[]>([]);
   const [busy, setBusy] = useState<string>();
   const [notice, setNotice] = useState<string>();
   const [error, setError] = useState<string>();
   const [confirmDelete, setConfirmDelete] = useState(false);
   const provider =
     bootstrap.providers.find((item) => item.id === selectedProvider) ?? bootstrap.providers[0];
+  const selectedModel = draft.models[selectedProvider] ?? provider?.model ?? "";
+  const modelOptions = models.length
+    ? models
+    : selectedModel
+      ? [{ id: selectedModel, name: selectedModel }]
+      : [];
 
   useEffect(() => setDraft(bootstrap.settings), [bootstrap.settings]);
+
+  const loadModels = async (providerId: ProviderId) => {
+    if (!isTauriRuntime()) {
+      const current = bootstrap.settings.models[providerId];
+      const fallback = [{ id: current, name: current }];
+      setModels(fallback);
+      return fallback;
+    }
+    setBusy("models");
+    setError(undefined);
+    try {
+      const available = await desktop.listProviderModels(providerId);
+      setModels(available);
+      return available;
+    } catch (value) {
+      setError(commandErrorMessage(value));
+      return [];
+    } finally {
+      setBusy(undefined);
+    }
+  };
 
   const refresh = async (fallback: AppBootstrap = bootstrap) => {
     if (isTauriRuntime()) onSaved(await desktop.bootstrap());
@@ -75,11 +103,23 @@ export function SettingsView({
     try {
       if (isTauriRuntime()) {
         await desktop.setProviderKey(selectedProvider, key.trim());
-        await desktop.saveSettings({ ...draft, provider: selectedProvider });
+        const available = await desktop.listProviderModels(selectedProvider);
+        setModels(available);
+        const currentModel = draft.models[selectedProvider];
+        const chosenModel = available.some((item) => item.id === currentModel)
+          ? currentModel
+          : (available[0]?.id ?? currentModel);
+        const next = {
+          ...draft,
+          provider: selectedProvider,
+          models: { ...draft.models, [selectedProvider]: chosenModel },
+        };
+        setDraft(next);
+        await desktop.saveSettings(next);
       }
       setKey("");
       await refresh();
-      setNotice(`${provider?.name ?? "Provider"} key stored in the OS credential vault.`);
+      setNotice(`${provider?.name ?? "Provider"} is connected. Choose a model below.`);
     } catch (value) {
       setError(commandErrorMessage(value));
     } finally {
@@ -224,7 +264,7 @@ export function SettingsView({
               <section className="settings-section">
                 <div className="settings-section-title">
                   <div>
-                    <h2>API connections</h2>
+                    <h2>Choose a model provider</h2>
                     <p>Credentials stay in the operating system’s secure credential store.</p>
                   </div>
                   <span className="secure-label">
@@ -232,12 +272,10 @@ export function SettingsView({
                   </span>
                 </div>
                 <div className="provider-service-note">
-                  <strong>Everything that can require an API key is here.</strong>
+                  <strong>One provider is enough to start.</strong>
                   <span>
-                    OpenAI powers GPT-5.6 vision, lesson planning, web research, microphone
-                    transcription, and cloud narration. Alibaba Cloud Qwen, NVIDIA NIM, Groq,
-                    Cerebras, and OpenRouter each use their own key for lesson generation. Wikimedia
-                    image search and system speech need no key.
+                    For your Alibaba coupon, choose Alibaba Cloud Qwen and use a US-region Model
+                    Studio key.
                   </span>
                 </div>
                 <div className="settings-provider-list">
@@ -246,10 +284,16 @@ export function SettingsView({
                       type="button"
                       key={item.id}
                       className={selectedProvider === item.id ? "active" : ""}
-                      onClick={() => setSelectedProvider(item.id)}
+                      onClick={() => {
+                        setSelectedProvider(item.id);
+                        setModels([]);
+                        setKey("");
+                        setShowKey(false);
+                        if (item.configured) void loadModels(item.id);
+                      }}
                     >
-                      <span className="provider-monogram">
-                        {item.name.slice(0, 2).toUpperCase()}
+                      <span className="provider-monogram" aria-hidden="true">
+                        <ProviderGlyph provider={item.id} size={20} />
                       </span>
                       <div>
                         <strong>{item.name}</strong>
@@ -265,7 +309,12 @@ export function SettingsView({
               <section className="settings-section provider-detail">
                 <div className="settings-section-title">
                   <div>
-                    <h2>{provider.name}</h2>
+                    <h2 className="provider-title">
+                      <span aria-hidden="true">
+                        <ProviderGlyph provider={provider.id} size={22} />
+                      </span>
+                      {provider.name}
+                    </h2>
                     <p>{provider.capabilityNote}</p>
                   </div>
                   {provider.configured && (
@@ -275,24 +324,7 @@ export function SettingsView({
                   )}
                 </div>
                 <label className="settings-field">
-                  <span>Model ID</span>
-                  <input
-                    value={draft.models[selectedProvider] ?? provider.model}
-                    maxLength={200}
-                    onChange={(event) =>
-                      setDraft((current) => ({
-                        ...current,
-                        models: { ...current.models, [selectedProvider]: event.target.value },
-                      }))
-                    }
-                  />
-                </label>
-                <label className="settings-field">
-                  <span>Service endpoint</span>
-                  <input value={provider.baseUrl} readOnly aria-readonly="true" />
-                </label>
-                <label className="settings-field">
-                  <span>{provider.configured ? "Replace API key" : "API key"}</span>
+                  <span>1. {provider.configured ? "Replace API key" : "Paste API key"}</span>
                   <div className="inline-key-field">
                     <input
                       type={showKey ? "text" : "password"}
@@ -316,9 +348,46 @@ export function SettingsView({
                       onClick={saveKey}
                       disabled={!key.trim() || Boolean(busy)}
                     >
-                      {busy === "key" ? <Spinner label="Store" /> : "Store securely"}
+                      {busy === "key" ? <Spinner label="Connecting" /> : "Connect"}
                     </button>
                   </div>
+                  <small>
+                    The key is stored by your operating system, never in ShowME settings.
+                  </small>
+                </label>
+                <label className="settings-field">
+                  <span>2. Choose a model</span>
+                  <div className="model-picker-row">
+                    <select
+                      value={selectedModel}
+                      disabled={!provider.configured || busy === "models"}
+                      onChange={(event) =>
+                        setDraft((current) => ({
+                          ...current,
+                          models: { ...current.models, [selectedProvider]: event.target.value },
+                        }))
+                      }
+                    >
+                      {modelOptions.map((model) => (
+                        <option value={model.id} key={model.id}>
+                          {model.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => void loadModels(selectedProvider)}
+                      disabled={!provider.configured || Boolean(busy)}
+                      aria-label="Refresh available models"
+                    >
+                      {busy === "models" ? <Spinner label="Loading" /> : <RefreshCw size={16} />}
+                    </button>
+                  </div>
+                  <small>
+                    {provider.configured
+                      ? "Available models are loaded from this provider."
+                      : "Connect an API key before choosing a model."}
+                  </small>
                 </label>
                 <div className="provider-actions">
                   <button
@@ -442,25 +511,33 @@ export function SettingsView({
                 </label>
                 <label className="settings-field">
                   <span>Global hotkey</span>
-                  <input
+                  <select
                     value={draft.hotkey}
-                    maxLength={80}
                     onChange={(event) =>
                       setDraft((current) => ({ ...current, hotkey: event.target.value }))
                     }
-                  />
-                  <small>Example: CommandOrControl+Shift+Space</small>
+                  >
+                    {HOTKEYS.map((option) => (
+                      <option value={option.id} key={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label className="settings-field">
-                  <span>Language</span>
-                  <input
+                  <span>Lesson language</span>
+                  <select
                     value={draft.language}
-                    maxLength={32}
                     onChange={(event) =>
                       setDraft((current) => ({ ...current, language: event.target.value }))
                     }
-                  />
-                  <small>Language code or name, such as en, Spanish, or fr-CA.</small>
+                  >
+                    {LANGUAGES.map((option) => (
+                      <option value={option.id} key={option.id}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </div>
               <div className="preference-toggles">

@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  arrowGeometry,
   boundsToPixels,
   clientToNormalized,
   combinedBounds,
   normalizedToClient,
+  snapNormalizedPoint,
+  squareNormalizedPoint,
 } from "./coordinates";
 import type { SelectionRegion } from "./types";
 
@@ -44,5 +47,29 @@ describe("coordinate conversion", () => {
     expect(() => clientToNormalized({ x: 1, y: 1 }, 0, 100)).toThrow(
       "Viewport dimensions must be positive",
     );
+  });
+
+  it("snaps lines using screen-space angles instead of distorted normalized angles", () => {
+    const snapped = snapNormalizedPoint({ x: 100, y: 100 }, { x: 500, y: 780 }, 1600, 900);
+    const start = normalizedToClient({ x: 100, y: 100 }, 1600, 900);
+    const end = normalizedToClient(snapped, 1600, 900);
+    const angle = (Math.atan2(end.y - start.y, end.x - start.x) * 180) / Math.PI;
+    expect(angle).toBeCloseTo(45, 6);
+  });
+
+  it("constrains rectangles to a square in screen space", () => {
+    const constrained = squareNormalizedPoint({ x: 100, y: 100 }, { x: 300, y: 500 }, 1600, 900);
+    const start = normalizedToClient({ x: 100, y: 100 }, 1600, 900);
+    const end = normalizedToClient(constrained, 1600, 900);
+    expect(Math.abs(end.x - start.x)).toBeCloseTo(Math.abs(end.y - start.y), 6);
+  });
+
+  it("keeps an arrowhead aligned with the actual drag vector and clear of the shaft", () => {
+    const geometry = arrowGeometry({ x: 20, y: 30 }, { x: 220, y: 130 }, 3);
+    expect(geometry).toBeDefined();
+    expect(geometry?.angleDegrees).toBeCloseTo(-26.565, 2);
+    expect(geometry?.shaftEnd.x).toBeLessThan(220);
+    expect(geometry?.left).not.toEqual(geometry?.right);
+    expect(arrowGeometry({ x: 1, y: 1 }, { x: 1.5, y: 1.5 })).toBeUndefined();
   });
 });

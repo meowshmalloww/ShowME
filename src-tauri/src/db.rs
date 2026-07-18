@@ -66,6 +66,16 @@ pub fn get_settings(path: &Path) -> CommandResult<AppSettings> {
             for (provider, model) in AppSettings::default().models {
                 settings.models.entry(provider).or_insert(model);
             }
+            if settings
+                .models
+                .get(&crate::models::ProviderId::Alibaba)
+                .map(String::as_str)
+                == Some("qwen3.7-plus-us")
+            {
+                settings
+                    .models
+                    .insert(crate::models::ProviderId::Alibaba, "qwen3.7-plus".into());
+            }
             Ok(settings)
         }
         None => Ok(AppSettings::default()),

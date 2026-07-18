@@ -1,15 +1,39 @@
-import { Archive, Crosshair, LayoutDashboard, Minus, Settings, X } from "lucide-react";
+import SiAlibabacloud from "@icons-pack/react-simple-icons/icons/SiAlibabacloud.mjs";
+import SiNvidia from "@icons-pack/react-simple-icons/icons/SiNvidia.mjs";
+import SiOpenrouter from "@icons-pack/react-simple-icons/icons/SiOpenrouter.mjs";
+import {
+  Archive,
+  Cpu,
+  Gauge,
+  LayoutDashboard,
+  Minus,
+  ScanLine,
+  Settings,
+  ShieldCheck,
+  Waypoints,
+  X,
+} from "lucide-react";
 import type { ReactNode } from "react";
 import { desktop, isTauriRuntime } from "../lib/api";
+import type { ProviderId } from "../lib/types";
 
 export function BrandGlyph() {
   return (
     <svg viewBox="0 0 40 40" aria-hidden="true" focusable="false">
-      <path className="brand-glyph-page" d="m7 13 9-3.5v20L7 33z" />
-      <path className="brand-glyph-fold" d="m16 9.5 9 3.5v20l-9-3.5z" />
-      <path className="brand-glyph-reveal" d="m25 13 8-3.5v20L25 33z" />
+      <path className="brand-glyph-frame" d="M15 8H8v7m17-7h7v7m0 10v7h-7M15 32H8v-7" />
+      <path className="brand-glyph-line" d="M14 20h12M20 14v12" />
     </svg>
   );
+}
+
+export function ProviderGlyph({ provider, size = 18 }: { provider: ProviderId; size?: number }) {
+  const common = { size, "aria-hidden": true } as const;
+  if (provider === "alibaba") return <SiAlibabacloud {...common} />;
+  if (provider === "nvidia") return <SiNvidia {...common} />;
+  if (provider === "openrouter") return <SiOpenrouter {...common} />;
+  if (provider === "groq") return <Gauge {...common} strokeWidth={1.8} />;
+  if (provider === "cerebras") return <Cpu {...common} strokeWidth={1.8} />;
+  return <Waypoints {...common} strokeWidth={1.8} />;
 }
 
 export function Brand({ compact = false }: { compact?: boolean }) {
@@ -28,7 +52,7 @@ export function Brand({ compact = false }: { compact?: boolean }) {
   );
 }
 
-export function Titlebar({ preview = false }: { preview?: boolean }) {
+export function Titlebar() {
   const action = async (value: "minimize" | "hide") => {
     if (isTauriRuntime()) await desktop.windowAction(value);
   };
@@ -37,7 +61,6 @@ export function Titlebar({ preview = false }: { preview?: boolean }) {
       <div className="titlebar-brand" data-tauri-drag-region>
         <Brand compact />
         <span data-tauri-drag-region>ShowME</span>
-        {preview && <span className="preview-pill">Preview</span>}
       </div>
       <div className="titlebar-drag" data-tauri-drag-region />
       <div className="window-actions">
@@ -71,7 +94,7 @@ export function Sidebar({
   return (
     <aside className="sidebar">
       <button className="new-lesson-button" type="button" onClick={onNew}>
-        <Crosshair size={18} />
+        <ScanLine size={18} />
         New capture
       </button>
       <nav aria-label="Main navigation">
@@ -89,10 +112,10 @@ export function Sidebar({
         ))}
       </nav>
       <div className="sidebar-promise">
-        <span className="privacy-dot" />
+        <ShieldCheck size={17} />
         <div>
-          <strong>Screen access off</strong>
-          <span>Capture starts only when you ask</span>
+          <strong>Capture on request</strong>
+          <span>No background screenshots</span>
         </div>
       </div>
     </aside>

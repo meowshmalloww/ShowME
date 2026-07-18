@@ -107,6 +107,13 @@ pub struct ProviderSummary {
     pub capability_note: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderModel {
+    pub id: String,
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
@@ -140,7 +147,7 @@ impl Default for AppSettings {
             provider: ProviderId::Openai,
             models: HashMap::from([
                 (ProviderId::Openai, "gpt-5.6-sol".into()),
-                (ProviderId::Alibaba, "qwen3.7-plus-us".into()),
+                (ProviderId::Alibaba, "qwen3.7-plus".into()),
                 (
                     ProviderId::Nvidia,
                     "meta/llama-4-maverick-17b-128e-instruct".into(),
