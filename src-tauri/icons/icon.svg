@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>ShowME app icon</title>
+  <defs>
+    <linearGradient id="g" x1="80" y1="48" x2="432" y2="464" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#7CF4D6"/>
+      <stop offset="1" stop-color="#59A7FF"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="128" fill="#0E1726"/>
+  <path d="M139 196c0-83 52-132 117-132s117 49 117 132v110c0 84-53 142-117 142s-117-58-117-142V196Z" fill="url(#g)"/>
+  <path d="M163 110 113 57c-12-13-34-4-33 14l5 112 78-73Zm186 0 50-53c12-13 34-4 33 14l-5 112-78-73Z" fill="url(#g)"/>
+  <ellipse cx="208" cy="239" rx="22" ry="28" fill="#0E1726"/>
+  <ellipse cx="304" cy="239" rx="22" ry="28" fill="#0E1726"/>
+  <circle cx="216" cy="230" r="6" fill="#fff"/>
+  <circle cx="312" cy="230" r="6" fill="#fff"/>
+  <path d="M219 307c24 25 50 25 74 0" fill="none" stroke="#0E1726" stroke-width="18" stroke-linecap="round"/>
+  <path d="M256 272c-13 0-23 8-23 18 0 9 10 17 23 17s23-8 23-17c0-10-10-18-23-18Z" fill="#0E1726"/>
+  <path d="m382 323 18 40 40 18-40 18-18 40-18-40-40-18 40-18 18-40Z" fill="#FFE88A"/>
+</svg>
