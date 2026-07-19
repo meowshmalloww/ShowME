@@ -2,98 +2,83 @@
 
 > Don’t explain it. Make it visible.
 
-ShowME is a native-feeling desktop visual lesson compiler for Windows and macOS. Invoke it over anything on screen, select the exact region that is confusing, ask by voice or text, and receive a validated, interactive lesson rather than a chat-shaped explanation.
+ShowME is a screen-aware visual lesson compiler for Windows and macOS. Invoke the small top-edge island, select the exact part of the screen that is confusing, ask a question by text or push-to-talk, and receive a validated, interactive lesson instead of another chat transcript.
 
-Version `0.2.0` is a working product build, not a mockup or simulated AI flow. It includes a Tauri 2 desktop shell, invocation-only screen capture, rectangle/lasso/point/annotation selection, real provider adapters, validated visual lesson rendering, deterministic subject simulations, structured citations, local memory controls, and Windows installers. The primary workflow starts from a small top-edge launcher that reveals its controls only on hover: capture, review the approved crop, ask by text or microphone, and open the completed lesson in the main window.
+This repository is the Electron + TypeScript redesign. It does not use Tauri and it does not contain the old desktop pet.
 
-## Install on Windows
+## What is implemented
 
-- Recommended: [NSIS setup](release/ShowME-0.2.0-Windows-x64-Setup.exe)
-- Enterprise/manual deployment: [MSI package](release/ShowME-0.2.0-Windows-x64.msi)
+- A tiny top-edge dynamic-island launcher with explicit selection and voice-first hotkeys.
+- DPI-aware, multi-monitor screen capture with area, lasso, point-out arrow, point, multiple-region, and entire-screen selection.
+- Text and push-to-talk questions with Quick and cited Deep modes.
+- OpenAI Responses API integration with GPT-5.6 Sol, strict structured output, image input, native web-search citations, transcription, and optional speech.
+- OpenAI-compatible routes for Alibaba Cloud Qwen, NVIDIA NIM, Groq, Cerebras, and OpenRouter, with conservative capability gates.
+- A trusted React renderer for primitives and deterministic orbit, projectile, trigonometry, wave, circuit, event-loop, function-graph, and constrained custom-motion modules.
+- Independent Python verification and Rust display-geometry workers with TypeScript fallbacks.
+- Side, inline, and focus lesson surfaces; step playback; captions; narration; follow-up adaptations; evidence states; citations; and feedback.
+- Optional Wikimedia Commons visual references are fetched by Electron main, embedded as CSP-safe local data, and shown with source, creator, and license metadata.
+- Local SQLite lesson history and explicit learning memory, encrypted provider credentials, JSON export, and deletion controls.
+- First-run setup, provider model discovery/testing, teaching preferences, voice/language settings, and runtime readiness reporting.
+- A separate `com.showme.desktop` application identity and `ShowME-Redesign` data directory, so the legacy Rust/Tauri installation and its data are left untouched.
 
-Requirements: Windows 10 or 11 on x64, WebView2, network access for model calls, and an API key for the selected provider. The NSIS installer can bootstrap WebView2 when it is missing.
+ShowME intentionally does not create a fabricated demo lesson when no model is configured or a provider is unavailable. The UI explains the missing capability and offers remediation.
 
-The installers are development artifacts and are not code-signed. Windows SmartScreen may therefore ask for confirmation. Production distribution should add Authenticode signing, a stable publisher identity, and an update channel.
-
-## First lesson
-
-1. Open ShowME and complete the short privacy-first onboarding.
-2. Open **Settings → Providers**, select a provider, paste its API key, and run **Test connection**. Every provider credential is managed in this one screen. Keys go directly from the native settings command into the operating-system credential vault; they are not stored in frontend state, environment files, or SQLite.
-3. Press `Ctrl+Shift+Space`, hover the small top-edge ShowME tab and choose **Select from screen**, or use **New visual lesson** from the tray.
-4. Draw a rectangle or lasso around the relevant material. Point, circle, arrow, line, and label tools can make the intended focus explicit.
-5. The selected crop opens the compact question panel. Ask by text or microphone; optional nearby-screen, active-window, web-research, image-aid, copied-text, and source-URL context is available under **Context**.
-6. Press **Make it visible**. There is no fake or offline response path: generation requires a configured provider and validates the returned lesson before showing it.
-7. Manipulate the generated controls, step through the visual, play narration, inspect evidence, or expand the visualization into a focused full-workspace view.
-
-## Provider support
-
-| Provider | Default route | Screenshot input | Strict scene output | Grounded web research | Voice |
-| --- | --- | ---: | ---: | ---: | ---: |
-| OpenAI | Responses API, `gpt-5.6-sol` | Yes | Yes | Yes | OpenAI transcription and speech endpoints |
-| Alibaba Cloud Qwen | US (Virginia) OpenAI-compatible chat, `qwen3.7-plus-us` | Yes | JSON mode plus Rust validation | No ShowME-grounded route | No |
-| NVIDIA NIM | OpenAI-compatible chat completions | Model-dependent | Model-dependent; conservative default is off | No | No |
-| Groq | OpenAI-compatible chat completions | Model-dependent | Model-dependent | No | No |
-| Cerebras | OpenAI-compatible chat completions | No by default; paste text | Model-dependent | No | No |
-| OpenRouter | OpenAI-compatible chat completions | Routed-model dependent | Routed-model dependent; parameters are required | No ShowME-grounded route | No |
-
-Capability overrides are exposed because compatible providers evolve at model granularity. ShowME fails closed when a requested capability is unavailable instead of silently dropping the screenshot, schema, or research requirement. Microphone transcription and optional cloud narration require an OpenAI key even when another provider compiles the lesson; typed questions, Wikimedia image aids, and system narration require no extra key.
-
-## What is trusted
-
-The model produces data, never executable UI code. Rust validates a bounded versioned `LessonPlan` before React renders it with a fixed component library. Verified simulations implement orbit, projectile, trigonometry, wave, circuit, event-loop, and function-graph behavior. The fallback custom animation format is declarative and runs in a CSP-constrained sandbox; it cannot contain JavaScript, HTML, CSS, shell, Rust, or arbitrary URLs.
-
-Citations are retained only when they come from an explicit source URL or an actual OpenAI Responses web-search annotation. Provider-invented citation URLs are discarded. Wikimedia assets must use an allowed attribution/public-domain license and an `upload.wikimedia.org` media URL.
-
-## Privacy model
-
-- No background capture and no background microphone access.
-- A monitor snapshot is taken only after an explicit invocation.
-- The selected crop is the default model input. Nearby-screen and active-window images require per-request consent.
-- Screen images and microphone bytes are held in memory and are not written to ShowME’s SQLite database.
-- Saved lessons contain the question, plan, citations, provider/model metadata, and feedback; memory can be disabled, inspected, exported as JSON, or deleted.
-- API keys are stored in Windows Credential Manager or macOS Keychain through the native keyring.
-
-See [Privacy and security](docs/PRIVACY-SECURITY.md) for the complete data and network inventory.
-
-## Develop locally
+## Run locally
 
 Prerequisites:
 
-- Node.js compatible with Vite 8 (Node 20.19+, 22.12+, or a current LTS)
-- Rust 1.88 or newer
-- Windows: Visual Studio Build Tools with the Desktop development with C++ workload and WebView2
-- macOS: Xcode command-line tools; macOS 12.3 or newer
+- Node.js 24+
+- Rust 1.92+ for the native geometry worker
+- Python 3.12+ and PyInstaller for the packaged verifier
 
-```powershell
-npm install
-npm run check
-npm run tauri -- dev
-```
+    npm install
+    npm run build:workers
+    npm run build:icons
+    npm run dev
 
-Build a platform-native package on that platform:
+The first launch asks for a provider and API key. Keys are encrypted with Electron safeStorage, which delegates to the operating-system credential system. No keys belong in .env; .env.example documents provider names only.
 
-```powershell
-npm run tauri -- build
-```
+## Verification
 
-Provider keys are intentionally not read from `.env`. Enter them through the app so they are stored by the native credential vault. `.env.example` contains only a non-secret frontend development toggle.
+    npm run typecheck
+    npm test
+    npm run test:rust
+    npm run test:python
+    npm run build
 
-## Project map
+Create Windows installers with:
 
-- `src/components`: desktop views, selection overlay, lesson renderer, and verified simulations
-- `src/lib`: types, Zod validation, coordinate mapping, audio capture, and deterministic simulation engines
-- `public/sandbox.*`: fixed declarative custom-motion runtime
-- `src-tauri/src`: capture, providers, validation, credentials, SQLite, audio, Wikimedia, windows, tray, and commands
-- `src-tauri/capabilities`: least-privilege Tauri capability policy
-- `docs`: research, architecture, security/privacy, and QA evidence
+    npm run package:win
 
-## Documentation
+The NSIS and portable artifacts are written to release/.
 
-- [Architecture](docs/ARCHITECTURE.md)
-- [Technical research](docs/RESEARCH.md)
-- [Privacy and security](docs/PRIVACY-SECURITY.md)
-- [QA and release evidence](docs/QA.md)
+## Repository map
 
-## Honest platform status
+    src/main/                 Electron authority: windows, capture, network, secrets, SQLite
+    src/preload/              Minimal typed IPC bridge
+    src/renderer/             Sandboxed React windows and trusted visual renderer
+    src/shared/               Schemas, coordinates, types, deterministic TypeScript modules
+    workers/native/           Rust geometry/DPI process
+    workers/python/           Python numerical verifier
+    tests/                    Schema, geometry, simulation, and persistence tests
+    assets/                   Source and generated application icons
 
-Windows x64 was compiled, linted, tested, packaged as NSIS and MSI, launched natively, and exercised through the real pet → capture overlay → crop handoff. Pet transparency, the compact question panel, provider settings, and saved pet-size control were visually inspected in the packaged application. Live model, speech, and provider connection tests require user-owned credentials and were not fabricated. The macOS paths, minimum version, credential-vault integration, and capture abstraction are implemented in source, but this release was not compiled, permission-tested, signed, or notarized on macOS. A public macOS release must be built and verified on Apple hardware.
+For the full boundaries and flow, see [ARCHITECTURE.md](ARCHITECTURE.md). For data handling, see [PRIVACY-SECURITY.md](PRIVACY-SECURITY.md). For tested and manual scenarios, see [QA.md](QA.md).
+
+## Provider behavior
+
+OpenAI is the reference path because it supports the complete combination of image input, strict Responses API output, web-search annotations, transcription, and speech. Other provider integrations use their official OpenAI-compatible endpoints and are capability-gated. A provider or model that cannot see images will not be asked to interpret a screenshot unless the user supplies copied text or deliberately overrides its capability.
+
+Deep mode requires a native, citation-bearing web-search route. In the current build that means OpenAI. Quick mode avoids web research unless the user enabled it as a default.
+
+## Known limitations
+
+- Push-to-talk and global voice capture are implemented; continuous wake-word listening is intentionally not present.
+- Arbitrary desktop context currently uses selected screenshot pixels and user-supplied text/URLs. Native OCR and Windows UI Automation/macOS Accessibility text extraction are not integrated yet.
+- Generation reports honest pipeline progress, but the trusted visual lesson appears only after the complete structured plan validates; partial model JSON is never rendered as a lesson.
+- This release is built and tested on Windows. The Electron architecture includes macOS permission handling, but no macOS release is claimed without testing on an actual Mac.
+- Provider-dependent end-to-end checks require the tester’s own credentials and are never replaced by fixture output in the production app.
+
+## License
+
+Apache-2.0. See [LICENSE](LICENSE).

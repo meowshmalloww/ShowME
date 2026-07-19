@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <title>ShowME screen selection tool</title>
-  <rect x="8" y="8" width="496" height="496" rx="108" fill="#191918"/>
-  <path d="M196 112h-84v84m204-84h84v84m0 120v84h-84M196 400h-84v-84" fill="none" stroke="#F7F7F2" stroke-width="30" stroke-linecap="square" stroke-linejoin="miter"/>
-  <path d="M176 256h160M256 176v160" fill="none" stroke="#F7F7F2" stroke-width="26" stroke-linecap="square"/>
-</svg>

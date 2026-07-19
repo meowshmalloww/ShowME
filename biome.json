@@ -1,7 +1,15 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.4/schema.json",
   "files": {
-    "includes": ["**", "!node_modules", "!dist", "!src-tauri/target", "!src-tauri/gen"]
+    "includes": [
+      "**",
+      "!node_modules",
+      "!out",
+      "!release",
+      "!workers/native/target",
+      "!workers/python/build",
+      "!workers/python/dist"
+    ]
   },
   "formatter": {
     "enabled": true,
@@ -13,14 +21,8 @@
     "enabled": true,
     "rules": {
       "preset": "recommended",
-      "complexity": {
-        "noImportantStyles": "off"
-      },
-      "style": {
-        "noDescendingSpecificity": "off"
-      },
       "suspicious": {
-        "noExplicitAny": "error"
+        "noExplicitAny": "off"
       }
     }
   },

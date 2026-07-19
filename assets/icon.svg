@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>ShowME application icon</title>
+  <rect width="1024" height="1024" rx="184" fill="#f4f2ed"/>
+  <g fill="none" stroke="#111113" stroke-width="76" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M190 360V190h170"/>
+    <path d="M664 190h170v170"/>
+    <path d="M190 664v170h170"/>
+    <path d="M664 834h170V664"/>
+  </g>
+  <path d="M392 315h160l112 112v158L392 680V315Z" fill="#111113"/>
+  <path d="m408 696 168-91v174L408 696Z" fill="#111113"/>
+</svg>

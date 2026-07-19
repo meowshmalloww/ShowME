@@ -1,20 +1,18 @@
 node_modules/
-dist/
-.DS_Store
+out/
+release/
+coverage/
 *.log
-*.local
+*.tsbuildinfo
 .env
 .env.*
 !.env.example
-src-tauri/target/
-src-tauri/gen/
-coverage/
-test-results/
-release/
-
-# `tauri icon` creates mobile and Store raster variants. Keep only the editable
-# source plus the two desktop bundle formats required by Windows and macOS.
-src-tauri/icons/*
-!src-tauri/icons/icon.svg
-!src-tauri/icons/icon.ico
-!src-tauri/icons/icon.icns
+workers/native/target/
+workers/python/build/
+workers/python/dist/
+workers/python/*.spec
+__pycache__/
+*.pyc
+resources/icon.ico
+resources/icon.icns
+resources/icon.png

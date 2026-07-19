@@ -1,0 +1,51 @@
+appId: com.showme.desktop
+productName: ShowME
+asar: true
+directories:
+  output: release
+files:
+  - out/**
+  - assets/icon.png
+  - package.json
+extraResources:
+  - from: workers/python/verify.py
+    to: workers/verify.py
+  - from: workers/wake/showme-wake.ps1
+    to: workers/showme-wake.ps1
+  - from: assets/icon.svg
+    to: icon.svg
+win:
+  target:
+    - nsis
+    - portable
+  icon: assets/icon.ico
+  requestedExecutionLevel: asInvoker
+  extraResources:
+    - from: workers/native/target/release/showme-native.exe
+      to: workers/showme-native.exe
+    - from: workers/python/dist/showme-verify.exe
+      to: workers/showme-verify.exe
+nsis:
+  artifactName: ${productName}-Setup-${version}-${os}-${arch}.${ext}
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: ShowME
+portable:
+  artifactName: ${productName}-Portable-${version}-${os}-${arch}.${ext}
+mac:
+  target:
+    - dmg
+    - zip
+  icon: assets/icon.png
+  category: public.app-category.education
+  minimumSystemVersion: "12.3.0"
+  extendInfo:
+    NSScreenCaptureUsageDescription: ShowME captures only the screen area you explicitly select so it can create a visual lesson.
+    NSMicrophoneUsageDescription: ShowME uses the microphone only while you hold push-to-talk.
+linux:
+  target:
+    - AppImage
+  icon: assets/icon.png
+  category: Education
