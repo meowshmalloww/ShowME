@@ -50,6 +50,8 @@ export const CHANNELS = {
   voiceTranscribe: "voice:transcribe",
   voiceSynthesize: "voice:synthesize",
   voiceActivity: "voice:activity",
+  wakeAudio: "wake:audio",
+  wakeInputState: "wake:input-state",
   memoryListLessons: "memory:list-lessons",
   memoryGetLesson: "memory:get-lesson",
   memoryDeleteLesson: "memory:delete-lesson",
@@ -95,6 +97,12 @@ export interface CaptureCommitInput {
 export interface AudioInput {
   bytes: Uint8Array;
   mimeType: string;
+}
+
+export interface WakeInputState {
+  state: "starting" | "ready" | "error" | "stopped";
+  message: string;
+  deviceLabel?: string;
 }
 
 export interface AdaptLessonInput {
@@ -149,6 +157,10 @@ export interface ShowMEApi {
     transcribe(input: AudioInput): Promise<string>;
     synthesize(text: string): Promise<{ bytes: Uint8Array; mimeType: string }>;
     activity(state: VoiceActivityState): Promise<void>;
+  };
+  wake: {
+    pushAudio(bytes: Uint8Array): void;
+    inputState(state: WakeInputState): void;
   };
   memory: {
     listLessons(query?: string): Promise<LessonReceipt[]>;

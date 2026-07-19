@@ -2,7 +2,8 @@ param(
   [string]$WakePhrase = "ShowME",
   [double]$ConfidenceThreshold = 0.42,
   [switch]$SelfTest,
-  [switch]$Probe
+  [switch]$Probe,
+  [switch]$StreamInput
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,14 +60,20 @@ try {
   $builder.Append($choices)
   $grammar = [System.Speech.Recognition.Grammar]::new($builder)
   $recognizer.LoadGrammar($grammar)
+  $audioFormat = [System.Speech.AudioFormat.SpeechAudioFormatInfo]::new(
+    16000,
+    [System.Speech.AudioFormat.AudioBitsPerSample]::Sixteen,
+    [System.Speech.AudioFormat.AudioChannel]::Mono
+  )
   if ($SelfTest) {
-    $temporaryWave = Join-Path ([System.IO.Path]::GetTempPath()) ("showme-wake-" + [guid]::NewGuid().ToString("N") + ".wav")
     $synthesizer = [System.Speech.Synthesis.SpeechSynthesizer]::new()
+    $selfTestAudio = [System.IO.MemoryStream]::new()
     try {
-      $synthesizer.SetOutputToWaveFile($temporaryWave)
+      $synthesizer.SetOutputToAudioStream($selfTestAudio, $audioFormat)
       $synthesizer.Speak("Hey show me")
       $synthesizer.SetOutputToNull()
-      $recognizer.SetInputToWaveFile($temporaryWave)
+      $selfTestAudio.Position = 0
+      $recognizer.SetInputToAudioStream($selfTestAudio, $audioFormat)
       $result = $recognizer.Recognize([TimeSpan]::FromSeconds(8))
       $success = $null -ne $result -and $result.Confidence -ge $ConfidenceThreshold
       [Console]::Out.WriteLine((@{
@@ -80,8 +87,53 @@ try {
       exit 0
     } finally {
       $synthesizer.Dispose()
-      Remove-Item -LiteralPath $temporaryWave -ErrorAction SilentlyContinue
+      $selfTestAudio.Dispose()
     }
+  }
+  if ($StreamInput) {
+    [Console]::Out.WriteLine((@{
+      type = "ready"
+      culture = $recognizerCulture.Name
+      recognizer = $recognizerInfo.Description
+    } | ConvertTo-Json -Compress))
+    while ($null -ne ($inputLine = [Console]::In.ReadLine())) {
+      $windowAudio = $null
+      try {
+        $command = $inputLine | ConvertFrom-Json
+        if ($command.type -ne "audio" -or [string]::IsNullOrWhiteSpace($command.pcm)) {
+          continue
+        }
+        $audioBytes = [Convert]::FromBase64String($command.pcm)
+        if ($audioBytes.Length -lt 3200 -or $audioBytes.Length -gt 128000) {
+          continue
+        }
+        $windowAudio = [System.IO.MemoryStream]::new($audioBytes, $false)
+        $recognizer.SetInputToAudioStream($windowAudio, $audioFormat)
+        $result = $recognizer.Recognize([TimeSpan]::FromSeconds(5))
+        if ($null -ne $result -and $result.Confidence -ge $script:confidenceThreshold) {
+          [Console]::Out.WriteLine((@{
+            type = "wake"
+            phrase = $result.Text
+            confidence = [Math]::Round($result.Confidence, 3)
+          } | ConvertTo-Json -Compress))
+        } else {
+          [Console]::Out.WriteLine((@{
+            type = "processed"
+            phrase = if ($null -ne $result) { $result.Text } else { "" }
+            confidence = if ($null -ne $result) { [Math]::Round($result.Confidence, 3) } else { 0 }
+          } | ConvertTo-Json -Compress))
+        }
+      } catch {
+        [Console]::Out.WriteLine((@{
+          type = "processed"
+          message = $_.Exception.Message
+        } | ConvertTo-Json -Compress))
+      } finally {
+        try { $recognizer.SetInputToNull() } catch {}
+        if ($null -ne $windowAudio) { $windowAudio.Dispose() }
+      }
+    }
+    exit 0
   }
   $recognizer.SetInputToDefaultAudioDevice()
 

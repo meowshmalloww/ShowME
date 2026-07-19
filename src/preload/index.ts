@@ -53,6 +53,10 @@ const api: ShowMEApi = {
     synthesize: (text) => invoke(CHANNELS.voiceSynthesize, text),
     activity: (state) => invoke(CHANNELS.voiceActivity, state),
   },
+  wake: {
+    pushAudio: (bytes) => ipcRenderer.send(CHANNELS.wakeAudio, bytes),
+    inputState: (state) => ipcRenderer.send(CHANNELS.wakeInputState, state),
+  },
   memory: {
     listLessons: (query) => invoke(CHANNELS.memoryListLessons, query),
     getLesson: (id) => invoke(CHANNELS.memoryGetLesson, id),

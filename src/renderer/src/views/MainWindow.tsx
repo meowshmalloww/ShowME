@@ -706,16 +706,16 @@ function SettingsView({
           label="About"
           onClick={() => selectPage("about")}
         />
-      </aside>
-      <section className="settings-panel" ref={panel}>
         {page !== "about" ? (
-          <div className="settings-topbar">
+          <div className="settings-save-rail">
             <span>Changes stay on this device.</span>
             <button className="primary-button" onClick={onSaved} type="button">
               <Check size={16} /> Save changes
             </button>
           </div>
         ) : null}
+      </aside>
+      <section className="settings-panel" ref={panel}>
         {page === "models" ? (
           <ModelsSettings
             providers={bootstrap.providers}
@@ -1439,7 +1439,7 @@ function VoiceSettings({
           </button>
         </div>
         <label>
-          <span>Microphone for questions</span>
+          <span>Wake & question microphone</span>
           <select
             value={draft.microphoneDeviceId}
             onChange={(event) => {
@@ -1459,8 +1459,9 @@ function VoiceSettings({
             ))}
           </select>
           <small>
-            Voice questions use this device. The lightweight Windows wake listener uses the current
-            Windows default input.
+            Wake listening, the live level meter, and voice questions all use this device. ShowME
+            keeps wake audio local and sends only a recorded question to your chosen transcription
+            provider.
           </small>
         </label>
         <div className="microphone-test-row">

@@ -2,6 +2,7 @@ import { writeFile } from "node:fs/promises";
 import {
   BrowserWindow,
   dialog,
+  type IpcMainEvent,
   type IpcMainInvokeEvent,
   ipcMain,
   shell,
@@ -14,6 +15,7 @@ import {
   type CaptureCommitInput,
   CHANNELS,
   type IpcResult,
+  type WakeInputState,
 } from "../shared/ipc";
 import { providerSummaries } from "../shared/providers";
 import { providerIdSchema } from "../shared/schema";
@@ -45,6 +47,8 @@ interface IpcDependencies {
   appVersion: string;
   onSettingsChanged: (settings: AppSettings) => void;
   onVoiceActivity: (state: VoiceActivityState) => void;
+  onWakeAudio: (bytes: Uint8Array) => void;
+  onWakeInputState: (state: WakeInputState) => void;
   getWakeStatus: () => WakeListenerStatus;
 }
 
@@ -210,6 +214,33 @@ export function registerIpc(dependencies: IpcDependencies): void {
     dependencies.onVoiceActivity(state);
   });
 
+  listen(CHANNELS.wakeAudio, (event, rawBytes: unknown) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== windows.getLauncher()) return;
+    const bytes =
+      rawBytes instanceof Uint8Array
+        ? rawBytes
+        : rawBytes instanceof ArrayBuffer
+          ? new Uint8Array(rawBytes)
+          : null;
+    if (!bytes || bytes.byteLength === 0 || bytes.byteLength > 65_536) return;
+    dependencies.onWakeAudio(bytes);
+  });
+  listen(CHANNELS.wakeInputState, (event, rawState: unknown) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== windows.getLauncher()) return;
+    if (!rawState || typeof rawState !== "object") return;
+    const candidate = rawState as Partial<WakeInputState>;
+    if (!candidate.state || !["starting", "ready", "error", "stopped"].includes(candidate.state)) {
+      return;
+    }
+    dependencies.onWakeInputState({
+      state: candidate.state,
+      message: String(candidate.message ?? "Wake microphone state changed.").slice(0, 300),
+      ...(candidate.deviceLabel
+        ? { deviceLabel: String(candidate.deviceLabel).slice(0, 160) }
+        : {}),
+    });
+  });
+
   handle(CHANNELS.memoryListLessons, async (_event, query?: string) =>
     store.listLessons(query ?? ""),
   );
@@ -256,7 +287,22 @@ function handle<T>(
   });
 }
 
-function assertTrustedSender(event: IpcMainInvokeEvent): void {
+function listen(
+  channel: string,
+  listener: (event: IpcMainEvent, ...args: unknown[]) => void,
+): void {
+  ipcMain.removeAllListeners(channel);
+  ipcMain.on(channel, (event, ...args) => {
+    try {
+      assertTrustedSender(event);
+      listener(event, ...args);
+    } catch {
+      // One-way wake-audio events are intentionally dropped when validation fails.
+    }
+  });
+}
+
+function assertTrustedSender(event: IpcMainInvokeEvent | IpcMainEvent): void {
   const source = event.senderFrame?.url ?? event.sender.getURL();
   const developmentUrl = process.env.ELECTRON_RENDERER_URL;
   const trusted =

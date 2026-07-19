@@ -68,17 +68,17 @@ export function SelectionOverlay() {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
         event.preventDefault();
         if (event.shiftKey) {
-          setRedo((current) => {
-            const item = current.at(-1);
-            if (item) setRegions((items) => [...items, item]);
-            return current.slice(0, -1);
-          });
+          const item = redo.at(-1);
+          if (item) {
+            setRedo(redo.slice(0, -1));
+            setRegions([...regions, item]);
+          }
         } else {
-          setRegions((current) => {
-            const item = current.at(-1);
-            if (item) setRedo((redoItems) => [...redoItems, item]);
-            return current.slice(0, -1);
-          });
+          const item = regions.at(-1);
+          if (item) {
+            setRegions(regions.slice(0, -1));
+            setRedo([...redo, item]);
+          }
         }
       }
       if (event.key === "Enter" && regions.length > 0 && capture && !committing) {
@@ -94,7 +94,7 @@ export function SelectionOverlay() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [capture, committing, regions]);
+  }, [capture, committing, redo, regions]);
 
   const allRegions = useMemo(() => (draft ? [...regions, draft] : regions), [regions, draft]);
 
@@ -118,7 +118,7 @@ export function SelectionOverlay() {
       points: tool === "point" ? [start] : tool === "lasso" ? [start] : [start, start],
     };
     if (tool === "point") {
-      setRegions((current) => [...current, region]);
+      setRegions([...regions, region]);
       setRedo([]);
     } else {
       draftRef.current = region;
@@ -127,11 +127,17 @@ export function SelectionOverlay() {
   };
 
   const pointerMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
-    if (!draft || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
+    if (!draftRef.current || !event.currentTarget.hasPointerCapture(event.pointerId)) return;
     let next = pointFromEvent(event);
-    if (draft.kind === "arrow" && event.shiftKey) {
+    if (draftRef.current.kind === "arrow" && event.shiftKey) {
       const rect = surface.current?.getBoundingClientRect();
-      if (rect) next = snapNormalizedPoint(draft.points[0] ?? next, next, rect.width, rect.height);
+      if (rect)
+        next = snapNormalizedPoint(
+          draftRef.current.points[0] ?? next,
+          next,
+          rect.width,
+          rect.height,
+        );
     }
     setDraft((current) => {
       if (!current) return null;
@@ -156,14 +162,16 @@ export function SelectionOverlay() {
       event.currentTarget.releasePointerCapture(event.pointerId);
     const end = pointFromEvent(event);
     const finalized =
-      currentDraft.kind === "lasso" ? finalizeLasso(currentDraft, end) : currentDraft;
+      currentDraft.kind === "lasso"
+        ? finalizeLasso(currentDraft, end)
+        : { ...currentDraft, points: [currentDraft.points[0] ?? end, end] };
     const bounds = regionDimensions(finalized);
     const valid =
       finalized.kind === "lasso"
         ? finalized.points.length >= 3 && bounds.width > 5 && bounds.height > 5
         : bounds.width > 5 || bounds.height > 5;
     if (valid) {
-      setRegions((current) => [...current, finalized]);
+      setRegions([...regions, finalized]);
       setRedo([]);
     }
     draftRef.current = null;
@@ -171,19 +179,17 @@ export function SelectionOverlay() {
   };
 
   const undo = (): void => {
-    setRegions((current) => {
-      const item = current.at(-1);
-      if (item) setRedo((redoItems) => [...redoItems, item]);
-      return current.slice(0, -1);
-    });
+    const item = regions.at(-1);
+    if (!item) return;
+    setRegions(regions.slice(0, -1));
+    setRedo([...redo, item]);
   };
 
   const redoLast = (): void => {
-    setRedo((current) => {
-      const item = current.at(-1);
-      if (item) setRegions((items) => [...items, item]);
-      return current.slice(0, -1);
-    });
+    const item = redo.at(-1);
+    if (!item) return;
+    setRedo(redo.slice(0, -1));
+    setRegions([...regions, item]);
   };
 
   const commit = async (selected: SelectionRegion[]): Promise<void> => {

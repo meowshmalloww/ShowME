@@ -392,6 +392,7 @@ export class WindowManager {
         nodeIntegrationInWorker: false,
         webSecurity: true,
         allowRunningInsecureContent: false,
+        backgroundThrottling: role !== "launcher",
         spellcheck: false,
       },
     });

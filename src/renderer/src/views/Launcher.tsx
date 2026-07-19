@@ -1,5 +1,6 @@
 import { ArrowUp, Mic, MousePointer2, Scan, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { downsampleToPcm16, floatRmsLevel } from "../../../shared/audio";
 import type {
   AppBootstrap,
   LauncherMode,
@@ -32,6 +33,12 @@ export function Launcher() {
   const captureButton = useRef<HTMLButtonElement | null>(null);
   const recorder = useRef<MediaRecorder | null>(null);
   const audioContext = useRef<AudioContext | null>(null);
+  const wakeStream = useRef<MediaStream | null>(null);
+  const wakeContext = useRef<AudioContext | null>(null);
+  const wakeProcessor = useRef<ScriptProcessorNode | null>(null);
+  const wakeSource = useRef<MediaStreamAudioSourceNode | null>(null);
+  const wakeMute = useRef<GainNode | null>(null);
+  const wakeGeneration = useRef(0);
   const chunks = useRef<Blob[]>([]);
   const bootstrapRef = useRef<AppBootstrap | null>(null);
   const contextRef = useRef<PreparedContext | null>(null);
@@ -49,6 +56,119 @@ export function Launcher() {
     if (activeContext && activeContext.state !== "closed") void activeContext.close();
     setVoiceLevels(EMPTY_LEVELS);
   }, []);
+
+  const stopWakeInput = useCallback((reportStopped = false): void => {
+    wakeGeneration.current += 1;
+    if (wakeProcessor.current) wakeProcessor.current.onaudioprocess = null;
+    wakeProcessor.current?.disconnect();
+    wakeSource.current?.disconnect();
+    wakeMute.current?.disconnect();
+    wakeProcessor.current = null;
+    wakeSource.current = null;
+    wakeMute.current = null;
+    for (const track of wakeStream.current?.getTracks() ?? []) track.stop();
+    wakeStream.current = null;
+    const context = wakeContext.current;
+    wakeContext.current = null;
+    if (context && context.state !== "closed") void context.close();
+    setWakeLevel(0);
+    if (reportStopped) {
+      window.showme.wake.inputState({
+        state: "stopped",
+        message: "Wake microphone standby is off.",
+      });
+    }
+  }, []);
+
+  const startWakeInput = useCallback(
+    async (settings: AppBootstrap["settings"]): Promise<void> => {
+      stopWakeInput(false);
+      const generation = wakeGeneration.current + 1;
+      wakeGeneration.current = generation;
+      window.showme.wake.inputState({
+        state: "starting",
+        message: "Opening the selected microphone; speak once to verify its signal.",
+      });
+      try {
+        const opened = await openConfiguredMicrophone(settings);
+        if (wakeGeneration.current !== generation) {
+          for (const staleTrack of opened.stream.getTracks()) staleTrack.stop();
+          return;
+        }
+        const track = opened.stream.getAudioTracks()[0];
+        if (!track) throw new Error("The selected microphone did not provide an audio track.");
+        const detectedDeviceLabel = track.label || "selected microphone";
+        const deviceLabel = opened.fellBackToDefault
+          ? `System default fallback: ${detectedDeviceLabel}`
+          : detectedDeviceLabel;
+        const context = new AudioContext({ latencyHint: "interactive" });
+        await context.resume();
+        if (wakeGeneration.current !== generation) {
+          for (const staleTrack of opened.stream.getTracks()) staleTrack.stop();
+          await context.close();
+          return;
+        }
+        const source = context.createMediaStreamSource(opened.stream);
+        const processor = context.createScriptProcessor(2048, 1, 1);
+        const mute = context.createGain();
+        mute.gain.value = 0;
+        source.connect(processor);
+        processor.connect(mute);
+        mute.connect(context.destination);
+        wakeStream.current = opened.stream;
+        wakeContext.current = context;
+        wakeSource.current = source;
+        wakeProcessor.current = processor;
+        wakeMute.current = mute;
+        let signalReported = false;
+        processor.onaudioprocess = (event) => {
+          if (wakeGeneration.current !== generation) return;
+          const samples = event.inputBuffer.getChannelData(0);
+          const rms = floatRmsLevel(samples);
+          setWakeLevel(Math.min(1, rms * 8.5));
+          const pcm = downsampleToPcm16(samples, context.sampleRate);
+          if (pcm.byteLength > 0) window.showme.wake.pushAudio(new Uint8Array(pcm.buffer));
+          if (!signalReported && rms >= 0.0025) {
+            signalReported = true;
+            window.showme.wake.inputState({
+              state: "ready",
+              message: opened.fellBackToDefault
+                ? "The saved microphone was unavailable; wake listening is using the system default."
+                : "Live microphone signal detected.",
+              deviceLabel,
+            });
+          }
+        };
+        track.addEventListener(
+          "ended",
+          () => {
+            if (wakeGeneration.current !== generation) return;
+            window.showme.wake.inputState({
+              state: "error",
+              message:
+                "The wake microphone disconnected. Choose another input in Voice & language.",
+              deviceLabel,
+            });
+            stopWakeInput(false);
+          },
+          { once: true },
+        );
+        window.showme.wake.inputState({
+          state: "starting",
+          message: `Microphone open (${deviceLabel}); waiting for a live sound signal.`,
+          deviceLabel,
+        });
+      } catch (reason) {
+        if (wakeGeneration.current !== generation) return;
+        stopWakeInput(false);
+        window.showme.wake.inputState({
+          state: "error",
+          message: `Wake microphone unavailable: ${errorMessage(reason)}`,
+        });
+      }
+    },
+    [stopWakeInput],
+  );
 
   const submitText = useCallback(async (rawQuestion: string): Promise<void> => {
     const activeBootstrap = bootstrapRef.current;
@@ -91,6 +211,7 @@ export function Launcher() {
   const startRecording = useCallback(
     async (automatic = false): Promise<void> => {
       if (recorder.current) return;
+      stopWakeInput(false);
       setError("");
       try {
         const settings = bootstrapRef.current?.settings;
@@ -195,7 +316,7 @@ export function Launcher() {
         await window.showme.voice.activity("idle");
       }
     },
-    [stopAudioMonitoring, submitText],
+    [stopAudioMonitoring, stopWakeInput, submitText],
   );
 
   const closeQuestion = useCallback(async (): Promise<void> => {
@@ -247,8 +368,24 @@ export function Launcher() {
       window.removeEventListener("keydown", onKey);
       if (leaveTimer.current) window.clearTimeout(leaveTimer.current);
       stopAudioMonitoring();
+      stopWakeInput(false);
     };
-  }, [closeQuestion, startRecording, stopAudioMonitoring]);
+  }, [closeQuestion, startRecording, stopAudioMonitoring, stopWakeInput]);
+
+  useEffect(() => {
+    const settings = bootstrap?.settings;
+    if (!settings || bootstrap.platform !== "win32") return;
+    if (!settings.wakeEnabled) {
+      stopWakeInput(true);
+      return;
+    }
+    if (mode === "idle" || mode === "revealed") {
+      void startWakeInput(settings);
+    } else {
+      stopWakeInput(false);
+    }
+    return () => stopWakeInput(false);
+  }, [bootstrap?.platform, bootstrap?.settings, mode, startWakeInput, stopWakeInput]);
 
   useEffect(() => {
     if (mode !== "revealed") return;

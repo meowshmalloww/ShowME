@@ -73,6 +73,8 @@ async function startApplication(): Promise<void> {
       wakeWord?.configure(settings.wakeEnabled, settings.assistantName, settings.wakeSensitivity);
     },
     onVoiceActivity: handleVoiceActivity,
+    onWakeAudio: (bytes) => wakeWord?.pushAudio(bytes),
+    onWakeInputState: (state) => wakeWord?.reportInputState(state),
     getWakeStatus: () =>
       wakeWord?.currentStatus() ?? {
         state: "disabled",
