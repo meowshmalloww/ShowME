@@ -1,3 +1,4 @@
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::io::{self, Read};
@@ -40,6 +41,12 @@ enum Command {
         point: Point,
         tolerance: f64,
         regions: Vec<Region>,
+    },
+    ProtectSecret {
+        plaintext: String,
+    },
+    UnprotectSecret {
+        ciphertext: String,
     },
 }
 
@@ -107,7 +114,108 @@ fn execute(command: Command) -> Result<Value, String> {
                 .unwrap_or(-1);
             Ok(json!({ "index": index }))
         }
+        Command::ProtectSecret { plaintext } => {
+            let protected = protect_secret(plaintext.as_bytes())?;
+            Ok(json!({ "ciphertext": BASE64.encode(protected) }))
+        }
+        Command::UnprotectSecret { ciphertext } => {
+            let protected = BASE64
+                .decode(ciphertext)
+                .map_err(|_| "Credential ciphertext is not valid base64".to_string())?;
+            let plaintext = unprotect_secret(&protected)?;
+            let decoded = String::from_utf8(plaintext)
+                .map_err(|_| "Credential plaintext is not valid UTF-8".to_string())?;
+            Ok(json!({ "plaintext": decoded }))
+        }
     }
+}
+
+#[cfg(windows)]
+fn protect_secret(plaintext: &[u8]) -> Result<Vec<u8>, String> {
+    use std::{ptr, slice};
+    use windows_sys::Win32::Foundation::{GetLastError, LocalFree};
+    use windows_sys::Win32::Security::Cryptography::{
+        CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN, CryptProtectData,
+    };
+
+    let mut input = CRYPT_INTEGER_BLOB {
+        cbData: plaintext.len() as u32,
+        pbData: plaintext.as_ptr().cast_mut(),
+    };
+    let entropy_bytes = b"ShowME credentials v2";
+    let mut entropy = CRYPT_INTEGER_BLOB {
+        cbData: entropy_bytes.len() as u32,
+        pbData: entropy_bytes.as_ptr().cast_mut(),
+    };
+    let mut output = CRYPT_INTEGER_BLOB { cbData: 0, pbData: ptr::null_mut() };
+    let succeeded = unsafe {
+        CryptProtectData(
+            &mut input,
+            ptr::null(),
+            &mut entropy,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            CRYPTPROTECT_UI_FORBIDDEN,
+            &mut output,
+        )
+    };
+    if succeeded == 0 {
+        return Err(format!("Windows DPAPI encryption failed ({})", unsafe { GetLastError() }));
+    }
+    let protected = unsafe { slice::from_raw_parts(output.pbData, output.cbData as usize) }.to_vec();
+    unsafe {
+        LocalFree(output.pbData.cast());
+    }
+    Ok(protected)
+}
+
+#[cfg(windows)]
+fn unprotect_secret(ciphertext: &[u8]) -> Result<Vec<u8>, String> {
+    use std::{ptr, slice};
+    use windows_sys::Win32::Foundation::{GetLastError, LocalFree};
+    use windows_sys::Win32::Security::Cryptography::{
+        CRYPT_INTEGER_BLOB, CRYPTPROTECT_UI_FORBIDDEN, CryptUnprotectData,
+    };
+
+    let mut input = CRYPT_INTEGER_BLOB {
+        cbData: ciphertext.len() as u32,
+        pbData: ciphertext.as_ptr().cast_mut(),
+    };
+    let entropy_bytes = b"ShowME credentials v2";
+    let mut entropy = CRYPT_INTEGER_BLOB {
+        cbData: entropy_bytes.len() as u32,
+        pbData: entropy_bytes.as_ptr().cast_mut(),
+    };
+    let mut output = CRYPT_INTEGER_BLOB { cbData: 0, pbData: ptr::null_mut() };
+    let succeeded = unsafe {
+        CryptUnprotectData(
+            &mut input,
+            ptr::null_mut(),
+            &mut entropy,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            CRYPTPROTECT_UI_FORBIDDEN,
+            &mut output,
+        )
+    };
+    if succeeded == 0 {
+        return Err(format!("Windows DPAPI decryption failed ({})", unsafe { GetLastError() }));
+    }
+    let plaintext = unsafe { slice::from_raw_parts(output.pbData, output.cbData as usize) }.to_vec();
+    unsafe {
+        LocalFree(output.pbData.cast());
+    }
+    Ok(plaintext)
+}
+
+#[cfg(not(windows))]
+fn protect_secret(_plaintext: &[u8]) -> Result<Vec<u8>, String> {
+    Err("Native credential protection is available on Windows only".into())
+}
+
+#[cfg(not(windows))]
+fn unprotect_secret(_ciphertext: &[u8]) -> Result<Vec<u8>, String> {
+    Err("Native credential protection is available on Windows only".into())
 }
 
 fn validate_regions(regions: &[Region]) -> Result<(), String> {
@@ -212,5 +320,14 @@ mod tests {
         let bounds = to_pixels(combined_bounds(&[], 16.0), 2560, 1440);
         assert_eq!(bounds.width, 2560.0);
         assert_eq!(bounds.height, 1440.0);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn protects_credentials_for_the_current_windows_user() {
+        let plaintext = b"{\"nvidia\":\"test-secret\"}";
+        let protected = protect_secret(plaintext).expect("DPAPI should protect a credential");
+        assert_ne!(protected, plaintext);
+        assert_eq!(unprotect_secret(&protected).expect("DPAPI should decrypt it"), plaintext);
     }
 }

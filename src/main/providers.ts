@@ -1,4 +1,5 @@
 import { CommandError, redactSecrets } from "../shared/errors";
+import { mergeProviderModels } from "../shared/model-catalog";
 import { effectiveCapabilities, PROVIDER_DEFINITIONS } from "../shared/providers";
 import { lessonJsonSchema, validateLessonPlan } from "../shared/schema";
 import type {
@@ -50,7 +51,7 @@ export class ProviderService {
     try {
       return finalizePlan(response, request);
     } catch (firstError) {
-      response = await this.requestModel(options, key, true, firstError);
+      response = await this.requestModel(options, key, true, firstError, response.text);
       try {
         return finalizePlan(response, request);
       } catch (secondError) {
@@ -72,21 +73,21 @@ export class ProviderService {
     const body = await parseResponseBody(response);
     if (!response.ok) throw apiError(provider, response, body);
     const data = asRecord(body).data;
-    if (!Array.isArray(data)) return [];
-    return data
-      .flatMap((item): ProviderModel[] => {
-        const record = asRecord(item);
-        return typeof record.id === "string"
-          ? [
-              {
-                id: record.id,
-                name: typeof record.name === "string" ? record.name : record.id,
-                ...(typeof record.owned_by === "string" ? { ownedBy: record.owned_by } : {}),
-              },
-            ]
-          : [];
-      })
-      .sort((a, b) => a.id.localeCompare(b.id));
+    const discovered = Array.isArray(data)
+      ? data.flatMap((item): ProviderModel[] => {
+          const record = asRecord(item);
+          return typeof record.id === "string"
+            ? [
+                {
+                  id: record.id,
+                  name: typeof record.name === "string" ? record.name : record.id,
+                  ...(typeof record.owned_by === "string" ? { ownedBy: record.owned_by } : {}),
+                },
+              ]
+            : [];
+        })
+      : [];
+    return mergeProviderModels(provider, discovered);
   }
 
   async test(provider: ProviderId, model: string): Promise<string> {
@@ -104,7 +105,7 @@ export class ProviderService {
       : {
           model,
           messages: [{ role: "user", content: "Reply with only: connected" }],
-          max_tokens: 20,
+          max_tokens: 256,
           stream: false,
         };
     const response = await fetch(definition.baseUrl, {
@@ -115,10 +116,9 @@ export class ProviderService {
     });
     const payload = await parseResponseBody(response);
     if (!response.ok) throw apiError(provider, response, payload);
-    const responseText = isOpenAi
-      ? extractOpenAiResponse(payload).text
-      : extractCompatibleText(payload);
-    if (!responseText.trim()) {
+    const responseText = isOpenAi ? extractOpenAiResponse(payload).text : "connected";
+    const compatibleChoices = asRecord(payload).choices;
+    if (!responseText.trim() || (!isOpenAi && !Array.isArray(compatibleChoices))) {
       throw new CommandError(
         "EMPTY_PROVIDER_RESPONSE",
         definition.name + " connected but returned no usable text.",
@@ -192,10 +192,11 @@ export class ProviderService {
     key: string,
     correction: boolean,
     validationError?: unknown,
+    previousResponse?: string,
   ): Promise<ModelResponse> {
     return options.request.provider === "openai"
-      ? this.requestOpenAi(options, key, correction, validationError)
-      : this.requestCompatible(options, key, correction, validationError);
+      ? this.requestOpenAi(options, key, correction, validationError, previousResponse)
+      : this.requestCompatible(options, key, correction, validationError, previousResponse);
   }
 
   private async requestOpenAi(
@@ -203,15 +204,24 @@ export class ProviderService {
     key: string,
     correction: boolean,
     validationError?: unknown,
+    previousResponse?: string,
   ): Promise<ModelResponse> {
-    const { request, context, memoryContext } = options;
-    const userText = buildUserPrompt(request, context, memoryContext, correction, validationError);
+    const { request, context, memoryContext, settings } = options;
+    const model = correction ? settings.textModels[request.provider] : request.model;
+    const userText = buildUserPrompt(
+      request,
+      context,
+      memoryContext,
+      correction,
+      validationError,
+      previousResponse,
+    );
     const content: Record<string, unknown>[] = [{ type: "input_text", text: userText }];
-    if (context.previewDataUrl) {
+    if (!correction && context.previewDataUrl) {
       content.push({ type: "input_image", image_url: context.previewDataUrl, detail: "high" });
     }
     const body: Record<string, unknown> = {
-      model: request.model,
+      model,
       input: [
         { role: "system", content: [{ type: "input_text", text: SYSTEM_PROMPT }] },
         { role: "user", content },
@@ -226,10 +236,10 @@ export class ProviderService {
       },
       max_output_tokens: 16_000,
       store: false,
-      ...(supportsReasoningControl(request.model)
+      ...(supportsReasoningControl(model)
         ? { reasoning: { effort: request.researchMode === "deep" ? "high" : "low" } }
         : {}),
-      ...(request.allowWebResearch ? { tools: [{ type: "web_search" }] } : {}),
+      ...(!correction && request.allowWebResearch ? { tools: [{ type: "web_search" }] } : {}),
     };
     const response = await fetch(PROVIDER_DEFINITIONS.openai.baseUrl, {
       method: "POST",
@@ -247,34 +257,57 @@ export class ProviderService {
     key: string,
     correction: boolean,
     validationError?: unknown,
+    previousResponse?: string,
   ): Promise<ModelResponse> {
     const { request, context, memoryContext, settings } = options;
     const capabilities = effectiveCapabilities(request.provider, settings);
+    const model = correction ? settings.textModels[request.provider] : request.model;
     const userContent: unknown =
-      context.previewDataUrl && capabilities.vision
+      !correction && context.previewDataUrl && capabilities.vision
         ? [
             {
               type: "text",
-              text: buildUserPrompt(request, context, memoryContext, correction, validationError),
+              text: buildUserPrompt(
+                request,
+                context,
+                memoryContext,
+                correction,
+                validationError,
+                previousResponse,
+              ),
             },
             { type: "image_url", image_url: { url: context.previewDataUrl } },
           ]
-        : buildUserPrompt(request, context, memoryContext, correction, validationError);
+        : buildUserPrompt(
+            request,
+            context,
+            memoryContext,
+            correction,
+            validationError,
+            previousResponse,
+          );
     const body: Record<string, unknown> = {
-      model: request.model,
+      model,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        {
+          role: "system",
+          content: capabilities.structuredOutput
+            ? SYSTEM_PROMPT
+            : SYSTEM_PROMPT + "\n\n" + COMPATIBLE_OUTPUT_GUIDE,
+        },
         { role: "user", content: userContent },
       ],
       stream: false,
-      temperature: 0.2,
-      max_tokens: 16_000,
-      response_format: capabilities.structuredOutput
+      temperature: capabilities.structuredOutput ? 0.2 : 0.1,
+      max_tokens: request.provider === "nvidia" ? 4_096 : 16_000,
+      ...(capabilities.structuredOutput
         ? {
-            type: "json_schema",
-            json_schema: { name: "showme_lesson_plan", strict: true, schema: lessonJsonSchema() },
+            response_format: {
+              type: "json_schema",
+              json_schema: { name: "showme_lesson_plan", strict: true, schema: lessonJsonSchema() },
+            },
           }
-        : { type: "json_object" },
+        : {}),
       ...(request.provider === "openrouter" ? { provider: { require_parameters: true } } : {}),
     };
     const response = await fetch(PROVIDER_DEFINITIONS[request.provider].baseUrl, {
@@ -331,12 +364,29 @@ Teaching rules:
 - Use equations sparingly and pair each with plain language.
 - Questions and follow-ups must help the learner test understanding, not merely repeat the answer.`;
 
+const COMPATIBLE_OUTPUT_GUIDE = `This endpoint cannot enforce a JSON response schema for you. Follow this compact accepted shape exactly.
+
+Required top-level fields: version, title, concept, summary, teachingMode, confidence, sourceDescription, narration, primitives, steps, controls, claims, citations, followUps.
+- version must be 1.
+- teachingMode: visual-intuition | worked-derivation | interactive-experiment | diagram-annotation | code-execution | compare-contrast | simplified | advanced.
+- confidence: verified-module | source-grounded | exploratory.
+- primitives may use only: id, kind, x, y, x2, y2, width, height, radius, text, color, fill, strokeWidth, dashed, points, stepId, sourceRegionId. Coordinates are 0–1000. kind must be circle | rect | line | arrow | curved-arrow | label | equation | path | highlight | spotlight | point | vector | bracket | axis | callout.
+- every step requires id, title, narration, primitiveIds, durationMs. durationMs is 250–30000. Every primitiveIds value must name a real primitive.
+- Unless a supported deterministic simulation is genuinely useful, return controls as [] and omit simulation.
+- every claim requires id, text, evidence, citationIds. evidence: selected-source | calculation | web-source | model-inference.
+- without observed web results, citations must be [] and citationIds must be [].
+- IDs must be unique. Do not add keys that are not listed.
+
+Structural example only—replace every explanatory string and visual with evidence from the learner's image and question:
+{"version":1,"title":"Exact selected concept","concept":"Core idea","summary":"One concise visual explanation.","teachingMode":"diagram-annotation","confidence":"exploratory","sourceDescription":"The learner's selected screen region","narration":"A compact explanation grounded in the selection.","primitives":[{"id":"focus-visual","kind":"rect","x":120,"y":160,"width":760,"height":560,"color":"#6f7682","strokeWidth":3},{"id":"focus-label","kind":"label","x":150,"y":110,"text":"Important visual relationship","color":"#f4f4f5"}],"steps":[{"id":"step-1","title":"Locate the important part","narration":"Identify the exact element in the selected image.","primitiveIds":["focus-visual","focus-label"],"durationMs":1400},{"id":"step-2","title":"Read the relationship","narration":"Explain how the visible parts relate without inventing unseen details.","primitiveIds":["focus-visual"],"durationMs":1800},{"id":"step-3","title":"Check your understanding","narration":"Use one observable detail to verify the explanation.","primitiveIds":["focus-label"],"durationMs":1500,"checkpoint":"Can you point to the visible clue that supports the explanation?"}],"controls":[],"claims":[{"id":"claim-1","text":"A claim directly supported by the selected image.","evidence":"selected-source","citationIds":[]}],"citations":[],"followUps":["Which visible part should we examine more closely?"]}`;
+
 function buildUserPrompt(
   request: GenerateLessonRequest,
   context: PreparedContext,
   memoryContext: string,
   correction: boolean,
   validationError?: unknown,
+  previousResponse?: string,
 ): string {
   const lines = [
     "Learner question: " + request.question,
@@ -365,6 +415,9 @@ function buildUserPrompt(
         (validationError instanceof Error
           ? validationError.message.slice(0, 600)
           : "schema mismatch"),
+      previousResponse
+        ? "Previous model output to repair:\n" + previousResponse.slice(0, 30_000)
+        : "",
     );
   }
   return lines.filter(Boolean).join("\n\n");
@@ -533,13 +586,26 @@ async function parseResponseBody(response: Response): Promise<unknown> {
 function apiError(provider: ProviderId, response: Response, payload: unknown): CommandError {
   const record = asRecord(payload);
   const nested = asRecord(record.error);
+  const detail = Array.isArray(record.detail)
+    ? record.detail
+        .flatMap((item) => {
+          const entry = asRecord(item);
+          return typeof entry.msg === "string" ? [entry.msg] : [];
+        })
+        .join("; ")
+    : record.detail;
   const raw =
     (typeof nested.message === "string" && nested.message) ||
     (typeof record.message === "string" && record.message) ||
+    (typeof detail === "string" && detail) ||
     "The provider rejected the request.";
   const requestId = response.headers.get("x-request-id") ?? response.headers.get("request-id");
   const message =
-    redactSecrets(raw).slice(0, 700) + (requestId ? " (request " + requestId + ")" : "");
+    redactSecrets(raw).slice(0, 660) +
+    " (HTTP " +
+    String(response.status) +
+    (requestId ? ", request " + requestId : "") +
+    ")";
   return new CommandError(
     response.status === 401
       ? "INVALID_PROVIDER_KEY"

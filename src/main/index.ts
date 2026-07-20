@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { app, globalShortcut, Menu, nativeImage, nativeTheme, Tray } from "electron";
 import { redactSecrets } from "../shared/errors";
-import type { AppSettings } from "../shared/types";
+import type { AppSettings, ProviderId } from "../shared/types";
 import { CaptureService } from "./capture";
 import { registerIpc } from "./ipc";
 import { LessonService } from "./lesson";
@@ -35,9 +35,27 @@ async function startApplication(): Promise<void> {
   const rootPath = app.getAppPath();
   const iconPath = join(rootPath, "assets", "icon.png");
   store = new AppStore(join(app.getPath("userData"), "showme.sqlite3"));
-  const initialSettings = store.getSettings();
+  const nativeWorkerName = "showme-native" + (process.platform === "win32" ? ".exe" : "");
+  const nativeWorkerPath = app.isPackaged
+    ? join(process.resourcesPath, "workers", nativeWorkerName)
+    : join(rootPath, "workers", "native", "target", "release", nativeWorkerName);
+  const secrets = new SecretStore(
+    join(app.getPath("userData"), "credentials.bin"),
+    nativeWorkerPath,
+  );
+  let initialSettings = store.getSettings();
+  const configuredProviders = Object.entries(secrets.configured()).flatMap(
+    ([provider, configured]) => (configured ? [provider as ProviderId] : []),
+  );
+  const soleConfiguredProvider =
+    configuredProviders.length === 1 ? configuredProviders[0] : undefined;
+  if (soleConfiguredProvider && initialSettings.provider !== soleConfiguredProvider) {
+    initialSettings = store.saveSettings({
+      ...initialSettings,
+      provider: soleConfiguredProvider,
+    });
+  }
   nativeTheme.themeSource = initialSettings.theme;
-  const secrets = new SecretStore(join(app.getPath("userData"), "credentials.bin"));
   const workers = new WorkerService(rootPath, process.resourcesPath, app.isPackaged);
   windows = new WindowManager(iconPath);
   windows.applyReducedMotion(initialSettings.reducedMotion);

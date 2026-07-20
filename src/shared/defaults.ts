@@ -9,7 +9,7 @@ import type {
 export const DEFAULT_MODELS: Record<ProviderId, string> = {
   openai: "gpt-5.6-sol",
   alibaba: "qwen3.7-plus",
-  nvidia: "meta/llama-4-maverick-17b-128e-instruct",
+  nvidia: "nvidia/nemotron-nano-12b-v2-vl",
   groq: "meta-llama/llama-4-scout-17b-16e-instruct",
   cerebras: "gpt-oss-120b",
   openrouter: "openai/gpt-5.6-sol",

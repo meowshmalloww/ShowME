@@ -49,6 +49,7 @@ export interface WakeListenerStatus {
 export interface CredentialProtectionStatus {
   available: boolean;
   backend: string;
+  requiresReentry: boolean;
   description: string;
 }
 
@@ -129,6 +130,7 @@ export interface ProviderModel {
   name: string;
   ownedBy?: string;
   capabilities?: Partial<ProviderCapabilities>;
+  availability?: "provider" | "free" | "deprecating";
 }
 
 export interface AppSettings {

@@ -48,4 +48,33 @@ describe("local SQLite product state", () => {
     expect(migrated.getSettings().wakeEnabled).toBe(true);
     migrated.close();
   });
+
+  it("moves the retired NVIDIA preview default to a current verified VLM", () => {
+    const directory = mkdtempSync(join(tmpdir(), "showme-store-"));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, "showme.sqlite3");
+    const store = new AppStore(databasePath);
+    store.saveSettings(DEFAULT_SETTINGS);
+    store.close();
+
+    const database = new DatabaseSync(databasePath);
+    const legacy = {
+      ...DEFAULT_SETTINGS,
+      models: {
+        ...DEFAULT_SETTINGS.models,
+        nvidia: "meta/llama-4-maverick-17b-128e-instruct",
+      },
+      textModels: {
+        ...DEFAULT_SETTINGS.textModels,
+        nvidia: "meta/llama-4-maverick-17b-128e-instruct",
+      },
+    };
+    database.prepare("UPDATE settings SET value_json = ? WHERE id = 1").run(JSON.stringify(legacy));
+    database.close();
+
+    const migrated = new AppStore(databasePath);
+    expect(migrated.getSettings().models.nvidia).toBe("nvidia/nemotron-nano-12b-v2-vl");
+    expect(migrated.getSettings().textModels.nvidia).toBe("nvidia/nemotron-nano-12b-v2-vl");
+    migrated.close();
+  });
 });

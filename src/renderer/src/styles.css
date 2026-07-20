@@ -95,6 +95,12 @@ select:focus {
   border-radius: 8px;
 }
 
+select option,
+select optgroup {
+  color: var(--text);
+  background: var(--panel);
+}
+
 .eyebrow {
   margin: 0;
   color: var(--muted);
@@ -3495,7 +3501,14 @@ select:focus {
   height: 56px;
   padding: 9px 10px 8px;
   border-radius: 11px;
+  color: #f4f4f5;
+  caret-color: #f4f4f5;
   font-size: 11px;
+}
+
+.question-composer textarea::placeholder {
+  color: #92929a;
+  opacity: 1;
 }
 
 .question-island footer {
@@ -3509,8 +3522,16 @@ select:focus {
 }
 
 .send-button {
+  color: var(--on-accent);
   background: var(--accent);
   box-shadow: none;
+}
+
+.send-button:disabled {
+  color: #a0a0a7;
+  background: #29292d;
+  border: 1px solid #3a3a3f;
+  opacity: 1;
 }
 
 /* Selection overlay */
@@ -4656,6 +4677,10 @@ select:focus {
   order: 5;
 }
 
+.provider-detail .model-locked-state {
+  order: 5;
+}
+
 .provider-detail .capability-row {
   order: 6;
 }
@@ -4669,9 +4694,68 @@ select:focus {
   border-top: 1px solid var(--line);
 }
 
-.setup-section-label > span:last-child {
+.setup-section-label > span:nth-child(2) {
   display: grid;
   gap: 2px;
+}
+
+.model-refresh-button {
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  padding: 0 10px;
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--control);
+  border: 1px solid var(--line);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.model-refresh-button:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--line-strong);
+}
+
+.model-selectors label > small {
+  min-height: 28px;
+  line-height: 1.4;
+}
+
+.model-selectors select {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-locked-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 62px;
+  margin-bottom: 2px;
+  padding: 12px;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.model-locked-state > span {
+  display: grid;
+  gap: 3px;
+}
+
+.model-locked-state strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.model-locked-state small {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .connected-pill,

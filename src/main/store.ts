@@ -75,6 +75,22 @@ export class AppStore {
       // Remove the pre-release appearance flag while retaining the now-connected wake setting.
       // Keeping this small read migration avoids resetting otherwise valid user settings.
       delete saved.accent;
+      const models = { ...DEFAULT_SETTINGS.models, ...saved.models };
+      const textModels = { ...DEFAULT_SETTINGS.textModels, ...saved.textModels };
+      if (
+        models.nvidia === "meta/llama-4-maverick-17b-128e-instruct" ||
+        models.nvidia === "qwen/qwen3.5-122b-a10b" ||
+        models.nvidia === "thinkingmachines/inkling"
+      ) {
+        models.nvidia = DEFAULT_SETTINGS.models.nvidia;
+      }
+      if (
+        textModels.nvidia === "meta/llama-4-maverick-17b-128e-instruct" ||
+        textModels.nvidia === "qwen/qwen3.5-122b-a10b" ||
+        textModels.nvidia === "thinkingmachines/inkling"
+      ) {
+        textModels.nvidia = DEFAULT_SETTINGS.textModels.nvidia;
+      }
       return appSettingsSchema.parse({
         ...DEFAULT_SETTINGS,
         ...saved,
@@ -83,8 +99,8 @@ export class AppStore {
         // Migrate permissive pre-release thresholds that could coerce ordinary speech
         // into the closed wake grammar.
         wakeSensitivity: Math.max(0.74, saved.wakeSensitivity ?? DEFAULT_SETTINGS.wakeSensitivity),
-        models: { ...DEFAULT_SETTINGS.models, ...saved.models },
-        textModels: { ...DEFAULT_SETTINGS.textModels, ...saved.textModels },
+        models,
+        textModels,
         providerCapabilityOverrides: saved.providerCapabilityOverrides ?? {},
       }) as AppSettings;
     } catch {

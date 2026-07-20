@@ -46,6 +46,7 @@ import type {
   PermissionStatus,
   ProviderCapabilities,
   ProviderId,
+  ProviderModel,
   ProviderSummary,
   WakeListenerStatus,
 } from "../../../shared/types";
@@ -770,11 +771,46 @@ function ModelsSettings({
   const [selected, setSelected] = useState<ProviderId>(draft.provider);
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState<"save" | "test" | "models" | null>(null);
-  const [models, setModels] = useState<string[]>([]);
+  const [models, setModels] = useState<ProviderModel[]>([]);
   const provider = providers.find((item) => item.id === selected) ?? providers[0];
+  useEffect(() => {
+    setSelected(draft.provider);
+  }, [draft.provider]);
+  const fetchModels = useCallback(
+    async (announce: boolean): Promise<void> => {
+      setBusy("models");
+      try {
+        const items = await window.showme.providers.models(selected);
+        setModels(items);
+        if (announce) notify("Loaded " + items.length + " available models", "success");
+      } catch (reason) {
+        setModels([]);
+        notify(errorMessage(reason), "error");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [notify, selected],
+  );
+  useEffect(() => {
+    if (!provider?.configured) {
+      setModels([]);
+      return;
+    }
+    void fetchModels(false);
+  }, [fetchModels, provider?.configured]);
   if (!provider) return null;
   const providerOverrides = draft.providerCapabilityOverrides[selected] ?? {};
   const effectiveCapabilities = { ...provider.defaultCapabilities, ...providerOverrides };
+  const generativeModels = models.filter(isGenerativeModel);
+  const verifiedVisionModels = generativeModels.filter(
+    (model) => model.capabilities?.vision === true,
+  );
+  const lessonModels = withSavedModel(
+    verifiedVisionModels.length ? verifiedVisionModels : generativeModels,
+    draft.models[selected],
+  );
+  const planningModels = withSavedModel(generativeModels, draft.textModels[selected]);
   const updateProvider = (id: ProviderId): void => {
     setSelected(id);
     setDraft({ ...draft, provider: id });
@@ -787,7 +823,7 @@ function ModelsSettings({
         eyebrow="Connection"
         title="AI provider"
         body={
-          credentialProtection.available
+          credentialProtection.available && !credentialProtection.requiresReentry
             ? "Connect one service at a time. " + credentialProtection.description
             : credentialProtection.description
         }
@@ -903,14 +939,26 @@ function ModelsSettings({
           <span className="setup-step-number">3</span>
           <span>
             <strong>Choose models</strong>
-            <small>Fetch the provider list or enter a model ID manually.</small>
+            <small>Choose from the provider list. Model IDs cannot be entered manually.</small>
           </span>
+          {provider.configured ? (
+            <button
+              className="model-refresh-button"
+              aria-label="Refresh available models"
+              disabled={busy !== null}
+              onClick={() => void fetchModels(true)}
+              type="button"
+            >
+              {busy === "models" ? <Spinner small /> : <RefreshCw size={15} />} Refresh
+            </button>
+          ) : null}
         </div>
-        <div className="two-column-fields">
-          <label>
-            <span>Vision / lesson model</span>
-            <div className="model-input">
-              <input
+        {provider.configured ? (
+          <div className="two-column-fields model-selectors">
+            <label>
+              <span>Vision / lesson model</span>
+              <select
+                disabled={busy === "models" || lessonModels.length === 0}
                 value={draft.models[selected]}
                 onChange={(event) =>
                   setDraft({
@@ -918,47 +966,55 @@ function ModelsSettings({
                     models: { ...draft.models, [selected]: event.target.value },
                   })
                 }
-                list="provider-model-list"
-              />
-              <button
-                aria-label="Fetch available models"
-                disabled={!provider.configured || busy !== null}
-                onClick={async () => {
-                  setBusy("models");
-                  try {
-                    const items = await window.showme.providers.models(selected);
-                    setModels(items.map((item) => item.id));
-                    notify("Loaded " + items.length + " provider models", "success");
-                  } catch (reason) {
-                    notify(errorMessage(reason), "error");
-                  } finally {
-                    setBusy(null);
-                  }
-                }}
-                type="button"
               >
-                {busy === "models" ? <Spinner small /> : <RefreshCw size={15} />} Fetch models
-              </button>
-            </div>
-            <datalist id="provider-model-list">
-              {models.map((model) => (
-                <option value={model} key={model} />
-              ))}
-            </datalist>
-          </label>
-          <label>
-            <span>Text / planning model</span>
-            <input
-              value={draft.textModels[selected]}
-              onChange={(event) =>
-                setDraft({
-                  ...draft,
-                  textModels: { ...draft.textModels, [selected]: event.target.value },
-                })
-              }
-            />
-          </label>
-        </div>
+                {busy === "models" && lessonModels.length === 0 ? (
+                  <option value={draft.models[selected]}>Loading models...</option>
+                ) : null}
+                {lessonModels.map((model) => (
+                  <option value={model.id} key={model.id}>
+                    {modelOptionLabel(model, true)}
+                  </option>
+                ))}
+              </select>
+              <small>
+                {verifiedVisionModels.length
+                  ? verifiedVisionModels.length + " image-input models available"
+                  : "Provider does not publish per-model vision metadata; verify before use."}
+              </small>
+            </label>
+            <label>
+              <span>Text / repair model</span>
+              <select
+                disabled={busy === "models" || planningModels.length === 0}
+                value={draft.textModels[selected]}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    textModels: { ...draft.textModels, [selected]: event.target.value },
+                  })
+                }
+              >
+                {busy === "models" && planningModels.length === 0 ? (
+                  <option value={draft.textModels[selected]}>Loading models...</option>
+                ) : null}
+                {planningModels.map((model) => (
+                  <option value={model.id} key={model.id}>
+                    {modelOptionLabel(model, false)}
+                  </option>
+                ))}
+              </select>
+              <small>Used only to repair a lesson response that fails ShowME's schema.</small>
+            </label>
+          </div>
+        ) : (
+          <div className="model-locked-state">
+            <LockKeyhole size={17} />
+            <span>
+              <strong>Models are locked until the API key is saved.</strong>
+              <small>Save the key above; ShowME will then load the provider's model list.</small>
+            </span>
+          </div>
+        )}
         <div className="setup-section-label credential-step-label">
           <span className="setup-step-number">2</span>
           <span>
@@ -1750,10 +1806,19 @@ function PrivacySettings({
           <small>{bootstrap.credentialProtection.description}</small>
         </div>
         <span
-          className={bootstrap.credentialProtection.available ? "connected-pill" : "muted-pill"}
+          className={
+            bootstrap.credentialProtection.available &&
+            !bootstrap.credentialProtection.requiresReentry
+              ? "connected-pill"
+              : "muted-pill"
+          }
         >
           <LockKeyhole size={14} />
-          {bootstrap.credentialProtection.available ? "Protected" : "Unavailable"}
+          {bootstrap.credentialProtection.requiresReentry
+            ? "Needs re-entry"
+            : bootstrap.credentialProtection.available
+              ? "Protected"
+              : "Unavailable"}
         </span>
       </section>
       <section className="settings-card permission-action">
@@ -2041,4 +2106,24 @@ function relativeDate(value: string): string {
 }
 function humanCapability(value: string): string {
   return value.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function isGenerativeModel(model: ProviderModel): boolean {
+  return !/(^|[-_/])(embed|embedding|rerank|whisper|transcri|speech|tts|guard|moderation)([-_/]|$)/i.test(
+    model.id,
+  );
+}
+
+function withSavedModel(models: ProviderModel[], savedId: string): ProviderModel[] {
+  if (!savedId || models.some((model) => model.id === savedId)) return models;
+  return [{ id: savedId, name: savedId, availability: "provider" }, ...models];
+}
+
+function modelOptionLabel(model: ProviderModel, visionSelector: boolean): string {
+  const badges = [
+    visionSelector && model.capabilities?.vision ? "Vision" : "",
+    model.availability === "free" ? "Free endpoint" : "",
+    model.availability === "deprecating" ? "Deprecating" : "",
+  ].filter(Boolean);
+  return model.name + (badges.length ? " - " + badges.join(" / ") : "");
 }
