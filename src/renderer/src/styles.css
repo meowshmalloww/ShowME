@@ -5439,3 +5439,344 @@ select:focus {
     grid-template-columns: 1fr;
   }
 }
+
+/* Lesson player — the same quiet, neutral visual system as the rest of ShowME. */
+.lesson-window {
+  background: var(--bg);
+}
+
+.lesson-header {
+  padding: 18px 22px 16px;
+  border-color: var(--line);
+  background: var(--bg);
+}
+
+.lesson-kicker {
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.lesson-kicker > span:last-child {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+}
+
+.confidence-badge,
+.confidence-badge.verified,
+.confidence-badge.grounded,
+.confidence-badge.exploratory {
+  gap: 5px;
+  padding: 5px 7px;
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.lesson-title-block h1 {
+  color: var(--text);
+  font-size: 21px;
+  letter-spacing: -0.03em;
+}
+
+.lesson-title-block > p {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.surface-picker {
+  padding: 3px;
+  background: var(--panel);
+  border-color: var(--line);
+  border-radius: 9px;
+}
+
+.surface-picker button {
+  color: var(--muted);
+}
+
+.surface-picker button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.surface-picker button.active {
+  color: var(--text);
+  background: var(--control);
+}
+
+.lesson-body {
+  height: calc(100% - 118px);
+  padding: 16px 18px 26px;
+}
+
+.visual-stage {
+  min-height: 285px;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+
+.lesson-visual-stack {
+  overflow: hidden;
+  background: var(--panel);
+}
+
+.lesson-context-preview {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background: #000;
+  user-select: none;
+}
+
+.lesson-context-expired {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 40px;
+  color: var(--muted);
+  background: var(--panel);
+  text-align: center;
+}
+
+.lesson-context-expired svg {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 3px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+}
+
+.lesson-context-expired strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.lesson-context-expired small {
+  max-width: 360px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.lesson-primitives {
+  z-index: 2;
+  pointer-events: none;
+}
+
+.simulation-controls {
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  border-color: var(--line);
+}
+
+.simulation-controls strong,
+.simulation-controls em {
+  color: var(--text);
+}
+
+.simulation-controls input {
+  accent-color: var(--text);
+}
+
+.stage-status > span,
+.stage-status span.verified,
+.stage-status span.unverified {
+  padding: 5px 7px;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 8px;
+}
+
+.lesson-story {
+  padding: 19px 2px 12px;
+}
+
+.step-progress {
+  gap: 6px;
+}
+
+.step-progress button {
+  height: 3px;
+  background: var(--control);
+}
+
+.step-progress button span,
+.step-progress button.complete span {
+  background: var(--text);
+}
+
+.step-progress button.active span {
+  width: 58%;
+  animation: none;
+}
+
+.step-copy .eyebrow {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.step-copy h2 {
+  color: var(--text);
+  font-size: 17px;
+}
+
+.step-copy > p:last-of-type {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.checkpoint {
+  color: var(--text);
+  background: var(--panel-2);
+  border-color: var(--line);
+  font-size: 10px;
+}
+
+.checkpoint svg {
+  color: var(--muted);
+}
+
+.playback-controls button,
+.adapt-pills button,
+.followup-form button,
+.lesson-footer button {
+  color: var(--muted);
+  background: var(--control);
+  border-color: var(--line);
+}
+
+.playback-controls button:hover,
+.adapt-pills button:hover,
+.followup-form button:hover,
+.lesson-footer button:hover {
+  color: var(--text);
+  background: var(--hover);
+  border-color: var(--line-strong);
+}
+
+.playback-controls .play-toggle {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.playback-controls button.speaking {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.caption-line {
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.caption-line em {
+  color: var(--text);
+  background: var(--control);
+}
+
+.adapt-section,
+.evidence-section,
+.lesson-footer {
+  border-color: var(--line);
+}
+
+.adapt-pills button {
+  font-size: 9px;
+}
+
+.followup-form input {
+  font-size: 10px;
+}
+
+.suggested-questions button {
+  color: var(--muted);
+  border-color: var(--line);
+  font-size: 9px;
+}
+
+.suggested-questions button:hover {
+  color: var(--text);
+  background: var(--panel-2);
+}
+
+.evidence-toggle > span > svg,
+.evidence-toggle > svg {
+  color: var(--muted);
+}
+
+.evidence-toggle strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.evidence-toggle small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.source-list > button {
+  color: var(--muted);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.source-list > button > span:first-child {
+  color: var(--text);
+  background: var(--control);
+}
+
+.source-list small,
+.source-list > p {
+  color: var(--muted);
+}
+
+.source-list .uncertainty-note {
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+
+.lesson-footer {
+  color: var(--muted);
+}
+
+.lesson-footer button.active {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+.adapt-overlay {
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+}
+
+.adapt-overlay small {
+  color: var(--muted);
+}
+
+.thinking-orb {
+  color: var(--text);
+  background: var(--panel-2);
+  border-color: var(--line);
+  box-shadow: none;
+}

@@ -411,6 +411,9 @@ export interface LessonPresentation {
   verification: VerificationResult;
   createdAt: string;
   surface: LessonSurface;
+  /** In-memory visual context for the active lesson. AppStore removes this before persistence. */
+  contextPreviewDataUrl?: string;
+  contextPreviewExpiresAt?: string;
 }
 
 export interface ImageAsset {

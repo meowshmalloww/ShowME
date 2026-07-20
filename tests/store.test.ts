@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it } from "vitest";
 import { AppStore } from "../src/main/store";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
+import type { LessonPresentation } from "../src/shared/types";
 
 const temporaryDirectories: string[] = [];
 
@@ -76,5 +77,77 @@ describe("local SQLite product state", () => {
     expect(migrated.getSettings().models.nvidia).toBe("nvidia/nemotron-nano-12b-v2-vl");
     expect(migrated.getSettings().textModels.nvidia).toBe("nvidia/nemotron-nano-12b-v2-vl");
     migrated.close();
+  });
+
+  it("never persists the private in-memory screen preview", () => {
+    const directory = mkdtempSync(join(tmpdir(), "showme-store-"));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, "showme.sqlite3");
+    const store = new AppStore(databasePath);
+    const presentation: LessonPresentation = {
+      plan: {
+        version: 1,
+        id: "private-preview-test",
+        title: "Private preview test",
+        concept: "Ephemeral visual context",
+        summary: "The explanation remains, while the captured pixels do not.",
+        teachingMode: "diagram-annotation",
+        confidence: "exploratory",
+        sourceDescription: "Selected screen region",
+        narration: "This lesson is intentionally minimal.",
+        primitives: [],
+        steps: [
+          {
+            id: "step-1",
+            title: "Inspect the selection",
+            narration: "Look at the selected region.",
+            primitiveIds: [],
+            durationMs: 1_000,
+          },
+        ],
+        controls: [],
+        claims: [],
+        citations: [],
+        followUps: [],
+        provider: { id: "openai", model: "gpt-5.6-sol" },
+      },
+      request: {
+        captureId: "capture-private-preview",
+        question: "What is visible?",
+        includeNearbyContext: false,
+        includeActiveWindow: false,
+        researchMode: "quick",
+        allowWebResearch: false,
+        allowImageAids: false,
+        language: "en",
+        teachingStyle: "step-by-step",
+        complexity: "standard",
+        provider: "openai",
+        model: "gpt-5.6-sol",
+      },
+      verification: {
+        verified: false,
+        engine: "none",
+        summary: "Model inference only.",
+        details: {},
+      },
+      createdAt: new Date().toISOString(),
+      surface: "side",
+      contextPreviewDataUrl: "data:image/png;base64,privatepixels",
+      contextPreviewExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+
+    store.saveLesson(presentation);
+    const saved = store.getLesson(presentation.plan.id);
+    expect(saved?.presentation.contextPreviewDataUrl).toBeUndefined();
+    expect(saved?.presentation.contextPreviewExpiresAt).toBeUndefined();
+    store.close();
+
+    const database = new DatabaseSync(databasePath);
+    const row = database
+      .prepare("SELECT presentation_json FROM lessons WHERE id = ?")
+      .get(presentation.plan.id) as { presentation_json: string };
+    expect(row.presentation_json).not.toContain("privatepixels");
+    database.close();
   });
 });

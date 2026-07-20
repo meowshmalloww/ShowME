@@ -2070,7 +2070,6 @@ function LessonCard({ lesson, onOpen }: { lesson: LessonReceipt; onOpen: (id: st
         <em>{lesson.question}</em>
         <span>
           <time>{relativeDate(lesson.updatedAt)}</time>
-          <span className={"confidence-dot " + lesson.confidence} />
           {confidenceLabel(lesson.confidence)}
         </span>
       </span>
@@ -2092,7 +2091,7 @@ function confidenceLabel(value: LessonReceipt["confidence"]): string {
     ? "Verified module"
     : value === "source-grounded"
       ? "Source grounded"
-      : "Exploratory";
+      : "Model inferred";
 }
 function relativeDate(value: string): string {
   const elapsed = Date.now() - new Date(value).getTime();

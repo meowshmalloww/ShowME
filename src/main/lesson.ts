@@ -62,6 +62,8 @@ export class LessonService {
         verification,
         createdAt: new Date().toISOString(),
         surface: settings.lessonSurface,
+        contextPreviewDataUrl: context.previewDataUrl,
+        contextPreviewExpiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
       };
       this.store.saveLesson(presentation);
       if (settings.memoryEnabled) {

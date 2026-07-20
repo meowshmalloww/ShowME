@@ -129,6 +129,9 @@ export class AppStore {
   saveLesson(presentation: LessonPresentation): StoredLesson {
     const now = new Date().toISOString();
     const { plan, request } = presentation;
+    const persistedPresentation = { ...presentation };
+    delete persistedPresentation.contextPreviewDataUrl;
+    delete persistedPresentation.contextPreviewExpiresAt;
     const existing = this.db
       .prepare("SELECT created_at, helpful FROM lessons WHERE id = ?")
       .get(plan.id) as Row | undefined;
@@ -169,7 +172,7 @@ export class AppStore {
         existing?.helpful === undefined || existing.helpful === null
           ? null
           : Number(existing.helpful),
-        JSON.stringify(presentation),
+        JSON.stringify(persistedPresentation),
       );
     return this.getLesson(plan.id);
   }

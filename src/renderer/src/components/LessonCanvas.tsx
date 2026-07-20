@@ -17,10 +17,12 @@ export function LessonCanvas({
   plan,
   stepIndex,
   reducedMotion,
+  contextPreviewDataUrl,
 }: {
   plan: LessonPlan;
   stepIndex: number;
   reducedMotion: boolean;
+  contextPreviewDataUrl?: string | undefined;
 }) {
   const visibleIds = useMemo(
     () => new Set(plan.steps.slice(0, stepIndex + 1).flatMap((step) => step.primitiveIds)),
@@ -29,8 +31,17 @@ export function LessonCanvas({
   const primitives = plan.primitives.filter(
     (primitive) => !primitive.stepId || visibleIds.has(primitive.id),
   );
+  const showContextPreview = Boolean(contextPreviewDataUrl && !plan.simulation);
   return (
-    <div className="lesson-visual-stack">
+    <div className={"lesson-visual-stack" + (showContextPreview ? " has-context-preview" : "")}>
+      {showContextPreview ? (
+        <img
+          className="lesson-context-preview"
+          src={contextPreviewDataUrl}
+          alt="The selected screen context"
+          draggable={false}
+        />
+      ) : null}
       {plan.simulation ? (
         <SimulationView
           simulation={plan.simulation}
@@ -38,7 +49,20 @@ export function LessonCanvas({
           reducedMotion={reducedMotion}
         />
       ) : null}
-      {primitives.length ? (
+      {!plan.simulation && !showContextPreview ? (
+        <div className="lesson-context-expired">
+          <svg viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M10 4H5a1 1 0 0 0-1 1v5M22 4h5a1 1 0 0 1 1 1v5M10 28H5a1 1 0 0 1-1-1v-5M22 28h5a1 1 0 0 0 1-1v-5" />
+            <rect x="10" y="10" width="12" height="12" rx="2" />
+          </svg>
+          <strong>Original screen image not stored</strong>
+          <small>
+            ShowME keeps the explanation, but removes captured pixels from saved history for
+            privacy.
+          </small>
+        </div>
+      ) : null}
+      {primitives.length && (plan.simulation || showContextPreview) ? (
         <svg
           className={plan.simulation ? "lesson-primitives overlay" : "lesson-primitives"}
           viewBox="0 0 1000 1000"
@@ -72,8 +96,10 @@ export function LessonCanvas({
 }
 
 function Primitive({ primitive }: { primitive: LessonPrimitive }) {
-  const color = safeColor(primitive.color, "#a78bfa");
-  const fill = safeColor(primitive.fill, "transparent");
+  // Screen annotations follow the product palette. Model-supplied colors are not
+  // allowed to turn every generated lesson into a different visual system.
+  const color = "var(--text)";
+  const fill = primitive.fill ? "color-mix(in srgb, var(--text) 8%, transparent)" : "transparent";
   const strokeWidth = primitive.strokeWidth ?? 4;
   const lineProps = {
     stroke: color,
@@ -100,7 +126,9 @@ function Primitive({ primitive }: { primitive: LessonPrimitive }) {
         width={primitive.width ?? 120}
         height={primitive.height ?? 80}
         rx={primitive.kind === "highlight" ? 20 : 10}
-        fill={primitive.kind === "highlight" ? withAlpha(color, 0.16) : fill}
+        fill={
+          primitive.kind === "highlight" ? "color-mix(in srgb, var(--text) 14%, transparent)" : fill
+        }
         {...lineProps}
       />
     );
@@ -163,7 +191,7 @@ function Primitive({ primitive }: { primitive: LessonPrimitive }) {
           cx={primitive.x}
           cy={primitive.y}
           r={primitive.radius ?? 100}
-          fill={withAlpha(color, 0.18)}
+          fill="color-mix(in srgb, var(--text) 16%, transparent)"
           filter="url(#soft-glow)"
         />
         <circle
@@ -195,7 +223,7 @@ function Primitive({ primitive }: { primitive: LessonPrimitive }) {
           width={primitive.width ?? 220}
           height={primitive.height ?? 90}
           rx="18"
-          fill="rgba(10,12,20,.86)"
+          fill="color-mix(in srgb, var(--bg) 88%, transparent)"
           {...lineProps}
         />
         <WrappedText
@@ -661,14 +689,14 @@ function SimulationGraphic({
               }
             >
               {entity.shape === "circle" ? (
-                <circle r={entity.width / 2} fill={safeColor(entity.color, "#a78bfa")} />
+                <circle r={entity.width / 2} fill={safeColor(entity.color, "#f5f5f5")} />
               ) : entity.shape === "arrow" ? (
                 <line
                   x1={-entity.width / 2}
                   y1="0"
                   x2={entity.width / 2}
                   y2="0"
-                  stroke={safeColor(entity.color, "#a78bfa")}
+                  stroke={safeColor(entity.color, "#f5f5f5")}
                   strokeWidth={Math.max(3, entity.height)}
                   markerEnd="url(#lesson-arrow)"
                 />
@@ -679,7 +707,7 @@ function SimulationGraphic({
                   width={entity.width}
                   height={entity.height}
                   rx="12"
-                  fill={safeColor(entity.color, "#a78bfa")}
+                  fill={safeColor(entity.color, "#f5f5f5")}
                 />
               )}
               {entity.label ? (
@@ -725,14 +753,6 @@ function safeColor(value: string | undefined, fallback: string): string {
   return /^(#[0-9a-f]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%]+\)|[a-z]{3,20})$/i.test(value)
     ? value
     : fallback;
-}
-function withAlpha(color: string, alpha: number): string {
-  return color.startsWith("#") && color.length === 7
-    ? color +
-        Math.round(alpha * 255)
-          .toString(16)
-          .padStart(2, "0")
-    : color;
 }
 function formatControl(value: number): string {
   const absolute = Math.abs(value);

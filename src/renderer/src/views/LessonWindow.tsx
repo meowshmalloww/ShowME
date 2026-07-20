@@ -15,7 +15,6 @@ import {
   Play,
   SearchCheck,
   Send,
-  Sparkles,
   ThumbsDown,
   ThumbsUp,
   Volume2,
@@ -121,6 +120,20 @@ export function LessonWindow() {
     media.addEventListener("change", apply);
     return () => media.removeEventListener("change", apply);
   }, [bootstrap]);
+
+  useEffect(() => {
+    if (!presentation?.contextPreviewDataUrl || !presentation.contextPreviewExpiresAt) return;
+    const remaining = Date.parse(presentation.contextPreviewExpiresAt) - Date.now();
+    const expirePreview = (): void => {
+      setPresentation((current) => (current ? stripContextPreview(current) : current));
+    };
+    if (remaining <= 0) {
+      expirePreview();
+      return;
+    }
+    const timer = window.setTimeout(expirePreview, remaining);
+    return () => window.clearTimeout(timer);
+  }, [presentation?.contextPreviewDataUrl, presentation?.contextPreviewExpiresAt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -257,7 +270,7 @@ export function LessonWindow() {
     return (
       <main className="lesson-empty">
         <div className="brand-orb">
-          <Sparkles size={24} />
+          <BookOpenCheck size={24} />
         </div>
         <Spinner />
         <strong>Waiting for a lesson</strong>
@@ -334,7 +347,12 @@ export function LessonWindow() {
       ) : null}
       <main className="lesson-body">
         <section className="visual-stage">
-          <LessonCanvas plan={plan} stepIndex={step} reducedMotion={reducedMotion} />
+          <LessonCanvas
+            plan={plan}
+            stepIndex={step}
+            reducedMotion={reducedMotion}
+            contextPreviewDataUrl={presentation.contextPreviewDataUrl}
+          />
           <div className="stage-status">
             <span>{plan.simulation ? "Interactive module" : "Visual explanation"}</span>
             {presentation.verification.engine !== "none" ? (
@@ -617,7 +635,7 @@ export function LessonWindow() {
       {adapting ? (
         <div className="adapt-overlay">
           <div className="thinking-orb">
-            <Sparkles size={20} />
+            <Gauge size={20} />
           </div>
           <strong>{progress?.message ?? "Rebuilding the lesson"}</strong>
           <small>Your original lesson stays saved</small>
@@ -653,7 +671,14 @@ function ConfidenceBadge({ value }: { value: LessonPresentation["plan"]["confide
     );
   return (
     <span className="confidence-badge exploratory">
-      <Sparkles size={13} /> Exploratory
+      <Gauge size={13} /> Model inferred
     </span>
   );
+}
+
+function stripContextPreview(presentation: LessonPresentation): LessonPresentation {
+  const next = { ...presentation };
+  delete next.contextPreviewDataUrl;
+  delete next.contextPreviewExpiresAt;
+  return next;
 }
