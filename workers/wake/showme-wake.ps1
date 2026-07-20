@@ -34,8 +34,8 @@ try {
   $recognizer = [System.Speech.Recognition.SpeechRecognitionEngine]::new($recognizerCulture)
   $recognizer.InitialSilenceTimeout = [TimeSpan]::FromSeconds(1.5)
   $recognizer.BabbleTimeout = [TimeSpan]::FromSeconds(2)
-  $recognizer.EndSilenceTimeout = [TimeSpan]::FromMilliseconds(260)
-  $recognizer.EndSilenceTimeoutAmbiguous = [TimeSpan]::FromMilliseconds(520)
+  $recognizer.EndSilenceTimeout = [TimeSpan]::FromMilliseconds(180)
+  $recognizer.EndSilenceTimeoutAmbiguous = [TimeSpan]::FromMilliseconds(340)
   if ($Probe) {
     [Console]::Out.WriteLine((@{
       type = "ready"
@@ -121,8 +121,8 @@ try {
     )
     $dictationRecognizer.InitialSilenceTimeout = [TimeSpan]::FromSeconds(1.5)
     $dictationRecognizer.BabbleTimeout = [TimeSpan]::FromSeconds(2)
-    $dictationRecognizer.EndSilenceTimeout = [TimeSpan]::FromMilliseconds(260)
-    $dictationRecognizer.EndSilenceTimeoutAmbiguous = [TimeSpan]::FromMilliseconds(520)
+    $dictationRecognizer.EndSilenceTimeout = [TimeSpan]::FromMilliseconds(180)
+    $dictationRecognizer.EndSilenceTimeoutAmbiguous = [TimeSpan]::FromMilliseconds(340)
     $dictationGrammar = [System.Speech.Recognition.DictationGrammar]::new()
     $dictationRecognizer.LoadGrammar($dictationGrammar)
     [Console]::Out.WriteLine((@{
@@ -152,6 +152,17 @@ try {
         $dictationText = if ($null -ne $dictationResult) { $dictationResult.Text } else { "" }
         $normalizedDictation = ($dictationText.ToLowerInvariant() -replace "[^a-z0-9 ]", " " -replace "\s+", " ").Trim()
         $plausibleWake = Test-PlausibleDictation $normalizedDictation
+        $directDictationWake = $plausibleWake -and
+          $null -ne $dictationResult -and
+          $dictationResult.Confidence -ge $script:confidenceThreshold
+        if ($directDictationWake) {
+          [Console]::Out.WriteLine((@{
+            type = "wake"
+            phrase = $dictationResult.Text
+            confidence = [Math]::Round($dictationResult.Confidence, 3)
+          } | ConvertTo-Json -Compress))
+          continue
+        }
         $windowAudio = [System.IO.MemoryStream]::new($audioBytes, $false)
         $recognizer.SetInputToAudioStream($windowAudio, $audioFormat)
         $result = $recognizer.Recognize([TimeSpan]::FromSeconds(5))

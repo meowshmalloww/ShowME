@@ -262,6 +262,12 @@ export class ProviderService {
     const { request, context, memoryContext, settings } = options;
     const capabilities = effectiveCapabilities(request.provider, settings);
     const model = correction ? settings.textModels[request.provider] : request.model;
+    const nvidiaJsonSchema = request.provider === "nvidia";
+    const structuredOutput = capabilities.structuredOutput || nvidiaJsonSchema;
+    const systemPrompt =
+      (request.provider === "nvidia" && supportsNvidiaThinkingMode(model) ? "/no_think\n\n" : "") +
+      SYSTEM_PROMPT +
+      (structuredOutput ? "" : "\n\n" + COMPATIBLE_OUTPUT_GUIDE);
     const userContent: unknown =
       !correction && context.previewDataUrl && capabilities.vision
         ? [
@@ -291,32 +297,50 @@ export class ProviderService {
       messages: [
         {
           role: "system",
-          content: capabilities.structuredOutput
-            ? SYSTEM_PROMPT
-            : SYSTEM_PROMPT + "\n\n" + COMPATIBLE_OUTPUT_GUIDE,
+          content: systemPrompt,
         },
         { role: "user", content: userContent },
       ],
       stream: false,
-      temperature: capabilities.structuredOutput ? 0.2 : 0.1,
+      temperature: 0.1,
       max_tokens: request.provider === "nvidia" ? 4_096 : 16_000,
-      ...(capabilities.structuredOutput
+      ...(structuredOutput
         ? {
             response_format: {
               type: "json_schema",
-              json_schema: { name: "showme_lesson_plan", strict: true, schema: lessonJsonSchema() },
+              json_schema: {
+                name: "showme_lesson_plan",
+                ...(request.provider === "nvidia" ? {} : { strict: true }),
+                schema: lessonJsonSchema(),
+              },
             },
           }
         : {}),
       ...(request.provider === "openrouter" ? { provider: { require_parameters: true } } : {}),
     };
-    const response = await fetch(PROVIDER_DEFINITIONS[request.provider].baseUrl, {
+    let response = await fetch(PROVIDER_DEFINITIONS[request.provider].baseUrl, {
       method: "POST",
       headers: this.headers(request.provider, key),
       body: JSON.stringify(body),
       signal: options.signal,
     });
-    const payload = await parseResponseBody(response);
+    let payload = await parseResponseBody(response);
+    if (nvidiaJsonSchema && [400, 422, 500].includes(response.status)) {
+      // Hosted and self-hosted NIM profiles do not all expose the same guided-decoding
+      // backend. Some hosted VLM profiles return 500 instead of a parameter-level 4xx
+      // when their guided-decoding backend cannot compile a schema this large.
+      // Retry once without response_format and keep the strict local validator in charge.
+      delete body.response_format;
+      const messages = body.messages as Array<Record<string, unknown>>;
+      if (messages[0]) messages[0].content = systemPrompt + "\n\n" + COMPATIBLE_OUTPUT_GUIDE;
+      response = await fetch(PROVIDER_DEFINITIONS[request.provider].baseUrl, {
+        method: "POST",
+        headers: this.headers(request.provider, key),
+        body: JSON.stringify(body),
+        signal: options.signal,
+      });
+      payload = await parseResponseBody(response);
+    }
     if (!response.ok) throw apiError(request.provider, response, payload);
     return { text: extractCompatibleText(payload), citations: [] };
   }
@@ -359,6 +383,7 @@ Teaching rules:
 - Prefer a visual causal story: object, force/change, consequence, learner-controlled variable.
 - Coordinates are normalized from 0 to 1000 and must form an uncluttered composition.
 - Make 3–7 short steps, each revealing only relevant primitives.
+- Keep the complete JSON compact enough to finish in one response. Prefer 3–5 steps and no more than 12 primitives unless the screen genuinely requires more.
 - Use the trusted simulation modules only when they fit: orbit, projectile, trigonometry, wave, circuit, event-loop, function-graph, or constrained custom entities/motions.
 - Controls may bind only to real numeric fields of that simulation. Do not fake controls.
 - Use equations sparingly and pair each with plain language.
@@ -425,7 +450,7 @@ function buildUserPrompt(
 
 function finalizePlan(response: ModelResponse, request: GenerateLessonRequest): LessonPlan {
   const parsed = parseJsonObject(response.text);
-  const draft = asRecord(parsed);
+  const draft = normalizeModelLessonDraft(asRecord(parsed));
   draft.provider = { id: request.provider, model: request.model };
   if (!draft.id || typeof draft.id !== "string") draft.id = crypto.randomUUID();
   const plan = validateLessonPlan(draft) as LessonPlan;
@@ -558,6 +583,143 @@ export function supportsReasoningControl(model: string): boolean {
   return /^(gpt-5(?:\.|-|$)|o[1-9](?:-|$))/i.test(model.trim());
 }
 
+export function supportsNvidiaThinkingMode(model: string): boolean {
+  return /^nvidia\/nemotron-nano-12b-v2-vl$/i.test(model.trim());
+}
+
+export function normalizeModelLessonDraft(value: Record<string, unknown>): Record<string, unknown> {
+  const draft = pickKeys(value, [
+    "version",
+    "id",
+    "title",
+    "concept",
+    "summary",
+    "teachingMode",
+    "confidence",
+    "uncertainty",
+    "sourceDescription",
+    "narration",
+    "primitives",
+    "steps",
+    "controls",
+    "simulation",
+    "claims",
+    "citations",
+    "followUps",
+  ]);
+  draft.primitives = arrayRecords(draft.primitives).map((primitive) => {
+    const clean = pickKeys(primitive, [
+      "id",
+      "kind",
+      "x",
+      "y",
+      "x2",
+      "y2",
+      "width",
+      "height",
+      "radius",
+      "text",
+      "color",
+      "fill",
+      "strokeWidth",
+      "dashed",
+      "points",
+      "stepId",
+      "sourceRegionId",
+    ]);
+    if (Array.isArray(clean.points)) {
+      clean.points = arrayRecords(clean.points).map((point) => pickKeys(point, ["x", "y"]));
+    }
+    return clean;
+  });
+  const primitiveIds = new Set(
+    arrayRecords(draft.primitives).flatMap((primitive) =>
+      typeof primitive.id === "string" ? [primitive.id] : [],
+    ),
+  );
+  draft.steps = arrayRecords(draft.steps).map((step) => {
+    const clean = pickKeys(step, [
+      "id",
+      "title",
+      "narration",
+      "primitiveIds",
+      "durationMs",
+      "checkpoint",
+    ]);
+    clean.primitiveIds = Array.isArray(clean.primitiveIds)
+      ? clean.primitiveIds.filter(
+          (primitiveId): primitiveId is string =>
+            typeof primitiveId === "string" && primitiveIds.has(primitiveId),
+        )
+      : [];
+    return clean;
+  });
+  const stepIds = new Set(
+    arrayRecords(draft.steps).flatMap((step) => (typeof step.id === "string" ? [step.id] : [])),
+  );
+  draft.primitives = arrayRecords(draft.primitives).map((primitive) => {
+    if (typeof primitive.stepId === "string" && !stepIds.has(primitive.stepId)) {
+      const { stepId: _stepId, ...withoutStep } = primitive;
+      return withoutStep;
+    }
+    return primitive;
+  });
+  draft.controls = arrayRecords(draft.controls).map((control) =>
+    pickKeys(control, ["id", "label", "bind", "min", "max", "step", "value", "unit"]),
+  );
+  draft.simulation = normalizeSimulation(draft.simulation);
+  if (!draft.simulation) draft.controls = [];
+  draft.claims = arrayRecords(draft.claims).map((claim) => ({
+    ...pickKeys(claim, ["id", "text", "evidence"]),
+    citationIds: [],
+  }));
+  // Only citations observed from an enabled provider research tool are accepted later.
+  // Model-authored URLs never pass through the safety boundary.
+  draft.citations = [];
+  draft.followUps = Array.isArray(draft.followUps) ? draft.followUps : [];
+  return draft;
+}
+
+function normalizeSimulation(value: unknown): Record<string, unknown> | undefined {
+  const simulation = asRecord(value);
+  if (typeof simulation.kind !== "string") return undefined;
+  const fields: Record<string, readonly string[]> = {
+    orbit: [
+      "kind",
+      "gravitationalParameter",
+      "planetRadius",
+      "initialAltitude",
+      "initialVelocity",
+      "timeScale",
+      "showTrail",
+    ],
+    projectile: ["kind", "gravity", "speed", "angleDegrees", "initialHeight", "dragCoefficient"],
+    trigonometry: ["kind", "function", "amplitude", "frequency", "phase", "angleDegrees"],
+    wave: ["kind", "amplitude", "frequency", "wavelength", "phase"],
+    circuit: ["kind", "voltage", "resistance", "capacitance"],
+    "function-graph": ["kind", "expression", "a", "b", "c", "xMin", "xMax"],
+    "event-loop": ["kind", "source", "trace"],
+    custom: ["kind", "durationSeconds", "entities", "motions"],
+  };
+  const allowed = fields[simulation.kind];
+  if (!allowed) return undefined;
+  const clean = pickKeys(simulation, allowed);
+  if (simulation.kind === "event-loop") {
+    clean.trace = arrayRecords(clean.trace).map((item) =>
+      pickKeys(item, ["id", "phase", "action", "label", "value", "line"]),
+    );
+  }
+  if (simulation.kind === "custom") {
+    clean.entities = arrayRecords(clean.entities).map((item) =>
+      pickKeys(item, ["id", "shape", "x", "y", "width", "height", "color", "label"]),
+    );
+    clean.motions = arrayRecords(clean.motions).map((item) =>
+      pickKeys(item, ["entityId", "kind", "amplitude", "frequency", "phase"]),
+    );
+  }
+  return clean;
+}
+
 function parseJsonObject(text: string): unknown {
   const trimmed = text
     .trim()
@@ -571,6 +733,18 @@ function parseJsonObject(text: string): unknown {
     if (start >= 0 && end > start) return JSON.parse(trimmed.slice(start, end + 1));
     throw new Error("Response was not valid JSON");
   }
+}
+
+function arrayRecords(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.map(asRecord) : [];
+}
+
+function pickKeys(
+  value: Record<string, unknown>,
+  keys: readonly string[],
+): Record<string, unknown> {
+  const allowed = new Set(keys);
+  return Object.fromEntries(Object.entries(value).filter(([key]) => allowed.has(key)));
 }
 
 async function parseResponseBody(response: Response): Promise<unknown> {

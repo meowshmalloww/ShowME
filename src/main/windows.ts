@@ -23,10 +23,15 @@ export class WindowManager {
   private lesson: BrowserWindow | null = null;
   private launcherMode: LauncherMode = "idle";
   private launcherAnimation: ReturnType<typeof setTimeout> | null = null;
+  private launcherRecovery: ReturnType<typeof setTimeout> | null = null;
   private reducedMotion = false;
   private quitting = false;
 
-  constructor(private readonly iconPath: string) {}
+  constructor(private readonly iconPath: string) {
+    screen.on("display-added", this.handleDisplayChange);
+    screen.on("display-removed", this.handleDisplayChange);
+    screen.on("display-metrics-changed", this.handleDisplayChange);
+  }
 
   setQuitting(value: boolean): void {
     this.quitting = value;
@@ -63,11 +68,17 @@ export class WindowManager {
     window.setAlwaysOnTop(true, "floating", 1);
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     window.on("closed", () => {
-      this.launcher = null;
+      if (this.launcher === window) this.launcher = null;
+      if (!this.quitting) this.scheduleLauncherRecovery();
     });
     window.webContents.once("did-finish-load", () => {
+      window.webContents.send(CHANNELS.eventLauncherMode, this.launcherMode);
       this.positionLauncher();
       window.showInactive();
+    });
+    window.webContents.on("render-process-gone", () => {
+      if (this.launcher !== window || this.quitting) return;
+      this.scheduleLauncherRecovery(true);
     });
     return window;
   }
@@ -118,10 +129,20 @@ export class WindowManager {
     });
     this.selection = window;
     window.setAlwaysOnTop(true, "screen-saver");
+    let loaded = false;
+    const loadGuard = setTimeout(() => {
+      if (loaded || this.selection !== window || this.quitting) return;
+      window.destroy();
+      this.setLauncherMode("revealed");
+      this.showLauncher(false);
+    }, 3_000);
     window.on("closed", () => {
+      clearTimeout(loadGuard);
       this.selection = null;
     });
     window.webContents.once("did-finish-load", () => {
+      loaded = true;
+      clearTimeout(loadGuard);
       window.setBounds(display.bounds);
       window.show();
       window.focus();
@@ -138,8 +159,7 @@ export class WindowManager {
     this.closeSelection();
     this.setLauncherMode("question");
     this.launcher?.webContents.send(CHANNELS.eventContextReady, context);
-    this.launcher?.show();
-    this.launcher?.focus();
+    this.showLauncher(false);
   }
 
   setLauncherMode(mode: LauncherMode): void {
@@ -155,11 +175,18 @@ export class WindowManager {
   }
 
   showLauncher(inactive = true): void {
+    const launcher = this.createLauncher();
     if (!this.launcherAnimation) this.positionLauncher();
-    if (inactive) this.launcher?.showInactive();
+    launcher.setAlwaysOnTop(true, "floating", 1);
+    launcher.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    if (launcher.webContents.isLoadingMainFrame()) {
+      launcher.webContents.once("did-finish-load", () => this.showLauncher(inactive));
+      return;
+    }
+    if (inactive) launcher.showInactive();
     else {
-      this.launcher?.show();
-      this.launcher?.focus();
+      launcher.show();
+      launcher.focus();
     }
   }
 
@@ -262,8 +289,14 @@ export class WindowManager {
   }
 
   destroyAll(): void {
+    this.quitting = true;
     if (this.launcherAnimation) clearTimeout(this.launcherAnimation);
     this.launcherAnimation = null;
+    if (this.launcherRecovery) clearTimeout(this.launcherRecovery);
+    this.launcherRecovery = null;
+    screen.removeListener("display-added", this.handleDisplayChange);
+    screen.removeListener("display-removed", this.handleDisplayChange);
+    screen.removeListener("display-metrics-changed", this.handleDisplayChange);
     for (const window of [this.selection, this.lesson, this.main, this.launcher]) {
       if (window && !window.isDestroyed()) window.destroy();
     }
@@ -278,6 +311,30 @@ export class WindowManager {
     const y = display.workArea.y;
     launcher.setBounds({ x, y, ...size }, false);
     this.applyLauncherShape(launcher, size);
+  }
+
+  private readonly handleDisplayChange = (): void => {
+    if (!this.launcherAnimation) this.positionLauncher();
+  };
+
+  private scheduleLauncherRecovery(reload = false): void {
+    if (this.launcherRecovery || this.quitting) return;
+    this.launcherRecovery = setTimeout(() => {
+      this.launcherRecovery = null;
+      if (this.quitting) return;
+      const launcher = this.getLauncher();
+      if (reload && launcher) {
+        launcher.webContents.once("did-finish-load", () => {
+          launcher.webContents.send(CHANNELS.eventLauncherMode, this.launcherMode);
+          this.positionLauncher();
+          this.showLauncher();
+        });
+        launcher.webContents.reload();
+        return;
+      }
+      this.createLauncher();
+      this.showLauncher();
+    }, 120);
   }
 
   private animateLauncher(): void {

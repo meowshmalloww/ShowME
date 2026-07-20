@@ -42,7 +42,7 @@ export class WakeUtteranceCollector {
   private activeLength = 0;
   private silenceLength = 0;
 
-  constructor(sampleRate = 16_000, preRollMs = 360, endSilenceMs = 560, maxDurationMs = 3_000) {
+  constructor(sampleRate = 16_000, preRollMs = 320, endSilenceMs = 360, maxDurationMs = 2_800) {
     this.preRollSamples = Math.round((sampleRate * preRollMs) / 1000);
     this.endSilenceSamples = Math.round((sampleRate * endSilenceMs) / 1000);
     this.maxSamples = Math.round((sampleRate * maxDurationMs) / 1000);

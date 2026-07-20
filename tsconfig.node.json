@@ -9,6 +9,7 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "resolveJsonModule": true,
+    "jsx": "react-jsx",
     "types": ["node", "electron-vite/node"],
     "skipLibCheck": true,
     "composite": true,
@@ -20,6 +21,7 @@
     "electron.vite.config.ts",
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
+    "src/renderer/src/components/LessonCanvas.tsx",
     "src/shared/**/*.ts",
     "tests/**/*.ts"
   ]

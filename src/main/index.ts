@@ -110,8 +110,14 @@ async function startApplication(): Promise<void> {
   createTray(iconPath);
   windows.openMain("home");
 
-  app.on("activate", () => windows?.openMain("home"));
-  app.on("second-instance", () => windows?.openMain("home"));
+  app.on("activate", () => {
+    windows?.openMain("home");
+    windows?.showLauncher();
+  });
+  app.on("second-instance", () => {
+    windows?.openMain("home");
+    windows?.showLauncher(false);
+  });
 }
 
 async function beginWakeInteraction(): Promise<void> {

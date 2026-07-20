@@ -5780,3 +5780,290 @@ select:focus {
   border-color: var(--line);
   box-shadow: none;
 }
+
+/* Launcher state language: meters listen, progress tracks think, waveforms speak. */
+.voice-island,
+.thinking-island,
+.question-island {
+  background: #0b0b0c;
+}
+
+.voice-island {
+  padding: 4px 7px;
+  border-radius: 0 0 13px 13px;
+}
+
+.voice-brand {
+  width: 25px;
+  height: 25px;
+  border-radius: 8px;
+}
+
+.voice-copy {
+  gap: 1px;
+}
+
+.voice-copy strong {
+  font-size: 9px;
+}
+
+.voice-copy small {
+  color: #929298;
+  font-size: 6.5px;
+}
+
+.listening-meter,
+.activity-loader {
+  width: 25px;
+  height: 25px;
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #333338;
+  border-radius: 50%;
+  color: #dedee1;
+  background: #171719;
+}
+
+.listening-meter::before {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 1px solid rgba(119, 201, 190, calc(0.16 + var(--voice-level) * 0.62));
+  border-radius: inherit;
+  transform: scale(calc(0.82 + var(--voice-level) * 0.24));
+  transition:
+    transform 55ms linear,
+    border-color 55ms linear;
+}
+
+.activity-loader svg {
+  animation: activity-spin 850ms linear infinite;
+}
+
+@keyframes activity-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.audio-wave-speaking {
+  height: 16px;
+  gap: 1.5px;
+  color: #dedee1;
+}
+
+.audio-wave-speaking > span {
+  width: 1.5px;
+  height: 14px;
+  animation-duration: 680ms;
+}
+
+.thinking-island {
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: 0 0 13px 13px;
+}
+
+.thinking-island .thinking-orb {
+  width: 27px;
+  height: 27px;
+  border-radius: 9px;
+  animation: none;
+}
+
+.thinking-island strong {
+  font-size: 9px;
+}
+
+.thinking-island small {
+  color: #929298;
+  font-size: 6.5px;
+}
+
+.thinking-progress {
+  width: 44px;
+  display: flex;
+  flex: 0 0 auto;
+  gap: 3px;
+  margin-left: auto;
+}
+
+.thinking-progress > span {
+  width: 6px;
+  height: 3px;
+  border-radius: 999px;
+  background: #343438;
+  transition:
+    width 180ms ease,
+    background 180ms ease;
+}
+
+.thinking-progress > span.active {
+  width: 8px;
+  background: #dedee1;
+}
+
+.thinking-progress > span.active:last-of-type {
+  animation: progress-breathe 900ms ease-in-out infinite alternate;
+}
+
+@keyframes progress-breathe {
+  to {
+    opacity: 0.38;
+  }
+}
+
+.question-island {
+  display: grid;
+  grid-template-rows: 29px 72px 31px 16px;
+  padding: 6px 7px;
+  border-radius: 0 0 14px 14px;
+}
+
+.question-island header {
+  height: 29px;
+  padding: 0 1px 4px;
+}
+
+.question-context {
+  gap: 7px;
+}
+
+.question-context img {
+  width: 32px;
+  height: 23px;
+  border: 1px solid #333338;
+  border-radius: 6px;
+}
+
+.question-context > span {
+  gap: 0;
+}
+
+.question-context strong {
+  color: #f1f1f2;
+  font-size: 8.5px;
+}
+
+.question-context small {
+  color: #8f8f95;
+  font-size: 6.5px;
+}
+
+.question-island .ghost-icon {
+  width: 23px;
+  height: 23px;
+  border-radius: 7px;
+}
+
+.question-composer textarea {
+  height: 72px;
+  padding: 9px 10px 23px;
+  border: 1px solid #303036;
+  border-radius: 10px;
+  color: #f2f2f3;
+  background: #171719;
+  caret-color: #f2f2f3;
+  font-size: 10.5px;
+  line-height: 1.4;
+  outline: none;
+  transition: border-color 130ms ease;
+}
+
+.question-composer textarea:focus {
+  border-color: #626269;
+}
+
+.question-composer textarea::placeholder {
+  color: #838389;
+}
+
+.composer-hint {
+  position: absolute;
+  right: 9px;
+  bottom: 7px;
+  color: #6e6e74;
+  font-size: 6px;
+  pointer-events: none;
+}
+
+.question-island footer {
+  height: 31px;
+  padding-top: 5px;
+}
+
+.question-island .send-button {
+  height: 26px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  color: #0b0b0c;
+  background: #f0f0f1;
+  font-size: 7.5px;
+}
+
+.question-island .send-button:hover:not(:disabled),
+.question-island .send-button:focus-visible:not(:disabled) {
+  background: #ffffff;
+}
+
+.question-island .send-button:disabled {
+  border: 1px solid #303036;
+  color: #6f6f74;
+  background: #1b1b1e;
+}
+
+.composer-error {
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  margin-top: 3px;
+  padding: 3px 5px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 6px;
+  color: #e9a7a3;
+  background: #211314;
+  font-size: 6.5px;
+  line-height: 1.25;
+}
+
+.composer-status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 5px 0;
+  color: #6f6f75;
+  font-size: 6px;
+}
+
+.composer-status svg {
+  flex: 0 0 auto;
+}
+
+.composer-status span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-error svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.composer-error span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reduced-motion .activity-loader svg,
+.reduced-motion .thinking-progress > span.active:last-of-type,
+.reduced-motion .audio-wave-speaking > span {
+  animation: none;
+}

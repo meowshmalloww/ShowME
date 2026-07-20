@@ -45,4 +45,11 @@ describe("wake microphone PCM conversion", () => {
     );
     expect(collector.isActive()).toBe(false);
   });
+
+  it("releases the default wake phrase after 360 ms of silence", () => {
+    const collector = new WakeUtteranceCollector(1_000);
+    expect(collector.push(new Int16Array(120).fill(1), true)).toBeNull();
+    expect(collector.push(new Int16Array(180), false)).toBeNull();
+    expect(collector.push(new Int16Array(180), false)).not.toBeNull();
+  });
 });

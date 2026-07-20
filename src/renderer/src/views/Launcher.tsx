@@ -1,4 +1,14 @@
-import { AlertCircle, ArrowUp, MousePointer2, Scan, Square, X } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowUp,
+  LoaderCircle,
+  LockKeyhole,
+  Mic,
+  MousePointer2,
+  Scan,
+  Square,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   calibratedSpeechThreshold,
@@ -6,6 +16,7 @@ import {
   floatRmsLevel,
   WakeUtteranceCollector,
 } from "../../../shared/audio";
+import { launcherActivityVisual } from "../../../shared/launcher";
 import type {
   AppBootstrap,
   LauncherMode,
@@ -15,7 +26,7 @@ import type {
 } from "../../../shared/types";
 import { openConfiguredMicrophone, rmsLevel } from "../audio";
 import { BrandMark } from "../components/BrandMark";
-import { errorMessage, Spinner } from "../components/Ui";
+import { errorMessage } from "../components/Ui";
 
 const EMPTY_LEVELS = [0.08, 0.12, 0.09, 0.15, 0.1, 0.13, 0.08, 0.12, 0.09, 0.14, 0.1, 0.12];
 
@@ -26,8 +37,8 @@ export function Launcher() {
   const [question, setQuestion] = useState("");
   const [progress, setProgress] = useState<LessonProgress | null>(null);
   const [error, setError] = useState("");
-  const [recording, setRecording] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
+  const [, setRecording] = useState(false);
+  const [, setTranscribing] = useState(false);
   const [voiceLevels, setVoiceLevels] = useState(EMPTY_LEVELS);
   const [wakeLevel, setWakeLevel] = useState(0);
   const [wakeStatus, setWakeStatus] = useState<WakeListenerStatus | null>(null);
@@ -507,6 +518,7 @@ export function Launcher() {
 
   if (mode === "listening" || mode === "transcribing" || mode === "speaking") {
     const labels = voiceCopy(mode);
+    const activityVisual = launcherActivityVisual(mode);
     return (
       <div
         className={"island-stage" + (bootstrap?.settings.reducedMotion ? " reduced-motion" : "")}
@@ -519,7 +531,21 @@ export function Launcher() {
             <strong>{labels.title}</strong>
             <small>{labels.detail}</small>
           </span>
-          <AudioWave levels={mode === "listening" ? voiceLevels : EMPTY_LEVELS} state={mode} />
+          {activityVisual === "waveform" ? (
+            <AudioWave levels={EMPTY_LEVELS} state="speaking" />
+          ) : activityVisual === "microphone" ? (
+            <span
+              className="listening-meter"
+              style={{ "--voice-level": Math.max(...voiceLevels) } as React.CSSProperties}
+              aria-hidden="true"
+            >
+              <Mic size={14} />
+            </span>
+          ) : (
+            <span className="activity-loader" aria-hidden="true">
+              <LoaderCircle size={15} />
+            </span>
+          )}
           {mode === "listening" ? (
             <button
               className="voice-stop"
@@ -548,7 +574,7 @@ export function Launcher() {
             <strong>{progress?.message ?? "Building your lesson"}</strong>
             <small>{progressLabel(progress?.stage)}</small>
           </div>
-          <AudioWave levels={EMPTY_LEVELS} state="thinking" />
+          <ThinkingProgress stage={progress?.stage} />
         </div>
       </div>
     );
@@ -592,6 +618,7 @@ export function Launcher() {
             }
             value={question}
           />
+          <span className="composer-hint">Enter builds | Shift + Enter adds a line</span>
         </div>
         <footer>
           <button
@@ -603,7 +630,17 @@ export function Launcher() {
             Build lesson <ArrowUp size={16} />
           </button>
         </footer>
-        {error ? <div className="composer-error">{error}</div> : null}
+        {error ? (
+          <div className="composer-error" role="alert">
+            <AlertCircle size={12} />
+            <span>{error}</span>
+          </div>
+        ) : (
+          <div className="composer-status">
+            <LockKeyhole size={10} />
+            <span>Capture stays in memory and expires automatically</span>
+          </div>
+        )}
       </section>
     </div>
   );
@@ -626,7 +663,7 @@ function StandbyWave({ level, ready }: { level: number; ready: boolean }) {
   );
 }
 
-function AudioWave({ levels, state }: { levels: number[]; state: LauncherMode | "thinking" }) {
+function AudioWave({ levels, state }: { levels: number[]; state: "speaking" }) {
   return (
     <span className={"audio-wave audio-wave-" + state} aria-hidden="true">
       {levels.map((level, index) => (
@@ -634,6 +671,24 @@ function AudioWave({ levels, state }: { levels: number[]; state: LauncherMode | 
           key={String(index)}
           style={{ transform: "scaleY(" + Math.max(0.16, level).toFixed(2) + ")" }}
         />
+      ))}
+    </span>
+  );
+}
+
+function ThinkingProgress({ stage }: { stage: LessonProgress["stage"] | undefined }) {
+  const stages: LessonProgress["stage"][] = [
+    "preparing",
+    "understanding",
+    "researching",
+    "verifying",
+    "rendering",
+  ];
+  const activeIndex = Math.max(0, stages.indexOf(stage ?? "preparing"));
+  return (
+    <span className="thinking-progress" aria-hidden="true">
+      {stages.map((value, index) => (
+        <span className={index <= activeIndex ? "active" : ""} key={value} />
       ))}
     </span>
   );
