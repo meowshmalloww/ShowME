@@ -31,7 +31,7 @@ export class WakeWordService {
   private audioBuffer = Buffer.alloc(0);
   private newAudioBytes = 0;
   private assistantName = "ShowME";
-  private sensitivity = 0.42;
+  private sensitivity = 0.74;
   private recognizerCulture: string | undefined;
   private recognizerName: string | undefined;
   private inputState: WakeInputState = {
@@ -50,12 +50,10 @@ export class WakeWordService {
     private readonly callbacks: WakeWordCallbacks,
   ) {}
 
-  configure(enabled: boolean, assistantName: string, sensitivity = 0.42): void {
-    const normalizedName = assistantName.trim() || "ShowME";
-    const normalizedSensitivity = Math.max(0.25, Math.min(0.9, sensitivity));
-    const configurationChanged =
-      normalizedName !== this.assistantName || normalizedSensitivity !== this.sensitivity;
-    this.assistantName = normalizedName;
+  configure(enabled: boolean, _assistantName: string, sensitivity = 0.74): void {
+    const normalizedSensitivity = Math.max(0.74, Math.min(0.9, sensitivity));
+    const configurationChanged = normalizedSensitivity !== this.sensitivity;
+    this.assistantName = "ShowME";
     this.sensitivity = normalizedSensitivity;
     this.desired = enabled && process.platform === "win32";
     if (!this.desired) {

@@ -1,12 +1,14 @@
 param(
   [string]$WakePhrase = "ShowME",
-  [double]$ConfidenceThreshold = 0.42,
+  [double]$ConfidenceThreshold = 0.74,
   [switch]$SelfTest,
   [switch]$Probe,
   [switch]$StreamInput
 )
 
 $ErrorActionPreference = "Stop"
+$recognizer = $null
+$dictationRecognizer = $null
 
 try {
   Add-Type -AssemblyName System.Speech
@@ -27,9 +29,13 @@ try {
     $recognizerInfo = $installed[0]
   }
   $recognizerCulture = $recognizerInfo.Culture
-  $ConfidenceThreshold = [Math]::Max(0.25, [Math]::Min(0.9, $ConfidenceThreshold))
+  $ConfidenceThreshold = [Math]::Max(0.74, [Math]::Min(0.9, $ConfidenceThreshold))
   $script:confidenceThreshold = $ConfidenceThreshold
   $recognizer = [System.Speech.Recognition.SpeechRecognitionEngine]::new($recognizerCulture)
+  $recognizer.InitialSilenceTimeout = [TimeSpan]::FromSeconds(1.5)
+  $recognizer.BabbleTimeout = [TimeSpan]::FromSeconds(2)
+  $recognizer.EndSilenceTimeout = [TimeSpan]::FromMilliseconds(260)
+  $recognizer.EndSilenceTimeoutAmbiguous = [TimeSpan]::FromMilliseconds(520)
   if ($Probe) {
     [Console]::Out.WriteLine((@{
       type = "ready"
@@ -40,25 +46,27 @@ try {
     exit 0
   }
 
-  $variants = [System.Collections.Generic.HashSet[string]]::new(
+  $script:wakePhrases = [System.Collections.Generic.HashSet[string]]::new(
     [System.StringComparer]::OrdinalIgnoreCase
   )
-  [void]$variants.Add("Show me")
-  [void]$variants.Add("Hey show me")
-  [void]$variants.Add("Okay show me")
-  if (-not [string]::IsNullOrWhiteSpace($WakePhrase)) {
-    $name = $WakePhrase.Trim()
-    [void]$variants.Add($name)
-    [void]$variants.Add("Hey $name")
-    [void]$variants.Add("Okay $name")
+  [void]$script:wakePhrases.Add("show me")
+  [void]$script:wakePhrases.Add("hey show me")
+  [void]$script:wakePhrases.Add("okay show me")
+
+  function Test-WakePhrase([string]$Text) {
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
+    $normalized = ($Text.ToLowerInvariant() -replace "[^a-z0-9 ]", " " -replace "\s+", " ").Trim()
+    return $script:wakePhrases.Contains($normalized)
   }
 
   $choices = [System.Speech.Recognition.Choices]::new()
-  $choices.Add([string[]]$variants)
+  $choices.Add([string[]]$script:wakePhrases)
   $builder = [System.Speech.Recognition.GrammarBuilder]::new()
   $builder.Culture = $recognizerCulture
   $builder.Append($choices)
   $grammar = [System.Speech.Recognition.Grammar]::new($builder)
+  $script:wakeGrammarName = "ShowME fixed wake phrases"
+  $grammar.Name = $script:wakeGrammarName
   $recognizer.LoadGrammar($grammar)
   $audioFormat = [System.Speech.AudioFormat.SpeechAudioFormatInfo]::new(
     16000,
@@ -75,7 +83,10 @@ try {
       $selfTestAudio.Position = 0
       $recognizer.SetInputToAudioStream($selfTestAudio, $audioFormat)
       $result = $recognizer.Recognize([TimeSpan]::FromSeconds(8))
-      $success = $null -ne $result -and $result.Confidence -ge $ConfidenceThreshold
+      $success = $null -ne $result -and
+        $result.Confidence -ge $ConfidenceThreshold -and
+        $result.Grammar.Name -eq $script:wakeGrammarName -and
+        (Test-WakePhrase $result.Text)
       [Console]::Out.WriteLine((@{
         type = "self-test"
         success = $success
@@ -91,6 +102,18 @@ try {
     }
   }
   if ($StreamInput) {
+    # Use a separate dictation recognizer as a rejection gate. A closed grammar by
+    # itself tries to coerce every sentence into its nearest allowed wake phrase.
+    # Only short utterances that actually contain "show" reach the wake recognizer.
+    $dictationRecognizer = [System.Speech.Recognition.SpeechRecognitionEngine]::new(
+      $recognizerCulture
+    )
+    $dictationRecognizer.InitialSilenceTimeout = [TimeSpan]::FromSeconds(1.5)
+    $dictationRecognizer.BabbleTimeout = [TimeSpan]::FromSeconds(2)
+    $dictationRecognizer.EndSilenceTimeout = [TimeSpan]::FromMilliseconds(260)
+    $dictationRecognizer.EndSilenceTimeoutAmbiguous = [TimeSpan]::FromMilliseconds(520)
+    $dictationGrammar = [System.Speech.Recognition.DictationGrammar]::new()
+    $dictationRecognizer.LoadGrammar($dictationGrammar)
     [Console]::Out.WriteLine((@{
       type = "ready"
       culture = $recognizerCulture.Name
@@ -98,6 +121,8 @@ try {
     } | ConvertTo-Json -Compress))
     while ($null -ne ($inputLine = [Console]::In.ReadLine())) {
       $windowAudio = $null
+      $dictationAudio = $null
+      $dictationResult = $null
       try {
         $command = $inputLine | ConvertFrom-Json
         if ($command.type -ne "audio" -or [string]::IsNullOrWhiteSpace($command.pcm)) {
@@ -107,10 +132,26 @@ try {
         if ($audioBytes.Length -lt 3200 -or $audioBytes.Length -gt 128000) {
           continue
         }
-        $windowAudio = [System.IO.MemoryStream]::new($audioBytes, $false)
-        $recognizer.SetInputToAudioStream($windowAudio, $audioFormat)
-        $result = $recognizer.Recognize([TimeSpan]::FromSeconds(5))
-        if ($null -ne $result -and $result.Confidence -ge $script:confidenceThreshold) {
+        $dictationAudio = [System.IO.MemoryStream]::new($audioBytes, $false)
+        $dictationRecognizer.SetInputToAudioStream($dictationAudio, $audioFormat)
+        $dictationResult = $dictationRecognizer.Recognize([TimeSpan]::FromSeconds(5))
+        try { $dictationRecognizer.SetInputToNull() } catch {}
+        $dictationAudio.Dispose()
+        $dictationAudio = $null
+        $dictationText = if ($null -ne $dictationResult) { $dictationResult.Text } else { "" }
+        $normalizedDictation = ($dictationText.ToLowerInvariant() -replace "[^a-z0-9 ]", " " -replace "\s+", " ").Trim()
+        $dictationWords = @($normalizedDictation -split " " | Where-Object { $_ })
+        $plausibleWake = $dictationWords.Count -le 5 -and $dictationWords -contains "show"
+        $result = $null
+        if ($plausibleWake) {
+          $windowAudio = [System.IO.MemoryStream]::new($audioBytes, $false)
+          $recognizer.SetInputToAudioStream($windowAudio, $audioFormat)
+          $result = $recognizer.Recognize([TimeSpan]::FromSeconds(5))
+        }
+        if ($null -ne $result -and
+          $result.Confidence -ge $script:confidenceThreshold -and
+          $result.Grammar.Name -eq $script:wakeGrammarName -and
+          (Test-WakePhrase $result.Text)) {
           [Console]::Out.WriteLine((@{
             type = "wake"
             phrase = $result.Text
@@ -119,8 +160,8 @@ try {
         } else {
           [Console]::Out.WriteLine((@{
             type = "processed"
-            phrase = if ($null -ne $result) { $result.Text } else { "" }
-            confidence = if ($null -ne $result) { [Math]::Round($result.Confidence, 3) } else { 0 }
+            phrase = if ($null -ne $dictationResult) { $dictationResult.Text } elseif ($null -ne $result) { $result.Text } else { "" }
+            confidence = if ($null -ne $dictationResult) { [Math]::Round($dictationResult.Confidence, 3) } elseif ($null -ne $result) { [Math]::Round($result.Confidence, 3) } else { 0 }
           } | ConvertTo-Json -Compress))
         }
       } catch {
@@ -130,7 +171,9 @@ try {
         } | ConvertTo-Json -Compress))
       } finally {
         try { $recognizer.SetInputToNull() } catch {}
+        try { $dictationRecognizer.SetInputToNull() } catch {}
         if ($null -ne $windowAudio) { $windowAudio.Dispose() }
+        if ($null -ne $dictationAudio) { $dictationAudio.Dispose() }
       }
     }
     exit 0
@@ -150,9 +193,9 @@ try {
 
   Register-ObjectEvent -InputObject $recognizer -EventName SpeechRecognized -Action {
     $result = $Event.SourceEventArgs.Result
-    # This is a closed grammar containing only explicit wake phrases, so a moderately
-    # permissive threshold is more reliable without opening general dictation.
-    if ($result.Confidence -ge $script:confidenceThreshold) {
+    if ($result.Confidence -ge $script:confidenceThreshold -and
+      $result.Grammar.Name -eq $script:wakeGrammarName -and
+      (Test-WakePhrase $result.Text)) {
       [Console]::Out.WriteLine((@{
         type = "wake"
         phrase = $result.Text
@@ -184,5 +227,8 @@ try {
   if ($null -ne $recognizer) {
     try { $recognizer.RecognizeAsyncCancel() } catch {}
     $recognizer.Dispose()
+  }
+  if ($null -ne $dictationRecognizer) {
+    $dictationRecognizer.Dispose()
   }
 }

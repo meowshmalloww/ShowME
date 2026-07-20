@@ -187,7 +187,7 @@ export interface ShowMEApi {
     onLessonReady(callback: (presentation: LessonPresentation) => void): () => void;
     onLauncherMode(callback: (mode: LauncherMode) => void): () => void;
     onVoiceLevel(callback: (level: number) => void): () => void;
-    onWakeDetected(callback: () => void): () => void;
+    onWakeDetected(callback: (context: PreparedContext) => void): () => void;
     onWakeStatus(callback: (status: WakeListenerStatus) => void): () => void;
     onSettingsChanged(callback: (settings: AppSettings) => void): () => void;
   };

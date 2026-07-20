@@ -731,6 +731,7 @@ function SettingsView({
           <VoiceSettings
             draft={draft}
             platform={bootstrap.platform}
+            providers={bootstrap.providers}
             wakeListener={bootstrap.wakeListener}
             setDraft={setDraft}
             notify={notify}
@@ -1091,7 +1092,7 @@ function TeachingSettings({
               onClick={() => setDraft({ ...draft, researchMode: "deep" })}
               type="button"
             >
-              Deep · cited
+              Deep
             </button>
           </div>
         </div>
@@ -1171,12 +1172,14 @@ function AppearanceSettings({
 function VoiceSettings({
   draft,
   platform,
+  providers,
   wakeListener,
   setDraft,
   notify,
 }: {
   draft: AppSettings;
   platform: string;
+  providers: ProviderSummary[];
   wakeListener: WakeListenerStatus;
   setDraft: (value: AppSettings) => void;
   notify: (message: string, tone: "error" | "success" | "info") => void;
@@ -1192,6 +1195,8 @@ function VoiceSettings({
   const testStream = useRef<MediaStream | null>(null);
   const testContext = useRef<AudioContext | null>(null);
   const testFrame = useRef<number | null>(null);
+  const transcriptionProvider = providers.find((item) => item.id === draft.voiceInputProvider);
+  const cloudVoiceProvider = providers.find((item) => item.id === "openai");
 
   const stopMicrophoneTest = useCallback((): void => {
     if (testFrame.current !== null) cancelAnimationFrame(testFrame.current);
@@ -1249,7 +1254,7 @@ function VoiceSettings({
       const samples = new Uint8Array(analyser.fftSize);
       const measure = (): void => {
         analyser.getByteTimeDomainData(samples);
-        setTestLevel(Math.min(1, rmsLevel(samples) * 8.5));
+        setTestLevel(Math.min(1, rmsLevel(samples) * 26));
         testFrame.current = requestAnimationFrame(measure);
       };
       setTestingMicrophone(true);
@@ -1275,18 +1280,13 @@ function VoiceSettings({
         body="Say ShowME, ask naturally, and watch the top island follow the conversation."
       />
       <section className="settings-card form-stack">
-        <label>
-          <span>Assistant name</span>
-          <input
-            maxLength={32}
-            value={draft.assistantName}
-            onChange={(event) => setDraft({ ...draft, assistantName: event.target.value })}
-          />
-          <small>
-            Recognizes “{draft.assistantName},” “Hey {draft.assistantName},” “Show me,” and “Okay{" "}
-            {draft.assistantName}” locally. No model key is required for wake-up.
-          </small>
-        </label>
+        <div className="fixed-wake-phrase">
+          <span>
+            <strong>Wake phrase</strong>
+            <small>Fixed for reliable recognition; it cannot be renamed.</small>
+          </span>
+          <code>Show me</code>
+        </div>
         <Toggle
           checked={draft.wakeEnabled}
           onChange={(value) => setDraft({ ...draft, wakeEnabled: value })}
@@ -1316,11 +1316,11 @@ function VoiceSettings({
           </span>
         </div>
         <label>
-          <span>Wake sensitivity · {Math.round((1 - draft.wakeSensitivity) * 100)}%</span>
+          <span>Wake confidence · {Math.round(draft.wakeSensitivity * 100)}%</span>
           <input
             className="range-input"
             type="range"
-            min="0.25"
+            min="0.74"
             max="0.9"
             step="0.01"
             value={draft.wakeSensitivity}
@@ -1329,15 +1329,15 @@ function VoiceSettings({
             }
           />
           <small>
-            Higher percentages wake more easily. Increase the confidence threshold if false wakes
-            occur.
+            Higher values reject uncertain matches. The recommended 74% balance avoids ordinary
+            speech while still recognizing “Show me.”
           </small>
         </label>
         <Toggle
           checked={draft.voiceEnabled}
           onChange={(value) => setDraft({ ...draft, voiceEnabled: value })}
-          label="Voice narration"
-          note="Read lesson steps aloud when requested."
+          label="Voice replies"
+          note="Automatically speak answers that started by wake phrase or voice button. Lesson controls can replay any step."
         />
         <Toggle
           checked={draft.captionsEnabled}
@@ -1388,6 +1388,56 @@ function VoiceSettings({
             <option value="openai">OpenAI speech · cloud</option>
           </select>
         </label>
+        <fieldset className="voice-route">
+          <legend>Voice processing route</legend>
+          <div>
+            <span className="voice-route-step">1</span>
+            <span>
+              <strong>Wake word</strong>
+              <small>Windows recognizer · stays on this device</small>
+            </span>
+            <em className="route-status ready">Local</em>
+          </div>
+          <div>
+            <span className="voice-route-step">2</span>
+            <span>
+              <strong>Spoken question</strong>
+              <small>{transcriptionProvider?.name ?? "Selected transcription provider"}</small>
+            </span>
+            <em
+              className={
+                "route-status " + (transcriptionProvider?.configured ? "ready" : "missing")
+              }
+            >
+              {transcriptionProvider?.configured ? "Ready" : "API key needed"}
+            </em>
+          </div>
+          <div>
+            <span className="voice-route-step">3</span>
+            <span>
+              <strong>Spoken reply</strong>
+              <small>
+                {draft.voiceOutputProvider === "system"
+                  ? "Windows system voice · follows the default speaker"
+                  : "OpenAI speech · routed to the selected speaker"}
+              </small>
+            </span>
+            <em
+              className={
+                "route-status " +
+                (draft.voiceOutputProvider === "system" || cloudVoiceProvider?.configured
+                  ? "ready"
+                  : "missing")
+              }
+            >
+              {draft.voiceOutputProvider === "system"
+                ? "Local"
+                : cloudVoiceProvider?.configured
+                  ? "Ready"
+                  : "API key needed"}
+            </em>
+          </div>
+        </fieldset>
         {draft.voiceOutputProvider === "openai" ? (
           <label>
             <span>OpenAI voice</span>
@@ -1711,7 +1761,7 @@ function PrivacySettings({
           <strong>Voice microphone</strong>
           <small>
             {draft.wakeEnabled
-              ? "The Windows wake listener stays local and recognizes the configured name with Hey or Okay variants. Provider transcription begins only after wake-up."
+              ? "The Windows wake listener stays local and recognizes only ShowME wake-phrase variants. Provider transcription begins after wake-up."
               : "Checks permission once and releases the microphone immediately. Voice input starts only when you press the microphone button."}
           </small>
         </div>
@@ -1735,7 +1785,7 @@ function PrivacySettings({
         <Toggle
           checked={draft.webResearchDefault}
           onChange={(value) => setDraft({ ...draft, webResearchDefault: value })}
-          label="Cited web research by default"
+          label="Web research by default"
           note="Requires a provider with a native web-search capability."
         />
         <Toggle

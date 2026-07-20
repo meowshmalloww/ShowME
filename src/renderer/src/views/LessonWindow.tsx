@@ -66,6 +66,7 @@ export function LessonWindow() {
     tone: "error" | "success" | "info";
   } | null>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
+  const pendingAutoNarration = useRef<string | null>(null);
 
   const stopNarration = useCallback((): void => {
     window.speechSynthesis?.cancel();
@@ -80,6 +81,7 @@ export function LessonWindow() {
     const cleanups = [
       window.showme.events.onLessonReady((value) => {
         stopNarration();
+        pendingAutoNarration.current = value.request.replyWithVoice ? value.plan.id : null;
         setPresentation(value);
         setStep(0);
         setPlaying(false);
@@ -157,56 +159,71 @@ export function LessonWindow() {
     return () => window.clearTimeout(timer);
   }, [playing, presentation, step]);
 
-  const narrate = async (): Promise<void> => {
-    if (!presentation || !bootstrap) return;
-    if (speaking) {
-      stopNarration();
+  const narrate = useCallback(
+    async (fullResponse = false): Promise<void> => {
+      if (!presentation || !bootstrap) return;
+      if (speaking) {
+        stopNarration();
+        return;
+      }
+      const text = fullResponse
+        ? presentation.plan.narration
+        : presentation.plan.steps[step]?.narration || presentation.plan.narration;
+      try {
+        if (bootstrap.settings.voiceOutputProvider === "system") {
+          const utterance = new SpeechSynthesisUtterance(text);
+          utterance.lang = bootstrap.settings.language;
+          utterance.rate = bootstrap.settings.speechRate;
+          utterance.onend = () => {
+            setSpeaking(false);
+            void window.showme.voice.activity("idle");
+          };
+          utterance.onerror = () => {
+            setSpeaking(false);
+            void window.showme.voice.activity("idle");
+          };
+          setSpeaking(true);
+          await window.showme.voice.activity("speaking");
+          window.speechSynthesis.speak(utterance);
+        } else {
+          const generated = await window.showme.voice.synthesize(text);
+          const bytes = new Uint8Array(generated.bytes);
+          const url = URL.createObjectURL(new Blob([bytes.buffer], { type: generated.mimeType }));
+          const next = new Audio(url);
+          await routeAudioOutput(next, bootstrap.settings.speakerDeviceId);
+          audio.current = next;
+          next.onended = () => {
+            URL.revokeObjectURL(url);
+            setSpeaking(false);
+            void window.showme.voice.activity("idle");
+          };
+          next.onerror = () => {
+            URL.revokeObjectURL(url);
+            setSpeaking(false);
+            void window.showme.voice.activity("idle");
+          };
+          setSpeaking(true);
+          await window.showme.voice.activity("speaking");
+          await next.play();
+        }
+      } catch (reason) {
+        setSpeaking(false);
+        await window.showme.voice.activity("idle");
+        setToast({ message: errorMessage(reason), tone: "error" });
+      }
+    },
+    [bootstrap, presentation, speaking, step, stopNarration],
+  );
+
+  useEffect(() => {
+    if (!presentation || !bootstrap || pendingAutoNarration.current !== presentation.plan.id) {
       return;
     }
-    const text = presentation.plan.steps[step]?.narration || presentation.plan.narration;
-    try {
-      if (bootstrap.settings.voiceOutputProvider === "system") {
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = bootstrap.settings.language;
-        utterance.rate = bootstrap.settings.speechRate;
-        utterance.onend = () => {
-          setSpeaking(false);
-          void window.showme.voice.activity("idle");
-        };
-        utterance.onerror = () => {
-          setSpeaking(false);
-          void window.showme.voice.activity("idle");
-        };
-        setSpeaking(true);
-        await window.showme.voice.activity("speaking");
-        window.speechSynthesis.speak(utterance);
-      } else {
-        const generated = await window.showme.voice.synthesize(text);
-        const bytes = new Uint8Array(generated.bytes);
-        const url = URL.createObjectURL(new Blob([bytes.buffer], { type: generated.mimeType }));
-        const next = new Audio(url);
-        await routeAudioOutput(next, bootstrap.settings.speakerDeviceId);
-        audio.current = next;
-        next.onended = () => {
-          URL.revokeObjectURL(url);
-          setSpeaking(false);
-          void window.showme.voice.activity("idle");
-        };
-        next.onerror = () => {
-          URL.revokeObjectURL(url);
-          setSpeaking(false);
-          void window.showme.voice.activity("idle");
-        };
-        setSpeaking(true);
-        await window.showme.voice.activity("speaking");
-        await next.play();
-      }
-    } catch (reason) {
-      setSpeaking(false);
-      await window.showme.voice.activity("idle");
-      setToast({ message: errorMessage(reason), tone: "error" });
-    }
-  };
+    pendingAutoNarration.current = null;
+    if (!bootstrap.settings.voiceEnabled) return;
+    const timer = window.setTimeout(() => void narrate(true), 220);
+    return () => window.clearTimeout(timer);
+  }, [bootstrap, narrate, presentation]);
 
   const adapt = async (adaptation: AdaptationKind, question?: string): Promise<void> => {
     if (!presentation || adapting) return;
@@ -445,7 +462,7 @@ export function LessonWindow() {
             <button
               className={speaking ? "speaking" : ""}
               aria-label={speaking ? "Stop narration" : "Narrate this step"}
-              onClick={narrate}
+              onClick={() => void narrate(false)}
               type="button"
             >
               {speaking ? <VolumeX size={17} /> : <Volume2 size={17} />}
@@ -529,7 +546,7 @@ export function LessonWindow() {
               <span>
                 <strong>
                   {plan.citations.length
-                    ? plan.citations.length + " cited sources"
+                    ? plan.citations.length + " sources"
                     : "Evidence & confidence"}
                 </strong>
                 <small>{presentation.verification.summary}</small>

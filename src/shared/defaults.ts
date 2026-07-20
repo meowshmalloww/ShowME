@@ -36,7 +36,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   echoCancellation: true,
   noiseSuppression: true,
   autoGainControl: true,
-  wakeSensitivity: 0.42,
+  wakeSensitivity: 0.74,
   voiceSilenceMs: 900,
   voiceMaxSeconds: 20,
   voice: "marin",

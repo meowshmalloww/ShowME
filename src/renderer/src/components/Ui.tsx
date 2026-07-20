@@ -23,8 +23,11 @@ export function Toggle({
         {note ? <small>{note}</small> : null}
       </span>
       <input
+        aria-label={label}
+        aria-checked={checked}
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
+        role="switch"
         type="checkbox"
       />
       <span className="toggle-track">

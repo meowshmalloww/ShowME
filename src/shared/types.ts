@@ -391,6 +391,7 @@ export interface GenerateLessonRequest {
   complexity: "simpler" | "standard" | "advanced";
   provider: ProviderId;
   model: string;
+  replyWithVoice?: boolean;
   adaptation?: AdaptationKind;
   priorPlanId?: string;
 }

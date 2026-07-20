@@ -108,8 +108,8 @@ async function beginWakeInteraction(): Promise<void> {
   windows.showLauncher(false);
   try {
     const context = await capture.captureVoiceContext();
-    windows.showQuestion(context);
-    windows.broadcastWakeDetected();
+    windows.broadcastWakeDetected(context);
+    windows.showLauncher(false);
   } catch (error) {
     console.error(redactSecrets(error instanceof Error ? error.message : String(error)));
     windows.setLauncherMode("revealed");
@@ -143,8 +143,12 @@ function registerShortcuts(settings: AppSettings): void {
   });
   registerShortcut(settings.voiceHotkey, async () => {
     if (!capture || !windows) return;
+    wakeWord?.suspend();
+    windows.setLauncherMode("listening");
+    windows.showLauncher(false);
     const context = await capture.captureVoiceContext();
-    windows.showQuestion(context);
+    windows.broadcastWakeDetected(context);
+    windows.showLauncher(false);
   });
 }
 

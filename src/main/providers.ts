@@ -42,7 +42,7 @@ export class ProviderService {
       throw new CommandError(
         "PROVIDER_LACKS_WEB_RESEARCH",
         PROVIDER_DEFINITIONS[request.provider].name +
-          " cannot perform cited web research through this integration.",
+          " cannot perform web research through this integration.",
         "Use OpenAI for Deep research, or turn off web research.",
       );
     }

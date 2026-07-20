@@ -78,6 +78,11 @@ export class AppStore {
       return appSettingsSchema.parse({
         ...DEFAULT_SETTINGS,
         ...saved,
+        // ShowME is a product name and a wake phrase, not a user-editable persona.
+        assistantName: "ShowME",
+        // Migrate permissive pre-release thresholds that could coerce ordinary speech
+        // into the closed wake grammar.
+        wakeSensitivity: Math.max(0.74, saved.wakeSensitivity ?? DEFAULT_SETTINGS.wakeSensitivity),
         models: { ...DEFAULT_SETTINGS.models, ...saved.models },
         textModels: { ...DEFAULT_SETTINGS.textModels, ...saved.textModels },
         providerCapabilityOverrides: saved.providerCapabilityOverrides ?? {},
@@ -88,7 +93,10 @@ export class AppStore {
   }
 
   saveSettings(settings: AppSettings): AppSettings {
-    const validated = appSettingsSchema.parse(settings) as AppSettings;
+    const validated = appSettingsSchema.parse({
+      ...settings,
+      assistantName: "ShowME",
+    }) as AppSettings;
     this.db
       .prepare(`
         INSERT INTO settings(id, value_json, updated_at) VALUES (1, ?, ?)

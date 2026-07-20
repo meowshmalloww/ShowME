@@ -1,12 +1,11 @@
-import { ArrowUp, Mic, MousePointer2, Scan, Square, X } from "lucide-react";
+import { AlertCircle, ArrowUp, MousePointer2, Scan, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { downsampleToPcm16, floatRmsLevel } from "../../../shared/audio";
+import { calibratedSpeechThreshold, downsampleToPcm16, floatRmsLevel } from "../../../shared/audio";
 import type {
   AppBootstrap,
   LauncherMode,
   LessonProgress,
   PreparedContext,
-  ResearchMode,
   WakeListenerStatus,
 } from "../../../shared/types";
 import { openConfiguredMicrophone, rmsLevel } from "../audio";
@@ -20,7 +19,6 @@ export function Launcher() {
   const [bootstrap, setBootstrap] = useState<AppBootstrap | null>(null);
   const [context, setContext] = useState<PreparedContext | null>(null);
   const [question, setQuestion] = useState("");
-  const [research, setResearch] = useState<ResearchMode>("quick");
   const [progress, setProgress] = useState<LessonProgress | null>(null);
   const [error, setError] = useState("");
   const [recording, setRecording] = useState(false);
@@ -42,11 +40,9 @@ export function Launcher() {
   const chunks = useRef<Blob[]>([]);
   const bootstrapRef = useRef<AppBootstrap | null>(null);
   const contextRef = useRef<PreparedContext | null>(null);
-  const researchRef = useRef<ResearchMode>("quick");
 
   bootstrapRef.current = bootstrap;
   contextRef.current = context;
-  researchRef.current = research;
 
   const stopAudioMonitoring = useCallback((): void => {
     if (monitorTimer.current) window.clearTimeout(monitorTimer.current);
@@ -125,7 +121,7 @@ export function Launcher() {
           if (wakeGeneration.current !== generation) return;
           const samples = event.inputBuffer.getChannelData(0);
           const rms = floatRmsLevel(samples);
-          setWakeLevel(Math.min(1, rms * 8.5));
+          setWakeLevel(Math.min(1, rms * 26));
           const pcm = downsampleToPcm16(samples, context.sampleRate);
           if (pcm.byteLength > 0) window.showme.wake.pushAudio(new Uint8Array(pcm.buffer));
           if (!signalReported && rms >= 0.0025) {
@@ -170,154 +166,159 @@ export function Launcher() {
     [stopWakeInput],
   );
 
-  const submitText = useCallback(async (rawQuestion: string): Promise<void> => {
-    const activeBootstrap = bootstrapRef.current;
-    const activeContext = contextRef.current;
-    const nextQuestion = rawQuestion.trim();
-    if (!activeBootstrap || !activeContext || !nextQuestion) return;
-    const settings = activeBootstrap.settings;
-    const researchMode = researchRef.current;
-    setQuestion(nextQuestion);
-    setError("");
-    setMode("thinking");
-    setProgress({
-      requestId: "pending",
-      stage: "preparing",
-      message: "Preparing your visual lesson",
-    });
-    try {
-      await window.showme.lesson.generate({
-        captureId: activeContext.captureId,
-        question: nextQuestion,
-        includeNearbyContext: settings.nearbyContextDefault,
-        includeActiveWindow: settings.activeWindowDefault,
-        researchMode,
-        allowWebResearch: researchMode === "deep" || settings.webResearchDefault,
-        allowImageAids: settings.imageAidsDefault,
-        language: settings.language,
-        teachingStyle: settings.teachingStyle,
-        complexity: "standard",
-        provider: settings.provider,
-        model: settings.models[settings.provider],
-      });
-      setQuestion("");
-      setContext(null);
-    } catch (reason) {
-      setError(errorMessage(reason));
-      setMode("question");
-    }
+  const finishVoiceWithError = useCallback(async (message: string): Promise<void> => {
+    setError(message);
+    setQuestion("");
+    setContext(null);
+    contextRef.current = null;
+    await window.showme.capture.clear();
+    setMode("revealed");
+    await window.showme.launcher.setMode("revealed");
+    await window.showme.voice.activity("idle");
   }, []);
 
-  const startRecording = useCallback(
-    async (automatic = false): Promise<void> => {
-      if (recorder.current) return;
-      stopWakeInput(false);
+  const submitText = useCallback(
+    async (rawQuestion: string, replyWithVoice = false): Promise<void> => {
+      const activeBootstrap = bootstrapRef.current;
+      const activeContext = contextRef.current;
+      const nextQuestion = rawQuestion.trim();
+      if (!activeBootstrap || !activeContext || !nextQuestion) return;
+      const settings = activeBootstrap.settings;
+      const researchMode = settings.researchMode;
+      setQuestion(nextQuestion);
       setError("");
+      setMode("thinking");
+      setProgress({
+        requestId: "pending",
+        stage: "preparing",
+        message: "Preparing your visual lesson",
+      });
       try {
-        const settings = bootstrapRef.current?.settings;
-        if (!settings) throw new Error("ShowME is still loading audio settings.");
-        const { stream, fellBackToDefault } = await openConfiguredMicrophone(settings);
-        if (fellBackToDefault) {
-          setError("The saved microphone is unavailable, so ShowME used the system default.");
-        }
-        const preferred = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-          ? "audio/webm;codecs=opus"
-          : "audio/webm";
-        const next = new MediaRecorder(stream, { mimeType: preferred });
-        const nextAudioContext = new AudioContext({ latencyHint: "interactive" });
-        const source = nextAudioContext.createMediaStreamSource(stream);
-        const analyser = nextAudioContext.createAnalyser();
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.68;
-        source.connect(analyser);
-        audioContext.current = nextAudioContext;
-        chunks.current = [];
-        let heardSpeech = false;
-        let lastSpeechAt = performance.now();
-        const startedAt = performance.now();
-        let history = [...EMPTY_LEVELS];
-        const samples = new Uint8Array(analyser.fftSize);
-
-        const monitor = (): void => {
-          if (next.state === "inactive") return;
-          analyser.getByteTimeDomainData(samples);
-          const rms = rmsLevel(samples);
-          const level = Math.min(1, Math.max(0.05, rms * 8.5));
-          history = [...history.slice(1), level];
-          setVoiceLevels(history);
-
-          const now = performance.now();
-          if (automatic && rms > 0.028) {
-            heardSpeech = true;
-            lastSpeechAt = now;
-          }
-          const finishedBySilence =
-            automatic && heardSpeech && now - lastSpeechAt > settings.voiceSilenceMs;
-          const reachedLimit = now - startedAt > settings.voiceMaxSeconds * 1000;
-          if (finishedBySilence || reachedLimit) next.stop();
-          else monitorTimer.current = window.setTimeout(monitor, 46);
-        };
-
-        next.ondataavailable = (event) => {
-          if (event.data.size > 0) chunks.current.push(event.data);
-        };
-        next.onstop = async () => {
-          recorder.current = null;
-          setRecording(false);
-          stopAudioMonitoring();
-          for (const track of stream.getTracks()) track.stop();
-          const blob = new Blob(chunks.current, { type: next.mimeType });
-          if (blob.size === 0) {
-            setMode("question");
-            await window.showme.launcher.setMode("question");
-            await window.showme.voice.activity("idle");
-            return;
-          }
-          setTranscribing(true);
-          setMode("transcribing");
-          await window.showme.voice.activity("transcribing");
-          try {
-            const text = (
-              await window.showme.voice.transcribe({
-                bytes: new Uint8Array(await blob.arrayBuffer()),
-                mimeType: next.mimeType,
-              })
-            ).trim();
-            if (!text) throw new Error("ShowME did not hear a question. Please try again.");
-            if (automatic) {
-              setQuestion(text);
-              await window.showme.voice.activity("idle");
-              await submitText(text);
-            } else {
-              setQuestion((current) => (current ? current + " " : "") + text);
-              setMode("question");
-              await window.showme.launcher.setMode("question");
-              await window.showme.voice.activity("idle");
-            }
-          } catch (reason) {
-            setError(errorMessage(reason));
-            setMode("question");
-            await window.showme.launcher.setMode("question");
-            await window.showme.voice.activity("idle");
-          } finally {
-            setTranscribing(false);
-          }
-        };
-        recorder.current = next;
-        next.start(160);
-        setRecording(true);
-        setMode("listening");
-        await window.showme.voice.activity("listening");
-        monitor();
+        await window.showme.lesson.generate({
+          captureId: activeContext.captureId,
+          question: nextQuestion,
+          includeNearbyContext: settings.nearbyContextDefault,
+          includeActiveWindow: settings.activeWindowDefault,
+          researchMode,
+          allowWebResearch: researchMode === "deep" || settings.webResearchDefault,
+          allowImageAids: settings.imageAidsDefault,
+          language: settings.language,
+          teachingStyle: settings.teachingStyle,
+          complexity: "standard",
+          provider: settings.provider,
+          model: settings.models[settings.provider],
+          replyWithVoice,
+        });
+        if (replyWithVoice) await window.showme.voice.activity("idle");
+        setQuestion("");
+        setContext(null);
       } catch (reason) {
-        setError(errorMessage(reason));
-        setMode("question");
-        await window.showme.launcher.setMode("question");
-        await window.showme.voice.activity("idle");
+        const message = errorMessage(reason);
+        if (replyWithVoice) await finishVoiceWithError(message);
+        else {
+          setError(message);
+          setMode("question");
+        }
       }
     },
-    [stopAudioMonitoring, stopWakeInput, submitText],
+    [finishVoiceWithError],
   );
+
+  const startRecording = useCallback(async (): Promise<void> => {
+    if (recorder.current) return;
+    stopWakeInput(false);
+    setError("");
+    try {
+      const settings = bootstrapRef.current?.settings;
+      if (!settings) throw new Error("ShowME is still loading audio settings.");
+      const { stream, fellBackToDefault } = await openConfiguredMicrophone(settings);
+      if (fellBackToDefault) {
+        setError("The saved microphone is unavailable, so ShowME used the system default.");
+      }
+      const preferred = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : "audio/webm";
+      const next = new MediaRecorder(stream, { mimeType: preferred });
+      const nextAudioContext = new AudioContext({ latencyHint: "interactive" });
+      const source = nextAudioContext.createMediaStreamSource(stream);
+      const analyser = nextAudioContext.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.68;
+      source.connect(analyser);
+      audioContext.current = nextAudioContext;
+      chunks.current = [];
+      let heardSpeech = false;
+      let lastSpeechAt = performance.now();
+      const startedAt = performance.now();
+      let noiseFloor = Number.POSITIVE_INFINITY;
+      let history = [...EMPTY_LEVELS];
+      const samples = new Uint8Array(analyser.fftSize);
+
+      const monitor = (): void => {
+        if (next.state === "inactive") return;
+        analyser.getByteTimeDomainData(samples);
+        const rms = rmsLevel(samples);
+        const level = Math.min(1, Math.max(0.05, rms * 28));
+        history = [...history.slice(1), level];
+        setVoiceLevels(history);
+
+        const now = performance.now();
+        const elapsed = now - startedAt;
+        if (elapsed < 650) noiseFloor = Math.min(noiseFloor, rms);
+        const speechThreshold = calibratedSpeechThreshold(noiseFloor);
+        if (elapsed > 240 && rms > speechThreshold) {
+          heardSpeech = true;
+          lastSpeechAt = now;
+        }
+        const finishedBySilence = heardSpeech && now - lastSpeechAt > settings.voiceSilenceMs;
+        const finishedWithoutSpeech = !heardSpeech && now - startedAt > 6_000;
+        const reachedLimit = now - startedAt > settings.voiceMaxSeconds * 1000;
+        if (finishedBySilence || finishedWithoutSpeech || reachedLimit) next.stop();
+        else monitorTimer.current = window.setTimeout(monitor, 46);
+      };
+
+      next.ondataavailable = (event) => {
+        if (event.data.size > 0) chunks.current.push(event.data);
+      };
+      next.onstop = async () => {
+        recorder.current = null;
+        setRecording(false);
+        stopAudioMonitoring();
+        for (const track of stream.getTracks()) track.stop();
+        const blob = new Blob(chunks.current, { type: next.mimeType });
+        if (blob.size === 0 || !heardSpeech) {
+          await finishVoiceWithError("ShowME did not hear a question. Please try again.");
+          return;
+        }
+        setTranscribing(true);
+        setMode("transcribing");
+        await window.showme.voice.activity("transcribing");
+        try {
+          const text = (
+            await window.showme.voice.transcribe({
+              bytes: new Uint8Array(await blob.arrayBuffer()),
+              mimeType: next.mimeType,
+            })
+          ).trim();
+          if (!text) throw new Error("ShowME did not hear a question. Please try again.");
+          setQuestion(text);
+          await submitText(text, true);
+        } catch (reason) {
+          await finishVoiceWithError(errorMessage(reason));
+        } finally {
+          setTranscribing(false);
+        }
+      };
+      recorder.current = next;
+      next.start(160);
+      setRecording(true);
+      setMode("listening");
+      await window.showme.voice.activity("listening");
+      monitor();
+    } catch (reason) {
+      await finishVoiceWithError(errorMessage(reason));
+    }
+  }, [finishVoiceWithError, stopAudioMonitoring, stopWakeInput, submitText]);
 
   const closeQuestion = useCallback(async (): Promise<void> => {
     if (recorder.current?.state !== "inactive") recorder.current?.stop();
@@ -335,7 +336,6 @@ export function Launcher() {
       .bootstrap()
       .then((value) => {
         setBootstrap(value);
-        setResearch(value.settings.researchMode);
       })
       .catch((reason) => setError(errorMessage(reason)));
     void window.showme.capture.prepared().then((value) => {
@@ -353,7 +353,13 @@ export function Launcher() {
         setMode("thinking");
       }),
       window.showme.events.onVoiceLevel(setWakeLevel),
-      window.showme.events.onWakeDetected(() => void startRecording(true)),
+      window.showme.events.onWakeDetected((value) => {
+        contextRef.current = value;
+        setContext(value);
+        setMode("listening");
+        setError("");
+        void startRecording();
+      }),
       window.showme.events.onWakeStatus(setWakeStatus),
       window.showme.events.onSettingsChanged((settings) => {
         setBootstrap((current) => (current ? { ...current, settings } : current));
@@ -415,14 +421,6 @@ export function Launcher() {
     }
   };
 
-  const toggleRecording = async (): Promise<void> => {
-    if (recording) {
-      recorder.current?.stop();
-      return;
-    }
-    await startRecording(false);
-  };
-
   if (mode === "idle") {
     const wakeEnabled = bootstrap?.settings.wakeEnabled ?? false;
     const listenerReady =
@@ -464,33 +462,44 @@ export function Launcher() {
         onPointerLeave={conceal}
       >
         <div className="dynamic-island reveal-island">
-          <button
-            className="capture-affordance"
-            onClick={beginCapture}
-            ref={captureButton}
-            type="button"
-          >
-            <span className="capture-glyph">
-              <Scan size={20} strokeWidth={1.8} />
-            </span>
-            <span className="capture-copy">
-              <strong>Show me this</strong>
-              <small>Select an area, point, or the whole screen</small>
-            </span>
-            <span className="launcher-shortcut" aria-hidden="true">
-              <kbd>Space</kbd>
-              <small>select</small>
-            </span>
-          </button>
+          {error ? (
+            <div className="launcher-error-inline" role="status">
+              <AlertCircle size={15} />
+              <span>
+                <strong>Voice unavailable</strong>
+                <small>{error}</small>
+              </span>
+              <button aria-label="Dismiss" onClick={() => setError("")} type="button">
+                <X size={13} />
+              </button>
+            </div>
+          ) : (
+            <button
+              className="capture-affordance"
+              onClick={beginCapture}
+              ref={captureButton}
+              type="button"
+            >
+              <span className="capture-glyph">
+                <Scan size={20} strokeWidth={1.8} />
+              </span>
+              <span className="capture-copy">
+                <strong>Show me this</strong>
+                <small>Select an area, point, or the whole screen</small>
+              </span>
+              <span className="launcher-shortcut" aria-hidden="true">
+                <kbd>Space</kbd>
+                <small>select</small>
+              </span>
+            </button>
+          )}
         </div>
-        {error ? <div className="island-error">{error}</div> : null}
       </div>
     );
   }
 
   if (mode === "listening" || mode === "transcribing" || mode === "speaking") {
-    const assistantName = bootstrap?.settings.assistantName ?? "ShowME";
-    const labels = voiceCopy(mode, assistantName);
+    const labels = voiceCopy(mode);
     return (
       <div
         className={"island-stage" + (bootstrap?.settings.reducedMotion ? " reduced-motion" : "")}
@@ -572,44 +581,12 @@ export function Launcher() {
               }
             }}
             placeholder={
-              bootstrap
-                ? "Ask " + bootstrap.settings.assistantName + " what should become clear"
-                : "What should become clear?"
+              bootstrap ? "Ask ShowME what should become clear" : "What should become clear?"
             }
             value={question}
           />
-          <button
-            className={"mic-button" + (recording ? " recording" : "")}
-            aria-label={recording ? "Stop recording" : "Ask with voice"}
-            onClick={toggleRecording}
-            type="button"
-          >
-            {transcribing ? (
-              <Spinner small />
-            ) : recording ? (
-              <Square size={14} fill="currentColor" />
-            ) : (
-              <Mic size={18} />
-            )}
-          </button>
         </div>
         <footer>
-          <fieldset className="research-switch" aria-label="Research depth">
-            <button
-              className={research === "quick" ? "active" : ""}
-              onClick={() => setResearch("quick")}
-              type="button"
-            >
-              Quick
-            </button>
-            <button
-              className={research === "deep" ? "active" : ""}
-              onClick={() => setResearch("deep")}
-              type="button"
-            >
-              Deep · cited
-            </button>
-          </fieldset>
           <button
             className="send-button"
             disabled={!question.trim() || !context || !bootstrap}
@@ -655,14 +632,14 @@ function AudioWave({ levels, state }: { levels: number[]; state: LauncherMode | 
   );
 }
 
-function voiceCopy(mode: "listening" | "transcribing" | "speaking", assistantName: string) {
+function voiceCopy(mode: "listening" | "transcribing" | "speaking") {
   if (mode === "listening") {
-    return { title: assistantName + " is listening", detail: "Ask what you want to understand" };
+    return { title: "ShowME is listening", detail: "Ask what you want to understand" };
   }
   if (mode === "transcribing") {
     return { title: "Understanding your request", detail: "Turning your voice into a question" };
   }
-  return { title: assistantName + " is speaking", detail: "Following the lesson narration" };
+  return { title: "ShowME is speaking", detail: "Following the lesson narration" };
 }
 
 function progressLabel(stage: LessonProgress["stage"] | undefined): string {

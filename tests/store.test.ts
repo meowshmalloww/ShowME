@@ -23,7 +23,7 @@ describe("local SQLite product state", () => {
     const settings = { ...DEFAULT_SETTINGS, onboardingComplete: true, assistantName: "Ada" };
     store.saveSettings(settings);
     store.upsertMemory("preference", "teaching-style", "step-by-step");
-    expect(store.getSettings().assistantName).toBe("Ada");
+    expect(store.getSettings().assistantName).toBe("ShowME");
     expect(store.memorySummary().memoryCount).toBe(1);
     expect(store.listMemories()[0]?.value).toBe("step-by-step");
     store.close();

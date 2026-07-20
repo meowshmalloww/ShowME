@@ -28,7 +28,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderId, ProviderDefinition> = {
       tools: true,
     },
     capabilityNote:
-      "Reference path with GPT-5.6 vision, strict lesson plans, and cited web research.",
+      "Reference path with GPT-5.6 vision, strict lesson plans, and optional web research.",
   },
   alibaba: {
     id: "alibaba",

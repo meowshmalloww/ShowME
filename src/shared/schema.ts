@@ -71,7 +71,7 @@ const capabilityOverridesSchema = z
 export const appSettingsSchema = z
   .object({
     onboardingComplete: z.boolean(),
-    assistantName: z.string().trim().min(1).max(32),
+    assistantName: z.literal("ShowME"),
     wakeEnabled: z.boolean(),
     provider: providerIdSchema,
     models: providerModelsSchema.strict(),
@@ -94,7 +94,7 @@ export const appSettingsSchema = z
     echoCancellation: z.boolean(),
     noiseSuppression: z.boolean(),
     autoGainControl: z.boolean(),
-    wakeSensitivity: z.number().finite().min(0.25).max(0.9),
+    wakeSensitivity: z.number().finite().min(0.74).max(0.9),
     voiceSilenceMs: z.number().int().min(400).max(4000),
     voiceMaxSeconds: z.number().int().min(5).max(60),
     voice: z.string().min(1).max(80),
@@ -490,6 +490,7 @@ export const generateLessonRequestSchema = z
     complexity: z.enum(["simpler", "standard", "advanced"]),
     provider: providerIdSchema,
     model: z.string().min(1).max(240),
+    replyWithVoice: z.boolean().optional(),
     adaptation: z
       .enum([
         "simpler",

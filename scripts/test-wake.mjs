@@ -41,6 +41,7 @@ if (result.status !== 0 || !selfTest?.success) {
 }
 
 const pcmPath = join(tmpdir(), `showme-wake-${process.pid}-${Date.now()}.pcm`);
+const negativePcmPath = join(tmpdir(), `showme-wake-negative-${process.pid}-${Date.now()}.pcm`);
 try {
   const generated = spawnSync(
     powershell,
@@ -59,14 +60,37 @@ try {
   );
   if (generated.status !== 0) throw new Error(generated.stderr || "Could not generate wake PCM.");
   const streamed = await recognizeStream(readFileSync(pcmPath));
+  const generatedNegative = spawnSync(
+    powershell,
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      resolve("scripts", "generate-wake-test-pcm.ps1"),
+      "-OutputPath",
+      negativePcmPath,
+      "-Phrase",
+      "Hello there",
+    ],
+    { encoding: "utf8", windowsHide: true, timeout: 20_000 },
+  );
+  if (generatedNegative.status !== 0) {
+    throw new Error(generatedNegative.stderr || "Could not generate negative wake PCM.");
+  }
+  const rejected = await recognizeStream(readFileSync(negativePcmPath), false);
   console.log(
-    `Wake recognizer understood "${selfTest.phrase}" with confidence ${selfTest.confidence} (${selfTest.culture}); stdin PCM recognized "${streamed.phrase}" at ${streamed.confidence}.`,
+    `Wake recognizer understood "${selfTest.phrase}" with confidence ${selfTest.confidence} (${selfTest.culture}); stdin PCM recognized "${streamed.phrase}" at ${streamed.confidence}; ordinary speech was rejected at ${rejected.confidence ?? 0}.`,
   );
 } finally {
-  try {
-    unlinkSync(pcmPath);
-  } catch {
-    // The temporary PCM is already gone.
+  for (const path of [pcmPath, negativePcmPath]) {
+    try {
+      unlinkSync(path);
+    } catch {
+      // The temporary PCM is already gone.
+    }
   }
 }
 
@@ -83,7 +107,7 @@ function parseProtocol(text) {
     });
 }
 
-function recognizeStream(speech) {
+function recognizeStream(speech, expectWake = true) {
   return new Promise((resolvePromise, rejectPromise) => {
     const worker = spawn(
       powershell,
@@ -107,7 +131,7 @@ function recognizeStream(speech) {
     let settled = false;
     const timeout = setTimeout(
       () => finish(new Error("Streaming wake recognition timed out.")),
-      15_000,
+      25_000,
     );
     const finish = (value) => {
       if (settled) return;
@@ -135,6 +159,9 @@ function recognizeStream(speech) {
             `${JSON.stringify({ type: "audio", pcm: audio.toString("base64") })}\n`,
           );
         } else if (event.type === "wake") {
+          if (expectWake) finish(event);
+          else finish(new Error(`Ordinary speech falsely triggered "${event.phrase}".`));
+        } else if (event.type === "processed" && !expectWake) {
           finish(event);
         } else if (event.type === "error") {
           finish(new Error(event.message || "Streaming wake recognizer failed."));

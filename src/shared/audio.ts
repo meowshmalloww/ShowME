@@ -5,6 +5,11 @@ export function floatRmsLevel(samples: Float32Array): number {
   return Math.sqrt(energy / samples.length);
 }
 
+export function calibratedSpeechThreshold(noiseFloor: number): number {
+  const boundedFloor = Number.isFinite(noiseFloor) ? Math.max(0, noiseFloor) : 0.004;
+  return Math.max(0.0055, boundedFloor * 1.35);
+}
+
 export function downsampleToPcm16(
   samples: Float32Array,
   sourceRate: number,

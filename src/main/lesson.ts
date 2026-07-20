@@ -35,7 +35,7 @@ export class LessonService {
       const context = this.capture.getPrepared(request.captureId);
       const settings = this.store.getSettings();
       this.emit(requestId, "understanding", "Reading the visual structure");
-      if (request.allowWebResearch) this.emit(requestId, "researching", "Checking cited sources");
+      if (request.allowWebResearch) this.emit(requestId, "researching", "Checking sources");
       const plan = await this.providers.generate({
         request,
         context,
@@ -87,6 +87,7 @@ export class LessonService {
     const request: GenerateLessonRequest = {
       ...presentation.request,
       question: adaptationPrompt(adaptation, presentation, question),
+      replyWithVoice: false,
       copiedText: [
         presentation.request.copiedText,
         "Prior lesson title: " + presentation.plan.title,

@@ -1,4 +1,7 @@
-param([Parameter(Mandatory = $true)][string]$OutputPath)
+param(
+  [Parameter(Mandatory = $true)][string]$OutputPath,
+  [string]$Phrase = "Hey show me"
+)
 
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Speech
@@ -11,7 +14,7 @@ $audio = [System.IO.MemoryStream]::new()
 $synthesizer = [System.Speech.Synthesis.SpeechSynthesizer]::new()
 try {
   $synthesizer.SetOutputToAudioStream($audio, $format)
-  $synthesizer.Speak("Hey show me")
+  $synthesizer.Speak($Phrase)
   $synthesizer.SetOutputToNull()
   [System.IO.File]::WriteAllBytes($OutputPath, $audio.ToArray())
 } finally {

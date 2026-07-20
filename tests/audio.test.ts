@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { downsampleToPcm16, floatRmsLevel } from "../src/shared/audio";
+import { calibratedSpeechThreshold, downsampleToPcm16, floatRmsLevel } from "../src/shared/audio";
 
 describe("wake microphone PCM conversion", () => {
   it("downsamples browser audio to the 16 kHz mono PCM expected by Windows speech", () => {
@@ -17,5 +17,11 @@ describe("wake microphone PCM conversion", () => {
     ]);
     expect(floatRmsLevel(new Float32Array(32))).toBe(0);
     expect(floatRmsLevel(new Float32Array([0.5, -0.5]))).toBeCloseTo(0.5);
+  });
+
+  it("calibrates speech above the measured room noise without becoming too insensitive", () => {
+    expect(calibratedSpeechThreshold(Number.POSITIVE_INFINITY)).toBe(0.0055);
+    expect(calibratedSpeechThreshold(0.004)).toBe(0.0055);
+    expect(calibratedSpeechThreshold(0.0054)).toBeCloseTo(0.00729, 5);
   });
 });

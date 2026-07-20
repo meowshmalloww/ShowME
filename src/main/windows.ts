@@ -239,9 +239,9 @@ export class WindowManager {
     if (launcher) launcher.webContents.send(CHANNELS.eventVoiceLevel, level);
   }
 
-  broadcastWakeDetected(): void {
+  broadcastWakeDetected(context: PreparedContext): void {
     const launcher = this.getLauncher();
-    if (launcher) launcher.webContents.send(CHANNELS.eventWakeDetected);
+    if (launcher) launcher.webContents.send(CHANNELS.eventWakeDetected, context);
   }
 
   broadcastWakeStatus(status: WakeListenerStatus): void {
