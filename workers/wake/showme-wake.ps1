@@ -1,6 +1,6 @@
 param(
   [string]$WakePhrase = "ShowME",
-  [double]$ConfidenceThreshold = 0.74,
+  [double]$ConfidenceThreshold = 0.60,
   [switch]$SelfTest,
   [switch]$Probe,
   [switch]$StreamInput
@@ -29,7 +29,7 @@ try {
     $recognizerInfo = $installed[0]
   }
   $recognizerCulture = $recognizerInfo.Culture
-  $ConfidenceThreshold = [Math]::Max(0.74, [Math]::Min(0.9, $ConfidenceThreshold))
+  $ConfidenceThreshold = [Math]::Max(0.55, [Math]::Min(0.9, $ConfidenceThreshold))
   $script:confidenceThreshold = $ConfidenceThreshold
   $recognizer = [System.Speech.Recognition.SpeechRecognitionEngine]::new($recognizerCulture)
   $recognizer.InitialSilenceTimeout = [TimeSpan]::FromSeconds(1.5)
@@ -57,6 +57,17 @@ try {
     if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
     $normalized = ($Text.ToLowerInvariant() -replace "[^a-z0-9 ]", " " -replace "\s+", " ").Trim()
     return $script:wakePhrases.Contains($normalized)
+  }
+
+  function Test-PlausibleDictation([string]$Text) {
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
+    $normalized = ($Text.ToLowerInvariant() -replace "[^a-z0-9 ]", " " -replace "\s+", " ").Trim()
+    $words = @($normalized -split " " | Where-Object { $_ })
+    if ($words.Count -gt 5) { return $false }
+    for ($index = 0; $index -lt $words.Count - 1; $index += 1) {
+      if ($words[$index] -eq "show" -and $words[$index + 1] -eq "me") { return $true }
+    }
+    return $false
   }
 
   $choices = [System.Speech.Recognition.Choices]::new()
@@ -140,16 +151,14 @@ try {
         $dictationAudio = $null
         $dictationText = if ($null -ne $dictationResult) { $dictationResult.Text } else { "" }
         $normalizedDictation = ($dictationText.ToLowerInvariant() -replace "[^a-z0-9 ]", " " -replace "\s+", " ").Trim()
-        $dictationWords = @($normalizedDictation -split " " | Where-Object { $_ })
-        $plausibleWake = $dictationWords.Count -le 5 -and $dictationWords -contains "show"
-        $result = $null
-        if ($plausibleWake) {
-          $windowAudio = [System.IO.MemoryStream]::new($audioBytes, $false)
-          $recognizer.SetInputToAudioStream($windowAudio, $audioFormat)
-          $result = $recognizer.Recognize([TimeSpan]::FromSeconds(5))
-        }
+        $plausibleWake = Test-PlausibleDictation $normalizedDictation
+        $windowAudio = [System.IO.MemoryStream]::new($audioBytes, $false)
+        $recognizer.SetInputToAudioStream($windowAudio, $audioFormat)
+        $result = $recognizer.Recognize([TimeSpan]::FromSeconds(5))
+        $strongGrammarConfidence = [Math]::Max(0.82, $script:confidenceThreshold + 0.18)
         if ($null -ne $result -and
-          $result.Confidence -ge $script:confidenceThreshold -and
+          (($plausibleWake -and $result.Confidence -ge $script:confidenceThreshold) -or
+            $result.Confidence -ge $strongGrammarConfidence) -and
           $result.Grammar.Name -eq $script:wakeGrammarName -and
           (Test-WakePhrase $result.Text)) {
           [Console]::Out.WriteLine((@{

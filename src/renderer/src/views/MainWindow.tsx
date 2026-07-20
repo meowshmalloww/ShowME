@@ -1376,7 +1376,7 @@ function VoiceSettings({
           <input
             className="range-input"
             type="range"
-            min="0.74"
+            min="0.55"
             max="0.9"
             step="0.01"
             value={draft.wakeSensitivity}
@@ -1385,8 +1385,8 @@ function VoiceSettings({
             }
           />
           <small>
-            Higher values reject uncertain matches. The recommended 74% balance avoids ordinary
-            speech while still recognizing “Show me.”
+            Higher values reject uncertain matches. The recommended 60% setting is paired with a
+            separate phrase check, so normal conversation is still rejected.
           </small>
         </label>
         <Toggle

@@ -94,7 +94,7 @@ export const appSettingsSchema = z
     echoCancellation: z.boolean(),
     noiseSuppression: z.boolean(),
     autoGainControl: z.boolean(),
-    wakeSensitivity: z.number().finite().min(0.74).max(0.9),
+    wakeSensitivity: z.number().finite().min(0.55).max(0.9),
     voiceSilenceMs: z.number().int().min(400).max(4000),
     voiceMaxSeconds: z.number().int().min(5).max(60),
     voice: z.string().min(1).max(80),

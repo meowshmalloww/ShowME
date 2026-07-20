@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { calibratedSpeechThreshold, downsampleToPcm16, floatRmsLevel } from "../src/shared/audio";
+import {
+  calibratedSpeechThreshold,
+  downsampleToPcm16,
+  floatRmsLevel,
+  WakeUtteranceCollector,
+} from "../src/shared/audio";
 
 describe("wake microphone PCM conversion", () => {
   it("downsamples browser audio to the 16 kHz mono PCM expected by Windows speech", () => {
@@ -23,5 +28,21 @@ describe("wake microphone PCM conversion", () => {
     expect(calibratedSpeechThreshold(Number.POSITIVE_INFINITY)).toBe(0.0055);
     expect(calibratedSpeechThreshold(0.004)).toBe(0.0055);
     expect(calibratedSpeechThreshold(0.0054)).toBeCloseTo(0.00729, 5);
+  });
+
+  it("sends one bounded utterance with pre-roll after speech ends", () => {
+    const collector = new WakeUtteranceCollector(1_000, 200, 300, 1_500);
+    expect(collector.push(new Int16Array(100).fill(1), false)).toBeNull();
+    expect(collector.push(new Int16Array(100).fill(2), true)).toBeNull();
+    expect(collector.push(new Int16Array(200).fill(3), true)).toBeNull();
+    expect(collector.push(new Int16Array(300).fill(4), false)).toEqual(
+      new Int16Array([
+        ...new Int16Array(100).fill(1),
+        ...new Int16Array(100).fill(2),
+        ...new Int16Array(200).fill(3),
+        ...new Int16Array(300).fill(4),
+      ]),
+    );
+    expect(collector.isActive()).toBe(false);
   });
 });

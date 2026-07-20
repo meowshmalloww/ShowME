@@ -72,9 +72,15 @@ Controls bind only to a module’s allowlisted numeric fields. Python independen
 
 ## Persistence and memory
 
-One Electron-main owner uses Node 24’s node:sqlite API in WAL mode. Tables store settings, lesson presentations, feedback, and explicit learning memories. Images are not stored. Credential material is in a separate OS-encrypted file managed by safeStorage.
+One Electron-main owner uses Node 24’s node:sqlite API in WAL mode. Tables store settings, lesson presentations, feedback, and explicit learning memories. Images are not stored. Credential material is kept in a separate OS-encrypted file.
 
 Learning memory is advisory and local. It records concepts and explicit preferences, can be disabled, inspected through summary UI, exported, deleted item by item, or deleted in full.
+
+On Windows, provider credentials are protected through a small Rust worker that calls DPAPI with application-specific entropy. Plaintext is passed over standard input rather than command-line arguments. On other supported platforms, Electron secure storage delegates to the operating-system credential backend. Credentials remain outside SQLite and renderer processes.
+
+## Wake and voice flow
+
+When wake listening is enabled on Windows, the launcher opens only the selected microphone. The renderer measures the local signal and groups it into a bounded utterance with a short lead-in and silence tail. A local Windows speech worker first screens the utterance as short dictation, then checks it against the fixed ShowME grammar. Ordinary audio is discarded locally. Only a recognized wake starts explicit screen capture and a separate recorded question, which requires a configured OpenAI or Groq transcription route.
 
 ## Window model
 

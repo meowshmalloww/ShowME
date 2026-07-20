@@ -28,10 +28,9 @@ export class WakeWordService {
   private recognizerReady = false;
   private inputBackpressured = false;
   private inputInFlight = false;
-  private audioBuffer = Buffer.alloc(0);
-  private newAudioBytes = 0;
+  private audioQueue: Buffer[] = [];
   private assistantName = "ShowME";
-  private sensitivity = 0.74;
+  private sensitivity = 0.6;
   private recognizerCulture: string | undefined;
   private recognizerName: string | undefined;
   private inputState: WakeInputState = {
@@ -50,8 +49,8 @@ export class WakeWordService {
     private readonly callbacks: WakeWordCallbacks,
   ) {}
 
-  configure(enabled: boolean, _assistantName: string, sensitivity = 0.74): void {
-    const normalizedSensitivity = Math.max(0.74, Math.min(0.9, sensitivity));
+  configure(enabled: boolean, _assistantName: string, sensitivity = 0.6): void {
+    const normalizedSensitivity = Math.max(0.55, Math.min(0.9, sensitivity));
     const configurationChanged = normalizedSensitivity !== this.sensitivity;
     this.assistantName = "ShowME";
     this.sensitivity = normalizedSensitivity;
@@ -76,10 +75,9 @@ export class WakeWordService {
 
   pushAudio(bytes: Uint8Array): void {
     const chunk = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    if (chunk.byteLength === 0) return;
-    this.audioBuffer = Buffer.concat([this.audioBuffer, chunk]);
-    if (this.audioBuffer.byteLength > 96_000) this.audioBuffer = this.audioBuffer.subarray(-96_000);
-    this.newAudioBytes += chunk.byteLength;
+    if (chunk.byteLength < 3_200) return;
+    this.audioQueue.push(chunk.subarray(0, 96_000));
+    if (this.audioQueue.length > 3) this.audioQueue.shift();
     this.dispatchAudioWindow();
   }
 
@@ -191,8 +189,7 @@ export class WakeWordService {
     this.recognizerReady = false;
     this.inputBackpressured = false;
     this.inputInFlight = false;
-    this.audioBuffer = Buffer.alloc(0);
-    this.newAudioBytes = 0;
+    this.audioQueue = [];
     child?.stdin?.end();
     child?.kill();
   }
@@ -265,15 +262,13 @@ export class WakeWordService {
       this.inputState.state !== "ready" ||
       this.inputBackpressured ||
       this.inputInFlight ||
-      this.audioBuffer.byteLength < 32_000 ||
-      this.newAudioBytes < 16_000
+      this.audioQueue.length === 0
     ) {
       return;
     }
-    const window = this.audioBuffer.subarray(-96_000);
+    const window = this.audioQueue.shift();
+    if (!window) return;
     const payload = `${JSON.stringify({ type: "audio", pcm: window.toString("base64") })}\n`;
-    this.audioBuffer = this.audioBuffer.subarray(-48_000);
-    this.newAudioBytes = 0;
     this.inputInFlight = true;
     if (!input.write(payload, "utf8")) {
       this.inputBackpressured = true;

@@ -222,7 +222,7 @@ export function registerIpc(dependencies: IpcDependencies): void {
         : rawBytes instanceof ArrayBuffer
           ? new Uint8Array(rawBytes)
           : null;
-    if (!bytes || bytes.byteLength === 0 || bytes.byteLength > 65_536) return;
+    if (!bytes || bytes.byteLength === 0 || bytes.byteLength > 128_000) return;
     dependencies.onWakeAudio(bytes);
   });
   listen(CHANNELS.wakeInputState, (event, rawState: unknown) => {

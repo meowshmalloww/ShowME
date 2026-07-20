@@ -11,6 +11,7 @@ Run the full local gate with npm run check.
 | Coordinates | Logical-to-normalized conversion, physical crop conversion, multi-region padding, arrow snapping |
 | Simulations | Orbit classification, projectile path, event-loop ordering, circuit derivation |
 | Persistence | SQLite settings and explicit-memory round trip |
+| Wake phrase | Synthesized positive phrase, ordinary-speech rejection, browser PCM conversion, utterance segmentation, and level normalization |
 | Rust worker | Physical crop conversion and full-screen fallback |
 | Python worker | Orbit, projectile, and invalid custom-motion checks |
 | Production assets | Electron Vite main, preload, and renderer bundles |
@@ -35,6 +36,7 @@ Before a release, test these on physical Windows and macOS systems.
 - Tray open, capture, and quit behavior.
 - A shortcut conflict does not break startup; confirm the configured preset is registered on the test machine.
 - Closing the main window hides it; explicit Quit exits every process.
+- With the selected microphone, confirm the idle waveform moves with speech, “Show me” wakes exactly once, ordinary conversation does not capture, and the separate question recorder begins only after wake.
 
 ### Providers
 

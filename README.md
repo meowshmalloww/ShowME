@@ -14,6 +14,22 @@ ShowME sits quietly at the top edge of the display. Select an area, point, lasso
 
 This repository contains the Electron, TypeScript, and React redesign. It is independent from the legacy Rust/Tauri application, does not include a desktop pet, and stores its data in a separate application directory.
 
+## OpenAI Build Week
+
+The ShowME idea existed before Build Week as a Rust and Tauri prototype. That prototype proved the selection concept, but its desktop pet, monolithic interface, and tightly coupled architecture were not the product I wanted to submit. The work evaluated here is the new Electron implementation built during the July 2026 submission period. The dated commit history distinguishes the earlier prototype from the Electron replacement and the later voice, model discovery, credential, interface, packaging, and documentation work.
+
+### How I worked with Codex and GPT-5.6
+
+I used Codex with GPT-5.6 as the main engineering environment for this redesign. I supplied the legacy application, five detailed product specifications, screenshots of broken states, and direct product feedback. Codex helped me inspect the old code, research current platform and provider behavior, turn the specifications into process boundaries, implement the application across TypeScript, Rust, Python, and PowerShell, and repeatedly test the result on Windows.
+
+Codex accelerated the parts that benefited from broad repository context: tracing coordinate transformations across Electron and Rust, translating the lesson contract into a strict Zod and JSON schema, building provider adapters, finding visual regressions across shared theme tokens, and following failures through renderer, IPC, native worker, and packaged application boundaries. It also helped create and run the automated verification gate and the real NVIDIA screen capture to lesson test.
+
+I made the key product and safety decisions. I removed the pet, kept the launcher at the top edge, fixed the wake name to ShowME, required deliberate screen capture, chose a declarative lesson plan instead of model generated interface code, prohibited arbitrary model code from running, and kept screenshots out of history. I also rejected several implementations after testing them, including an overly large island and a wake detector that either captured ordinary speech or became too strict to recognize a real voice.
+
+GPT-5.6 has two roles in the project. First, it powered the primary Codex build session used to create and debug the redesign. Second, `gpt-5.6-sol` is the default OpenAI lesson model in the application. The OpenAI adapter sends the selected image and question through the Responses API, requests a strict lesson schema, varies reasoning effort between Quick and Deep modes, and can use native web search for cited lessons. The adapter sets `store: false`, and the returned plan still has to pass local semantic and deterministic verification before the renderer accepts it.
+
+The Windows end-to-end provider test performed in this workspace used NVIDIA NIM because that was the credential available during verification. The OpenAI GPT-5.6 route is implemented and covered by provider and schema tests, but I do not claim a live OpenAI API run from a credential that was not present.
+
 ## How it works
 
 1. Open the compact top-edge island or use a global shortcut.
@@ -53,6 +69,7 @@ Screenshots are captured only after an explicit selection action or a recognized
 - OpenAI or Groq transcription for spoken questions.
 - Local Windows narration by default, with optional OpenAI speech.
 - No provider audio is sent until the wake phrase is recognized or the user starts voice capture.
+- Wake detection segments complete utterances locally before applying a dictation screen and closed ShowME grammar, avoiding continuous cloud transcription.
 
 ### Provider and model control
 
@@ -143,6 +160,8 @@ npm run build
 ```
 
 The current Windows verification includes a real NVIDIA NIM connection, live image-model discovery, a screen-crop-to-lesson generation test, light/dark contrast inspection, Windows credential migration, and a packaged executable launch.
+
+For hackathon judging, the repository history is part of the evidence: the legacy project predates the Electron replacement, while the redesign and its follow-up voice, security, provider, UI, QA, and packaging commits fall within the submission period.
 
 ## Build and package
 

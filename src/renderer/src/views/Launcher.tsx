@@ -1,6 +1,11 @@
 import { AlertCircle, ArrowUp, MousePointer2, Scan, Square, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { calibratedSpeechThreshold, downsampleToPcm16, floatRmsLevel } from "../../../shared/audio";
+import {
+  calibratedSpeechThreshold,
+  downsampleToPcm16,
+  floatRmsLevel,
+  WakeUtteranceCollector,
+} from "../../../shared/audio";
 import type {
   AppBootstrap,
   LauncherMode,
@@ -116,23 +121,23 @@ export function Launcher() {
         wakeSource.current = source;
         wakeProcessor.current = processor;
         wakeMute.current = mute;
-        let signalReported = false;
+        const utterances = new WakeUtteranceCollector();
+        let noiseFloor = Number.POSITIVE_INFINITY;
+        const openedAt = performance.now();
         processor.onaudioprocess = (event) => {
           if (wakeGeneration.current !== generation) return;
           const samples = event.inputBuffer.getChannelData(0);
           const rms = floatRmsLevel(samples);
           setWakeLevel(Math.min(1, rms * 26));
+          if (performance.now() - openedAt < 800 && !utterances.isActive()) {
+            noiseFloor = Math.min(noiseFloor, rms);
+          }
           const pcm = downsampleToPcm16(samples, context.sampleRate);
-          if (pcm.byteLength > 0) window.showme.wake.pushAudio(new Uint8Array(pcm.buffer));
-          if (!signalReported && rms >= 0.0025) {
-            signalReported = true;
-            window.showme.wake.inputState({
-              state: "ready",
-              message: opened.fellBackToDefault
-                ? "The saved microphone was unavailable; wake listening is using the system default."
-                : "Live microphone signal detected.",
-              deviceLabel,
-            });
+          const utterance = utterances.push(pcm, rms >= calibratedSpeechThreshold(noiseFloor));
+          if (utterance) {
+            window.showme.wake.pushAudio(
+              new Uint8Array(utterance.buffer, utterance.byteOffset, utterance.byteLength),
+            );
           }
         };
         track.addEventListener(
@@ -150,8 +155,10 @@ export function Launcher() {
           { once: true },
         );
         window.showme.wake.inputState({
-          state: "starting",
-          message: `Microphone open (${deviceLabel}); waiting for a live sound signal.`,
+          state: "ready",
+          message: opened.fellBackToDefault
+            ? "The saved microphone was unavailable; wake listening is using the system default."
+            : "The selected microphone is open and ready.",
           deviceLabel,
         });
       } catch (reason) {

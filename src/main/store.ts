@@ -96,9 +96,12 @@ export class AppStore {
         ...saved,
         // ShowME is a product name and a wake phrase, not a user-editable persona.
         assistantName: "ShowME",
-        // Migrate permissive pre-release thresholds that could coerce ordinary speech
-        // into the closed wake grammar.
-        wakeSensitivity: Math.max(0.74, saved.wakeSensitivity ?? DEFAULT_SETTINGS.wakeSensitivity),
+        // The old 74% default rejected too many real voices. The recognizer now combines
+        // utterance segmentation, dictation screening, and closed-grammar confidence.
+        wakeSensitivity:
+          saved.wakeSensitivity === 0.74
+            ? DEFAULT_SETTINGS.wakeSensitivity
+            : Math.max(0.55, saved.wakeSensitivity ?? DEFAULT_SETTINGS.wakeSensitivity),
         models,
         textModels,
         providerCapabilityOverrides: saved.providerCapabilityOverrides ?? {},

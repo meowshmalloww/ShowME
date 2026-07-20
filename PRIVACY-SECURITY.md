@@ -3,10 +3,10 @@
 ## Product promises enforced in code
 
 - ShowME captures the screen only after a visible click, tray action, or user-configured global hotkey.
-- Push-to-talk obtains microphone access only while the user records a question.
-- There is no wake-word listener, background transcription loop, screenshot timer, analytics SDK, or remote telemetry in this repository.
+- Push-to-talk obtains microphone access only while the user records a question. When the optional Windows wake setting is enabled, the selected microphone remains open for local ShowME phrase detection.
+- Wake audio is segmented and recognized locally. There is no background cloud transcription loop, screenshot timer, analytics SDK, or remote telemetry in this repository.
 - Prepared screenshots are held in process memory, capped to a small number, expire after 15 minutes, and are cleared after use or cancellation. They are not inserted into SQLite.
-- Provider credentials are encrypted through Electron safeStorage. If secure storage is unavailable, a key is kept for the process session only and the user receives an error explaining that it was not persisted.
+- On Windows, provider credentials are encrypted for the current user through DPAPI with application-specific entropy. Other supported platforms use Electron secure storage. If secure storage is unavailable, a key is kept for the process session only and the user receives an error explaining that it was not persisted.
 - Lesson history, feedback, settings, and learning memory are stored locally in SQLite.
 - Export and deletion are explicit user actions.
 
@@ -19,6 +19,8 @@ A provider request can contain:
 - copied text or a source URL when the learner supplied it;
 - selected teaching and language preferences;
 - a short local memory summary when learning memory is enabled.
+
+The local wake phrase does not send audio to a model provider. After ShowME wakes, the separately recorded question is sent only to the configured OpenAI or Groq transcription provider. If neither provider has a key, the application reports that voice transcription is unavailable rather than sending audio elsewhere.
 
 Deep mode can ask the selected provider to perform web research. Wikimedia Commons is queried only when the learner enabled licensed image aids and a lesson requests a search. OpenAI speech sends the selected narration text when cloud speech is selected. The default narration engine is the local system voice.
 
@@ -44,7 +46,7 @@ Text visible in a screenshot is evidence, never authority. The system prompt tel
 
 ## Permissions
 
-On macOS, users grant Screen Recording and Microphone permissions through System Settings. On Windows, microphone permission appears when recording starts. Electron desktop capture uses the platform capture APIs. ShowME’s permission page reports known platform status and avoids claiming “granted” when Windows does not expose a preflight status.
+On macOS, users grant Screen Recording and Microphone permissions through System Settings. On Windows, microphone permission can appear when wake listening or question recording first opens the selected device. Electron desktop capture uses the platform capture APIs. ShowME’s permission page reports known platform status and avoids claiming “granted” when Windows does not expose a preflight status.
 
 ## Reporting a vulnerability
 
