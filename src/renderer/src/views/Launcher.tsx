@@ -5,7 +5,6 @@ import {
   LockKeyhole,
   MousePointer2,
   Scan,
-  Square,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -307,7 +306,7 @@ export function Launcher() {
           lastSpeechAt = now;
         }
         const finishedBySilence = heardSpeech && now - lastSpeechAt > settings.voiceSilenceMs;
-        const finishedWithoutSpeech = !heardSpeech && now - startedAt > 6_000;
+        const finishedWithoutSpeech = !heardSpeech && now - startedAt > settings.voiceSilenceMs;
         const reachedLimit = now - startedAt > settings.voiceMaxSeconds * 1000;
         if (finishedBySilence || finishedWithoutSpeech || reachedLimit) next.stop();
         else monitorTimer.current = window.setTimeout(monitor, 32);
@@ -561,16 +560,6 @@ export function Launcher() {
               <LoaderCircle size={15} />
             </span>
           )}
-          {mode === "listening" ? (
-            <button
-              className="voice-stop"
-              aria-label="Stop listening"
-              onClick={() => recorder.current?.stop()}
-              type="button"
-            >
-              <Square size={11} fill="currentColor" />
-            </button>
-          ) : null}
         </section>
       </div>
     );

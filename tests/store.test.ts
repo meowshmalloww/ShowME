@@ -39,7 +39,12 @@ describe("local SQLite product state", () => {
     store.close();
 
     const database = new DatabaseSync(databasePath);
-    const legacy = { ...DEFAULT_SETTINGS, accent: "coral", wakeEnabled: true };
+    const legacy = {
+      ...DEFAULT_SETTINGS,
+      accent: "coral",
+      wakeEnabled: true,
+      voiceSilenceMs: 2200,
+    };
     database.prepare("UPDATE settings SET value_json = ? WHERE id = 1").run(JSON.stringify(legacy));
     database.close();
 
@@ -47,6 +52,7 @@ describe("local SQLite product state", () => {
     expect(migrated.getSettings().assistantName).toBe("ShowME");
     expect(migrated.getSettings()).not.toHaveProperty("accent");
     expect(migrated.getSettings().wakeEnabled).toBe(true);
+    expect(migrated.getSettings().voiceSilenceMs).toBe(3500);
     migrated.close();
   });
 

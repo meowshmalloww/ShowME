@@ -37,7 +37,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   noiseSuppression: true,
   autoGainControl: true,
   wakeSensitivity: 0.6,
-  voiceSilenceMs: 2200,
+  voiceSilenceMs: 3500,
   voiceMaxSeconds: 45,
   voice: "marin",
   elevenLabsVoice: "JBFqnCBsd6RMkjVDRZzb",

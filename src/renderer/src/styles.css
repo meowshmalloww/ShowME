@@ -3627,24 +3627,6 @@ select:focus {
   }
 }
 
-.voice-stop {
-  width: 20px;
-  height: 20px;
-  display: grid;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid #343438;
-  border-radius: 7px;
-  color: #c9c9cc;
-  background: #19191c;
-}
-
-.voice-stop:hover,
-.voice-stop:focus-visible {
-  color: #0a0a0b;
-  background: #f2f2f3;
-}
-
 .thinking-orb {
   width: 30px;
   height: 30px;

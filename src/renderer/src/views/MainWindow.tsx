@@ -1774,8 +1774,8 @@ function VoiceSettings({
             <input
               className="range-input"
               type="range"
-              min="1500"
-              max="3000"
+              min="3000"
+              max="4000"
               step="100"
               value={draft.voiceSilenceMs}
               onChange={(event) =>
