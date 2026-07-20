@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import { app, globalShortcut, Menu, nativeImage, nativeTheme, Tray } from "electron";
 import { redactSecrets } from "../shared/errors";
-import type { AppSettings, ProviderId } from "../shared/types";
+import { type AppSettings, PROVIDER_IDS } from "../shared/types";
 import { CaptureService } from "./capture";
 import { registerIpc } from "./ipc";
 import { LessonService } from "./lesson";
@@ -44,9 +44,8 @@ async function startApplication(): Promise<void> {
     nativeWorkerPath,
   );
   let initialSettings = store.getSettings();
-  const configuredProviders = Object.entries(secrets.configured()).flatMap(
-    ([provider, configured]) => (configured ? [provider as ProviderId] : []),
-  );
+  const configured = secrets.configured();
+  const configuredProviders = PROVIDER_IDS.filter((provider) => configured[provider]);
   const soleConfiguredProvider =
     configuredProviders.length === 1 ? configuredProviders[0] : undefined;
   if (soleConfiguredProvider && initialSettings.provider !== soleConfiguredProvider) {
@@ -93,6 +92,8 @@ async function startApplication(): Promise<void> {
     onVoiceActivity: handleVoiceActivity,
     onWakeAudio: (bytes) => wakeWord?.pushAudio(bytes),
     onWakeInputState: (state) => wakeWord?.reportInputState(state),
+    suspendWake: () => wakeWord?.suspend(),
+    resumeWake: () => wakeWord?.resume(),
     getWakeStatus: () =>
       wakeWord?.currentStatus() ?? {
         state: "disabled",
@@ -161,9 +162,7 @@ function handleVoiceActivity(state: "idle" | "listening" | "transcribing" | "spe
 function registerShortcuts(settings: AppSettings): void {
   globalShortcut.unregisterAll();
   registerShortcut(settings.hotkey, async () => {
-    if (!capture || !windows) return;
-    const payload = await capture.begin();
-    windows.openSelection(payload.display.id);
+    await beginManualSelection();
   });
   registerShortcut(settings.voiceHotkey, async () => {
     if (!capture || !windows) return;
@@ -196,6 +195,18 @@ function registerShortcut(accelerator: string, action: () => Promise<void>): voi
   }
 }
 
+async function beginManualSelection(): Promise<void> {
+  if (!capture || !windows) return;
+  wakeWord?.suspend();
+  try {
+    const payload = await capture.begin();
+    windows.openSelection(payload.display.id);
+  } catch (error) {
+    wakeWord?.resume();
+    throw error;
+  }
+}
+
 function createTray(iconPath: string): void {
   const image = nativeImage.createFromPath(iconPath).resize({ width: 20, height: 20 });
   tray = new Tray(image);
@@ -205,8 +216,11 @@ function createTray(iconPath: string): void {
       {
         label: "Show me this",
         click: () => {
-          if (!capture || !windows) return;
-          void capture.begin().then((payload) => windows?.openSelection(payload.display.id));
+          void beginManualSelection().catch((error: unknown) => {
+            console.error(redactSecrets(error instanceof Error ? error.message : String(error)));
+            windows?.setLauncherMode("revealed");
+            windows?.showLauncher(false);
+          });
         },
       },
       { label: "Open ShowME", click: () => windows?.openMain("home") },

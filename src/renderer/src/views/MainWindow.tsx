@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ELEVENLABS_VOICES,
   HOTKEYS,
   LANGUAGES,
   TEACHING_STYLE_LABELS,
@@ -48,6 +49,7 @@ import type {
   ProviderId,
   ProviderModel,
   ProviderSummary,
+  VoiceServiceSummary,
   WakeListenerStatus,
 } from "../../../shared/types";
 import {
@@ -59,6 +61,7 @@ import {
 import { BrandMark } from "../components/BrandMark";
 import { ProviderIcon } from "../components/ProviderIcon";
 import { EmptyState, errorMessage, Spinner, Toast, Toggle } from "../components/Ui";
+import { VoiceServiceIcon } from "../components/VoiceServiceIcon";
 import { WindowChrome } from "../components/WindowChrome";
 
 type Section = "home" | "library" | "settings";
@@ -732,9 +735,10 @@ function SettingsView({
           <VoiceSettings
             draft={draft}
             platform={bootstrap.platform}
-            providers={bootstrap.providers}
+            voiceServices={bootstrap.voiceServices}
             wakeListener={bootstrap.wakeListener}
             setDraft={setDraft}
+            onRefresh={onRefresh}
             notify={notify}
           />
         ) : null}
@@ -1228,16 +1232,18 @@ function AppearanceSettings({
 function VoiceSettings({
   draft,
   platform,
-  providers,
+  voiceServices,
   wakeListener,
   setDraft,
+  onRefresh,
   notify,
 }: {
   draft: AppSettings;
   platform: string;
-  providers: ProviderSummary[];
+  voiceServices: VoiceServiceSummary[];
   wakeListener: WakeListenerStatus;
   setDraft: (value: AppSettings) => void;
+  onRefresh: () => Promise<AppBootstrap>;
   notify: (message: string, tone: "error" | "success" | "info") => void;
 }) {
   const [devices, setDevices] = useState<{
@@ -1248,11 +1254,15 @@ function VoiceSettings({
   const [testingMicrophone, setTestingMicrophone] = useState(false);
   const [testLevel, setTestLevel] = useState(0);
   const [listenerStatus, setListenerStatus] = useState(wakeListener);
+  const [serviceKeys, setServiceKeys] = useState<
+    Partial<Record<"deepgram" | "elevenlabs", string>>
+  >({});
+  const [credentialBusy, setCredentialBusy] = useState<"deepgram" | "elevenlabs" | null>(null);
   const testStream = useRef<MediaStream | null>(null);
   const testContext = useRef<AudioContext | null>(null);
   const testFrame = useRef<number | null>(null);
-  const transcriptionProvider = providers.find((item) => item.id === draft.voiceInputProvider);
-  const cloudVoiceProvider = providers.find((item) => item.id === "openai");
+  const transcriptionProvider = voiceServices.find((item) => item.id === draft.voiceInputProvider);
+  const cloudVoiceProvider = voiceServices.find((item) => item.id === draft.voiceOutputProvider);
 
   const stopMicrophoneTest = useCallback((): void => {
     if (testFrame.current !== null) cancelAnimationFrame(testFrame.current);
@@ -1427,6 +1437,8 @@ function VoiceSettings({
           >
             <option value="openai">OpenAI transcription</option>
             <option value="groq">Groq transcription</option>
+            <option value="deepgram">Deepgram Nova-3</option>
+            <option value="elevenlabs">ElevenLabs Scribe v2</option>
           </select>
         </label>
         <label>
@@ -1442,6 +1454,7 @@ function VoiceSettings({
           >
             <option value="system">System voice · local</option>
             <option value="openai">OpenAI speech · cloud</option>
+            <option value="elevenlabs">ElevenLabs speech · cloud</option>
           </select>
         </label>
         <fieldset className="voice-route">
@@ -1475,7 +1488,8 @@ function VoiceSettings({
               <small>
                 {draft.voiceOutputProvider === "system"
                   ? "Windows system voice · follows the default speaker"
-                  : "OpenAI speech · routed to the selected speaker"}
+                  : (cloudVoiceProvider?.name ?? "Cloud speech") +
+                    " · routed to the selected speaker"}
               </small>
             </span>
             <em
@@ -1510,6 +1524,22 @@ function VoiceSettings({
             <small>AI-generated voice will be identified as such in the lesson player.</small>
           </label>
         ) : null}
+        {draft.voiceOutputProvider === "elevenlabs" ? (
+          <label>
+            <span>ElevenLabs voice</span>
+            <select
+              value={draft.elevenLabsVoice}
+              onChange={(event) => setDraft({ ...draft, elevenLabsVoice: event.target.value })}
+            >
+              {ELEVENLABS_VOICES.map((voice) => (
+                <option key={voice.id} value={voice.id}>
+                  {voice.label} — {voice.note}
+                </option>
+              ))}
+            </select>
+            <small>Uses the low-latency Flash voice model for lesson narration.</small>
+          </label>
+        ) : null}
         <label>
           <span>Speech rate · {draft.speechRate.toFixed(1)}×</span>
           <input
@@ -1522,6 +1552,112 @@ function VoiceSettings({
             onChange={(event) => setDraft({ ...draft, speechRate: Number(event.target.value) })}
           />
         </label>
+      </section>
+      <section className="settings-card form-stack speech-services-card">
+        <div className="card-heading">
+          <div>
+            <span className="setting-icon">
+              <KeyRound size={19} />
+            </span>
+            <span>
+              <h3>Independent speech services</h3>
+              <p>Use voice without requiring an OpenAI key. Keys stay in encrypted OS storage.</p>
+            </span>
+          </div>
+        </div>
+        <div className="speech-service-grid">
+          {voiceServices
+            .filter(
+              (service): service is VoiceServiceSummary & { id: "deepgram" | "elevenlabs" } =>
+                service.id === "deepgram" || service.id === "elevenlabs",
+            )
+            .map((service) => (
+              <article className="speech-service" key={service.id}>
+                <header>
+                  <span className="speech-service-logo">
+                    <VoiceServiceIcon provider={service.id} size={20} />
+                  </span>
+                  <span>
+                    <strong>{service.name}</strong>
+                    <small>
+                      {service.speechToText ? "Transcription" : ""}
+                      {service.textToSpeech ? " and narration" : ""}
+                    </small>
+                  </span>
+                  <em
+                    className={service.configured ? "route-status ready" : "route-status missing"}
+                  >
+                    {service.configured ? "Ready" : "Needs key"}
+                  </em>
+                </header>
+                <div className="secret-input compact">
+                  <KeyRound size={15} />
+                  <input
+                    autoComplete="off"
+                    placeholder={service.configured ? "Encrypted key saved" : "Paste API key"}
+                    type="password"
+                    value={serviceKeys[service.id] ?? ""}
+                    onChange={(event) =>
+                      setServiceKeys((current) => ({
+                        ...current,
+                        [service.id]: event.target.value,
+                      }))
+                    }
+                  />
+                  <button
+                    disabled={
+                      (serviceKeys[service.id]?.trim().length ?? 0) < 8 || credentialBusy !== null
+                    }
+                    onClick={async () => {
+                      setCredentialBusy(service.id);
+                      try {
+                        await window.showme.providers.saveKey(
+                          service.id,
+                          serviceKeys[service.id] ?? "",
+                        );
+                        await onRefresh();
+                        setServiceKeys((current) => ({ ...current, [service.id]: "" }));
+                        notify(service.name + " key saved in encrypted storage", "success");
+                      } catch (reason) {
+                        notify(errorMessage(reason), "error");
+                      } finally {
+                        setCredentialBusy(null);
+                      }
+                    }}
+                    type="button"
+                  >
+                    {credentialBusy === service.id ? <Spinner small /> : "Save"}
+                  </button>
+                </div>
+                {service.configured ? (
+                  <button
+                    className="danger-text-button"
+                    disabled={credentialBusy !== null}
+                    onClick={async () => {
+                      if (!confirm("Remove this speech-service key from encrypted storage?"))
+                        return;
+                      setCredentialBusy(service.id);
+                      try {
+                        await window.showme.providers.deleteKey(service.id);
+                        await onRefresh();
+                        notify(service.name + " key removed", "info");
+                      } catch (reason) {
+                        notify(errorMessage(reason), "error");
+                      } finally {
+                        setCredentialBusy(null);
+                      }
+                    }}
+                    type="button"
+                  >
+                    <Trash2 size={14} /> Remove key
+                  </button>
+                ) : null}
+              </article>
+            ))}
+        </div>
+        <small>
+          OpenAI and Groq speech reuse the provider keys already saved under Models & API.
+        </small>
       </section>
       <section className="settings-card form-stack audio-device-card">
         <div className="card-heading">
@@ -1608,7 +1744,7 @@ function VoiceSettings({
             ))}
           </select>
           <small>
-            OpenAI narration is routed here. Local system narration follows the Windows default
+            Cloud narration is routed here. Local system narration follows the Windows default
             speaker.
           </small>
         </label>
@@ -1638,8 +1774,8 @@ function VoiceSettings({
             <input
               className="range-input"
               type="range"
-              min="400"
-              max="4000"
+              min="1500"
+              max="3000"
               step="100"
               value={draft.voiceSilenceMs}
               onChange={(event) =>
@@ -1652,8 +1788,8 @@ function VoiceSettings({
             <input
               className="range-input"
               type="range"
-              min="5"
-              max="60"
+              min="10"
+              max="90"
               step="1"
               value={draft.voiceMaxSeconds}
               onChange={(event) =>

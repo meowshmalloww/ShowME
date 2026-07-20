@@ -42,7 +42,7 @@ Before a release, test these on physical Windows and macOS systems.
 
 For each provider: invalid key, expired key, rate limit, nonexistent model, model discovery, connection test, cancellation/network loss, and a valid Quick lesson. Confirm non-vision providers reject screenshot-only requests before submission.
 
-For OpenAI: valid GPT-5.6 Sol Quick lesson, Deep lesson with clickable citations, no-citation downgrade, transcription, OpenAI speech, and local system speech. Verify API keys never appear in logs or UI after save.
+For OpenAI: valid GPT-5.6 Sol Quick lesson, Deep lesson with clickable citations, no-citation downgrade, transcription, OpenAI speech, and local system speech. Also verify Deepgram and ElevenLabs transcription plus ElevenLabs narration with provider test credentials. Verify API keys never appear in logs or UI after save.
 
 ### Lesson renderer
 

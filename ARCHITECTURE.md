@@ -80,7 +80,7 @@ On Windows, provider credentials are protected through a small Rust worker that 
 
 ## Wake and voice flow
 
-When wake listening is enabled on Windows, the launcher opens only the selected microphone. The renderer measures the local signal and groups it into a bounded utterance with a short lead-in and silence tail. A local Windows speech worker first screens the utterance as short dictation, then checks it against the fixed ShowME grammar. Ordinary audio is discarded locally. Only a recognized wake starts explicit screen capture and a separate recorded question, which requires a configured OpenAI or Groq transcription route.
+When wake listening is enabled on Windows, the launcher opens only the selected microphone. The renderer measures the local signal and groups it into a bounded utterance with a short lead-in and silence tail. A local Windows speech worker first screens the utterance as short dictation, then checks it against the fixed ShowME grammar. Ordinary audio is discarded locally. Only a recognized wake starts explicit screen capture and a separate recorded question, which uses the selected OpenAI, Groq, Deepgram, or ElevenLabs transcription route.
 
 ## Window model
 

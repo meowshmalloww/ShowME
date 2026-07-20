@@ -102,6 +102,15 @@ export class AppStore {
           saved.wakeSensitivity === 0.74
             ? DEFAULT_SETTINGS.wakeSensitivity
             : Math.max(0.55, saved.wakeSensitivity ?? DEFAULT_SETTINGS.wakeSensitivity),
+        // Move the former short defaults to a full-turn pause so quiet clauses are not cut off.
+        voiceSilenceMs:
+          saved.voiceSilenceMs === undefined || saved.voiceSilenceMs < 1500
+            ? DEFAULT_SETTINGS.voiceSilenceMs
+            : saved.voiceSilenceMs,
+        voiceMaxSeconds:
+          saved.voiceMaxSeconds === 20 || saved.voiceMaxSeconds === undefined
+            ? DEFAULT_SETTINGS.voiceMaxSeconds
+            : saved.voiceMaxSeconds,
         models,
         textModels,
         providerCapabilityOverrides: saved.providerCapabilityOverrides ?? {},

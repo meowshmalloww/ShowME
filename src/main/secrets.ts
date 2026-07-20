@@ -3,9 +3,13 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSy
 import { dirname } from "node:path";
 import { safeStorage } from "electron";
 import { CommandError } from "../shared/errors";
-import { type CredentialProtectionStatus, PROVIDER_IDS, type ProviderId } from "../shared/types";
+import {
+  CREDENTIAL_IDS,
+  type CredentialId,
+  type CredentialProtectionStatus,
+} from "../shared/types";
 
-type SecretMap = Partial<Record<ProviderId, string>>;
+type SecretMap = Partial<Record<CredentialId, string>>;
 const NATIVE_STORE_HEADER = Buffer.from("SMC2", "ascii");
 
 export class SecretStore {
@@ -18,18 +22,18 @@ export class SecretStore {
     private readonly nativeExecutable?: string,
   ) {}
 
-  get(provider: ProviderId): string | undefined {
+  get(provider: CredentialId): string | undefined {
     return this.read()[provider] ?? this.volatile[provider];
   }
 
-  has(provider: ProviderId): boolean {
+  has(provider: CredentialId): boolean {
     return Boolean(this.get(provider));
   }
 
-  configured(): Partial<Record<ProviderId, boolean>> {
+  configured(): Partial<Record<CredentialId, boolean>> {
     const values = { ...this.read(), ...this.volatile };
     return Object.fromEntries(
-      PROVIDER_IDS.map((provider) => [provider, Boolean(values[provider])]),
+      CREDENTIAL_IDS.map((provider) => [provider, Boolean(values[provider])]),
     );
   }
 
@@ -77,7 +81,7 @@ export class SecretStore {
     };
   }
 
-  set(provider: ProviderId, key: string): void {
+  set(provider: CredentialId, key: string): void {
     const trimmed = key.trim();
     if (trimmed.length < 8 || trimmed.length > 1000) {
       throw new CommandError(
@@ -100,7 +104,7 @@ export class SecretStore {
     this.write(next);
   }
 
-  delete(provider: ProviderId): void {
+  delete(provider: CredentialId): void {
     delete this.volatile[provider];
     const next = this.read();
     if (this.lastReadError) this.preserveUnreadableStore();
@@ -121,7 +125,7 @@ export class SecretStore {
         : safeStorage.decryptString(encrypted);
       const value = JSON.parse(decoded) as Record<string, unknown>;
       const secrets = Object.fromEntries(
-        PROVIDER_IDS.flatMap((provider) =>
+        CREDENTIAL_IDS.flatMap((provider) =>
           typeof value[provider] === "string" ? [[provider, value[provider] as string]] : [],
         ),
       );

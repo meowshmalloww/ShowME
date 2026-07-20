@@ -8,6 +8,10 @@ export const PROVIDER_IDS = [
 ] as const;
 
 export type ProviderId = (typeof PROVIDER_IDS)[number];
+export const AUDIO_PROVIDER_IDS = ["deepgram", "elevenlabs"] as const;
+export type AudioProviderId = (typeof AUDIO_PROVIDER_IDS)[number];
+export const CREDENTIAL_IDS = [...PROVIDER_IDS, ...AUDIO_PROVIDER_IDS] as const;
+export type CredentialId = (typeof CREDENTIAL_IDS)[number];
 export type ResearchMode = "quick" | "deep";
 export type LessonSurface = "inline" | "side" | "focus";
 export type TeachingStyle =
@@ -26,9 +30,9 @@ export type TeachingMode =
   | "simplified"
   | "advanced";
 export type Confidence = "verified-module" | "source-grounded" | "exploratory";
-export type VoiceInputProvider = "openai" | "groq";
-export type VoiceOutputProvider = "system" | "openai";
-export type WindowRole = "main" | "launcher" | "selection" | "lesson";
+export type VoiceInputProvider = "openai" | "groq" | "deepgram" | "elevenlabs";
+export type VoiceOutputProvider = "system" | "openai" | "elevenlabs";
+export type WindowRole = "main" | "launcher" | "selection" | "lesson" | "screen-reading";
 export type LauncherMode =
   | "idle"
   | "revealed"
@@ -125,6 +129,14 @@ export interface ProviderSummary {
   capabilityNote: string;
 }
 
+export interface VoiceServiceSummary {
+  id: VoiceInputProvider;
+  name: string;
+  configured: boolean;
+  speechToText: boolean;
+  textToSpeech: boolean;
+}
+
 export interface ProviderModel {
   id: string;
   name: string;
@@ -156,6 +168,7 @@ export interface AppSettings {
   voiceSilenceMs: number;
   voiceMaxSeconds: number;
   voice: string;
+  elevenLabsVoice: string;
   language: string;
   speechRate: number;
   reducedMotion: boolean;
@@ -476,6 +489,7 @@ export interface PermissionStatus {
 export interface AppBootstrap {
   settings: AppSettings;
   providers: ProviderSummary[];
+  voiceServices: VoiceServiceSummary[];
   recentLessons: LessonReceipt[];
   memorySummary: MemorySummary;
   permissions: PermissionStatus;

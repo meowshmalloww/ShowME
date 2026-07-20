@@ -74,6 +74,7 @@ export class WakeWordService {
   }
 
   pushAudio(bytes: Uint8Array): void {
+    if (this.suspended || !this.desired || this.disposed) return;
     const chunk = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     if (chunk.byteLength < 3_200) return;
     this.audioQueue.push(chunk.subarray(0, 96_000));
@@ -144,7 +145,7 @@ export class WakeWordService {
       output += chunk;
       const lines = output.split(/\r?\n/);
       output = lines.pop() ?? "";
-      for (const line of lines) this.handleLine(line);
+      for (const line of lines) this.handleLine(line, child);
     });
     child.stderr?.setEncoding("utf8");
     child.stderr?.on("data", (chunk: string) => {
@@ -194,7 +195,10 @@ export class WakeWordService {
     child?.kill();
   }
 
-  private handleLine(line: string): void {
+  private handleLine(line: string, source: ChildProcess): void {
+    // A stopped recognizer can still flush one final stdout line. Ignore output
+    // from that stale process so it cannot wake ShowME during a manual capture.
+    if (this.child !== source || this.suspended || this.disposed) return;
     const trimmed = line.trim();
     if (!trimmed.startsWith("{")) return;
     try {

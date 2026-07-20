@@ -20,9 +20,9 @@ A provider request can contain:
 - selected teaching and language preferences;
 - a short local memory summary when learning memory is enabled.
 
-The local wake phrase does not send audio to a model provider. After ShowME wakes, the separately recorded question is sent only to the configured OpenAI or Groq transcription provider. If neither provider has a key, the application reports that voice transcription is unavailable rather than sending audio elsewhere.
+The local wake phrase does not send audio to a model provider. After ShowME wakes, the separately recorded question is sent only to the transcription provider selected by the user: OpenAI, Groq, Deepgram, or ElevenLabs. If that provider has no key, the application reports that voice transcription is unavailable rather than sending audio elsewhere.
 
-Deep mode can ask the selected provider to perform web research. Wikimedia Commons is queried only when the learner enabled licensed image aids and a lesson requests a search. OpenAI speech sends the selected narration text when cloud speech is selected. The default narration engine is the local system voice.
+Deep mode can ask the selected provider to perform web research. Wikimedia Commons is queried only when the learner enabled licensed image aids and a lesson requests a search. OpenAI or ElevenLabs receives only the selected narration text when its cloud speech route is selected. The default narration engine is the local system voice.
 
 Provider services apply their own retention and account policies. ShowME sets store:false on OpenAI Responses requests, but users should still review the policy for the provider and account they choose.
 

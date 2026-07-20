@@ -4,12 +4,16 @@ import { effectiveCapabilities, PROVIDER_DEFINITIONS } from "../shared/providers
 import { lessonJsonSchema, validateLessonPlan } from "../shared/schema";
 import type {
   AppSettings,
+  CredentialId,
   GenerateLessonRequest,
   LessonPlan,
   PreparedContext,
   ProviderId,
   ProviderModel,
+  VoiceInputProvider,
+  VoiceOutputProvider,
 } from "../shared/types";
+import { voiceServiceName } from "../shared/voice";
 import type { SecretStore } from "./secrets";
 
 interface GenerateOptions {
@@ -129,26 +133,61 @@ export class ProviderService {
   }
 
   async transcribe(
-    provider: "openai" | "groq",
+    provider: VoiceInputProvider,
     bytes: Uint8Array,
     mimeType: string,
     language: string,
   ): Promise<string> {
     const key = this.requireKey(provider);
+    if (provider === "deepgram") {
+      const url = new URL("https://api.deepgram.com/v1/listen");
+      url.searchParams.set("model", "nova-3");
+      url.searchParams.set("smart_format", "true");
+      if (language && language !== "auto") {
+        url.searchParams.set("language", language.split("-")[0] ?? language);
+      }
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { Authorization: "Token " + key, "Content-Type": mimeType },
+        body: new Uint8Array(bytes),
+        signal: AbortSignal.timeout(60_000),
+      });
+      const payload = await parseResponseBody(response);
+      if (!response.ok) throw apiError(provider, response, payload);
+      const channels = asRecord(asRecord(payload).results).channels;
+      const channel = Array.isArray(channels) ? asRecord(channels[0]) : {};
+      const alternatives = channel.alternatives;
+      const transcript = Array.isArray(alternatives)
+        ? asRecord(alternatives[0]).transcript
+        : undefined;
+      if (typeof transcript !== "string" || !transcript.trim()) {
+        throw new CommandError("EMPTY_TRANSCRIPT", "Deepgram returned no speech.");
+      }
+      return transcript.trim();
+    }
+
     const endpoint =
       provider === "openai"
         ? "https://api.openai.com/v1/audio/transcriptions"
-        : "https://api.groq.com/openai/v1/audio/transcriptions";
+        : provider === "groq"
+          ? "https://api.groq.com/openai/v1/audio/transcriptions"
+          : "https://api.elevenlabs.io/v1/speech-to-text";
     const form = new FormData();
     const extension = mimeType.includes("webm") ? "webm" : mimeType.includes("wav") ? "wav" : "mp4";
     const copied = new Uint8Array(bytes).buffer;
     form.append("file", new Blob([copied], { type: mimeType }), "question." + extension);
-    form.append("model", provider === "openai" ? "gpt-4o-transcribe" : "whisper-large-v3-turbo");
-    if (language && language !== "auto")
-      form.append("language", language.split("-")[0] ?? language);
+    if (provider === "elevenlabs") {
+      form.append("model_id", "scribe_v2");
+    } else {
+      form.append("model", provider === "openai" ? "gpt-4o-transcribe" : "whisper-large-v3-turbo");
+      if (language && language !== "auto") {
+        form.append("language", language.split("-")[0] ?? language);
+      }
+    }
     const response = await fetch(endpoint, {
       method: "POST",
-      headers: { Authorization: "Bearer " + key },
+      headers:
+        provider === "elevenlabs" ? { "xi-api-key": key } : { Authorization: "Bearer " + key },
       body: form,
       signal: AbortSignal.timeout(60_000),
     });
@@ -162,27 +201,48 @@ export class ProviderService {
   }
 
   async synthesize(
+    provider: Exclude<VoiceOutputProvider, "system">,
     text: string,
     voice: string,
+    elevenLabsVoice: string,
     speed: number,
   ): Promise<{ bytes: Uint8Array; mimeType: string }> {
-    const key = this.requireKey("openai");
-    const response = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
-      headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "gpt-4o-mini-tts",
-        voice,
-        input: text.slice(0, 4096),
-        instructions: "Speak like a calm, encouraging teacher. Keep mathematical notation clear.",
-        response_format: "mp3",
-        speed,
-      }),
-      signal: AbortSignal.timeout(60_000),
-    });
+    const key = this.requireKey(provider);
+    const response = await fetch(
+      provider === "openai"
+        ? "https://api.openai.com/v1/audio/speech"
+        : "https://api.elevenlabs.io/v1/text-to-speech/" +
+            encodeURIComponent(elevenLabsVoice) +
+            "?output_format=mp3_44100_128",
+      {
+        method: "POST",
+        headers:
+          provider === "openai"
+            ? { Authorization: "Bearer " + key, "Content-Type": "application/json" }
+            : { "xi-api-key": key, "Content-Type": "application/json", Accept: "audio/mpeg" },
+        body: JSON.stringify(
+          provider === "openai"
+            ? {
+                model: "gpt-4o-mini-tts",
+                voice,
+                input: text.slice(0, 4096),
+                instructions:
+                  "Speak like a calm, encouraging teacher. Keep mathematical notation clear.",
+                response_format: "mp3",
+                speed,
+              }
+            : {
+                model_id: "eleven_flash_v2_5",
+                text: text.slice(0, 5000),
+                voice_settings: { speed },
+              },
+        ),
+        signal: AbortSignal.timeout(60_000),
+      },
+    );
     if (!response.ok) {
       const payload = await parseResponseBody(response);
-      throw apiError("openai", response, payload);
+      throw apiError(provider, response, payload);
     }
     return { bytes: new Uint8Array(await response.arrayBuffer()), mimeType: "audio/mpeg" };
   }
@@ -356,13 +416,15 @@ export class ProviderService {
     };
   }
 
-  private requireKey(provider: ProviderId): string {
+  private requireKey(provider: CredentialId): string {
     const key = this.secrets.get(provider);
     if (!key) {
       throw new CommandError(
         "PROVIDER_NOT_CONFIGURED",
-        PROVIDER_DEFINITIONS[provider].name + " is not configured.",
-        "Add its API key in Settings → Models & API.",
+        credentialName(provider) + " is not configured.",
+        provider === "deepgram" || provider === "elevenlabs"
+          ? "Add its API key in Settings > Voice & language."
+          : "Add its API key in Settings > Models & API.",
       );
     }
     return key;
@@ -757,7 +819,7 @@ async function parseResponseBody(response: Response): Promise<unknown> {
   }
 }
 
-function apiError(provider: ProviderId, response: Response, payload: unknown): CommandError {
+function apiError(provider: CredentialId, response: Response, payload: unknown): CommandError {
   const record = asRecord(payload);
   const nested = asRecord(record.error);
   const detail = Array.isArray(record.detail)
@@ -786,13 +848,19 @@ function apiError(provider: ProviderId, response: Response, payload: unknown): C
       : response.status === 429
         ? "PROVIDER_RATE_LIMIT"
         : "PROVIDER_ERROR",
-    PROVIDER_DEFINITIONS[provider].name + ": " + message,
+    credentialName(provider) + ": " + message,
     response.status === 401
       ? "Check the API key in Settings."
       : response.status === 429
         ? "Wait briefly, check provider quota, or choose another configured model."
         : "Check the selected model and provider status, then try again.",
   );
+}
+
+function credentialName(provider: CredentialId): string {
+  return provider === "deepgram" || provider === "elevenlabs"
+    ? voiceServiceName(provider)
+    : PROVIDER_DEFINITIONS[provider].name;
 }
 
 function asRecord(value: unknown): Record<string, any> {

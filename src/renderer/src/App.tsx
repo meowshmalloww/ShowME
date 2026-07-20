@@ -4,6 +4,7 @@ import { BrandMark } from "./components/BrandMark";
 import { Launcher } from "./views/Launcher";
 import { LessonWindow } from "./views/LessonWindow";
 import { MainWindow } from "./views/MainWindow";
+import { ScreenReadingBorder } from "./views/ScreenReadingBorder";
 import { SelectionOverlay } from "./views/SelectionOverlay";
 
 export function App(): ReactNode {
@@ -16,6 +17,8 @@ export function App(): ReactNode {
         <SelectionOverlay />
       ) : role === "lesson" ? (
         <LessonWindow />
+      ) : role === "screen-reading" ? (
+        <ScreenReadingBorder />
       ) : (
         <MainWindow />
       )}

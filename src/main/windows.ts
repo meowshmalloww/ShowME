@@ -21,6 +21,7 @@ export class WindowManager {
   private launcher: BrowserWindow | null = null;
   private selection: BrowserWindow | null = null;
   private lesson: BrowserWindow | null = null;
+  private screenReading: BrowserWindow | null = null;
   private launcherMode: LauncherMode = "idle";
   private launcherAnimation: ReturnType<typeof setTimeout> | null = null;
   private launcherRecovery: ReturnType<typeof setTimeout> | null = null;
@@ -247,6 +248,43 @@ export class WindowManager {
     this.lesson?.hide();
   }
 
+  showScreenReading(displayId: number): void {
+    this.hideScreenReading();
+    const display =
+      screen.getAllDisplays().find((item) => item.id === displayId) ?? screen.getPrimaryDisplay();
+    const window = this.createWindow("screen-reading", {
+      ...display.bounds,
+      frame: false,
+      transparent: true,
+      backgroundColor: "#00000000",
+      resizable: false,
+      movable: false,
+      focusable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      hasShadow: false,
+      show: false,
+    });
+    this.screenReading = window;
+    window.setIgnoreMouseEvents(true, { forward: true });
+    window.setAlwaysOnTop(true, "screen-saver", 2);
+    window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    window.on("closed", () => {
+      if (this.screenReading === window) this.screenReading = null;
+    });
+    window.webContents.once("did-finish-load", () => {
+      if (this.screenReading !== window || window.isDestroyed()) return;
+      window.setBounds(display.bounds);
+      window.showInactive();
+    });
+  }
+
+  hideScreenReading(): void {
+    const window = this.screenReading;
+    this.screenReading = null;
+    if (window && !window.isDestroyed()) window.destroy();
+  }
+
   broadcastProgress(progress: LessonProgress): void {
     for (const window of [this.launcher, this.lesson, this.main]) {
       if (window && !window.isDestroyed())
@@ -297,7 +335,13 @@ export class WindowManager {
     screen.removeListener("display-added", this.handleDisplayChange);
     screen.removeListener("display-removed", this.handleDisplayChange);
     screen.removeListener("display-metrics-changed", this.handleDisplayChange);
-    for (const window of [this.selection, this.lesson, this.main, this.launcher]) {
+    for (const window of [
+      this.screenReading,
+      this.selection,
+      this.lesson,
+      this.main,
+      this.launcher,
+    ]) {
       if (window && !window.isDestroyed()) window.destroy();
     }
   }
@@ -439,7 +483,9 @@ export class WindowManager {
             ? "ShowME Lesson"
             : role === "selection"
               ? "ShowME Selection"
-              : "ShowME",
+              : role === "screen-reading"
+                ? "ShowME Screen Reading Indicator"
+                : "ShowME",
       autoHideMenuBar: true,
       webPreferences: {
         preload: join(moduleDirectory, "../preload/index.cjs"),
@@ -449,7 +495,7 @@ export class WindowManager {
         nodeIntegrationInWorker: false,
         webSecurity: true,
         allowRunningInsecureContent: false,
-        backgroundThrottling: role !== "launcher",
+        backgroundThrottling: role !== "launcher" && role !== "screen-reading",
         spellcheck: false,
       },
     });

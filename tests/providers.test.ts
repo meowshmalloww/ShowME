@@ -240,3 +240,83 @@ describe("provider model catalogs", () => {
     expect(models.filter((model) => model.capabilities?.vision).length).toBeGreaterThan(1);
   });
 });
+
+describe("speech provider routes", () => {
+  it("sends recorded audio directly to Deepgram Nova-3", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: { channels: [{ alternatives: [{ transcript: "Explain this graph." }] }] },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new ProviderService({
+      get: () => "deepgram-test-key",
+    } as unknown as SecretStore);
+
+    await expect(
+      service.transcribe("deepgram", new Uint8Array([1, 2, 3]), "audio/webm", "en"),
+    ).resolves.toBe("Explain this graph.");
+
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit];
+    expect(url.toString()).toContain("api.deepgram.com/v1/listen");
+    expect(url.searchParams.get("model")).toBe("nova-3");
+    expect(init.headers).toMatchObject({
+      Authorization: "Token deepgram-test-key",
+      "Content-Type": "audio/webm",
+    });
+  });
+
+  it("uses ElevenLabs Scribe v2 for transcription", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ text: "Show me the highlighted control." }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new ProviderService({
+      get: () => "elevenlabs-test-key",
+    } as unknown as SecretStore);
+
+    await expect(
+      service.transcribe("elevenlabs", new Uint8Array([1, 2]), "audio/webm", "en"),
+    ).resolves.toBe("Show me the highlighted control.");
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("https://api.elevenlabs.io/v1/speech-to-text");
+    expect(init.headers).toMatchObject({ "xi-api-key": "elevenlabs-test-key" });
+    expect(init.body).toBeInstanceOf(FormData);
+    expect((init.body as FormData).get("model_id")).toBe("scribe_v2");
+  });
+
+  it("uses ElevenLabs Flash for narrated lesson audio", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(new Uint8Array([4, 5, 6]), {
+        status: 200,
+        headers: { "Content-Type": "audio/mpeg" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new ProviderService({
+      get: () => "elevenlabs-test-key",
+    } as unknown as SecretStore);
+
+    const audio = await service.synthesize(
+      "elevenlabs",
+      "Start with the visible pattern.",
+      "marin",
+      "JBFqnCBsd6RMkjVDRZzb",
+      1.1,
+    );
+    expect(audio.mimeType).toBe("audio/mpeg");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain("/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb");
+    expect(JSON.parse(String(init.body))).toMatchObject({
+      model_id: "eleven_flash_v2_5",
+      voice_settings: { speed: 1.1 },
+    });
+  });
+});

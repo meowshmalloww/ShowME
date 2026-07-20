@@ -490,7 +490,7 @@ export function LessonWindow() {
             <div className="caption-line">
               <Volume2 size={13} />
               <span>{currentStep?.narration}</span>
-              {bootstrap.settings.voiceOutputProvider === "openai" ? <em>AI voice</em> : null}
+              {bootstrap.settings.voiceOutputProvider !== "system" ? <em>AI voice</em> : null}
             </div>
           ) : null}
         </section>

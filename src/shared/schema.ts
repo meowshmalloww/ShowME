@@ -1,11 +1,12 @@
 import { z } from "zod";
-import { PROVIDER_IDS } from "./types";
+import { CREDENTIAL_IDS, PROVIDER_IDS } from "./types";
 
 const coordinate = z.number().finite().min(0).max(1000);
 const positiveFinite = z.number().finite().positive();
 const id = z.string().min(1).max(100);
 
 export const providerIdSchema = z.enum(PROVIDER_IDS);
+export const credentialIdSchema = z.enum(CREDENTIAL_IDS);
 export const pointSchema = z.object({ x: coordinate, y: coordinate }).strict();
 
 export const providerCapabilitiesSchema = z
@@ -87,17 +88,18 @@ export const appSettingsSchema = z
     lessonSurface: z.enum(["inline", "side", "focus"]),
     voiceEnabled: z.boolean(),
     captionsEnabled: z.boolean(),
-    voiceInputProvider: z.enum(["openai", "groq"]),
-    voiceOutputProvider: z.enum(["system", "openai"]),
+    voiceInputProvider: z.enum(["openai", "groq", "deepgram", "elevenlabs"]),
+    voiceOutputProvider: z.enum(["system", "openai", "elevenlabs"]),
     microphoneDeviceId: z.string().min(1).max(500),
     speakerDeviceId: z.string().min(1).max(500),
     echoCancellation: z.boolean(),
     noiseSuppression: z.boolean(),
     autoGainControl: z.boolean(),
     wakeSensitivity: z.number().finite().min(0.55).max(0.9),
-    voiceSilenceMs: z.number().int().min(400).max(4000),
-    voiceMaxSeconds: z.number().int().min(5).max(60),
+    voiceSilenceMs: z.number().int().min(1500).max(3000),
+    voiceMaxSeconds: z.number().int().min(10).max(90),
     voice: z.string().min(1).max(80),
+    elevenLabsVoice: z.string().min(1).max(120),
     language: z.string().min(2).max(20),
     speechRate: z.number().finite().min(0.6).max(1.8),
     reducedMotion: z.boolean(),

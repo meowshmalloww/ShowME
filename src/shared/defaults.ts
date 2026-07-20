@@ -37,9 +37,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   noiseSuppression: true,
   autoGainControl: true,
   wakeSensitivity: 0.6,
-  voiceSilenceMs: 900,
-  voiceMaxSeconds: 20,
+  voiceSilenceMs: 2200,
+  voiceMaxSeconds: 45,
   voice: "marin",
+  elevenLabsVoice: "JBFqnCBsd6RMkjVDRZzb",
   language: "en",
   speechRate: 1,
   reducedMotion: false,
@@ -71,6 +72,11 @@ export const VOICES = [
   { id: "onyx", label: "Onyx", note: "Deep and measured" },
 ] as const;
 
+export const ELEVENLABS_VOICES = [
+  { id: "JBFqnCBsd6RMkjVDRZzb", label: "George", note: "Warm and clear" },
+  { id: "pNInz6obpgDQGcFmaJgB", label: "Adam", note: "Measured and direct" },
+] as const;
+
 export const LANGUAGES = [
   { id: "en", label: "English" },
   { id: "zh-CN", label: "Chinese (Simplified)" },
@@ -98,9 +104,12 @@ export const VOICE_HOTKEYS = [
 export const VOICE_INPUT_LABELS: Record<VoiceInputProvider, string> = {
   openai: "OpenAI transcription",
   groq: "Groq transcription",
+  deepgram: "Deepgram Nova-3",
+  elevenlabs: "ElevenLabs Scribe v2",
 };
 
 export const VOICE_OUTPUT_LABELS: Record<VoiceOutputProvider, string> = {
   system: "System voice (local)",
   openai: "OpenAI speech",
+  elevenlabs: "ElevenLabs speech",
 };

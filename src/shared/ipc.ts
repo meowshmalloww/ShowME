@@ -3,6 +3,7 @@ import type {
   AppBootstrap,
   AppSettings,
   CapturePayload,
+  CredentialId,
   GenerateLessonRequest,
   ImageAsset,
   LauncherMode,
@@ -140,8 +141,8 @@ export interface ShowMEApi {
     setMode(mode: LauncherMode): Promise<void>;
   };
   providers: {
-    saveKey(provider: ProviderId, key: string): Promise<void>;
-    deleteKey(provider: ProviderId): Promise<void>;
+    saveKey(provider: CredentialId, key: string): Promise<void>;
+    deleteKey(provider: CredentialId): Promise<void>;
     test(provider: ProviderId, model: string): Promise<string>;
     models(provider: ProviderId): Promise<ProviderModel[]>;
   };

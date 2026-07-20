@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import {
   circuitValues,
   sampleFunction,
@@ -24,6 +24,7 @@ export function LessonCanvas({
   reducedMotion: boolean;
   contextPreviewDataUrl?: string | undefined;
 }) {
+  const [loadedContext, setLoadedContext] = useState<{ source: string; aspect: number }>();
   const visibleIds = useMemo(
     () => new Set(plan.steps.slice(0, stepIndex + 1).flatMap((step) => step.primitiveIds)),
     [plan, stepIndex],
@@ -32,6 +33,23 @@ export function LessonCanvas({
     (primitive) => !primitive.stepId || visibleIds.has(primitive.id),
   );
   const showContextPreview = Boolean(contextPreviewDataUrl && !plan.simulation);
+  const drawablePrimitives = primitives;
+  const contextAspect =
+    loadedContext && loadedContext.source === contextPreviewDataUrl
+      ? loadedContext.aspect
+      : undefined;
+  const contextOverlayStyle = useMemo<CSSProperties | undefined>(() => {
+    if (!showContextPreview || !contextAspect) return undefined;
+    const stageAspect = 16 / 10;
+    return {
+      inset: "auto",
+      left: "50%",
+      top: "50%",
+      width: contextAspect >= stageAspect ? "100%" : `${(contextAspect / stageAspect) * 100}%`,
+      height: contextAspect >= stageAspect ? `${(stageAspect / contextAspect) * 100}%` : "100%",
+      transform: "translate(-50%, -50%)",
+    };
+  }, [contextAspect, showContextPreview]);
   return (
     <div className={"lesson-visual-stack" + (showContextPreview ? " has-context-preview" : "")}>
       {showContextPreview ? (
@@ -40,6 +58,15 @@ export function LessonCanvas({
           src={contextPreviewDataUrl}
           alt="The selected screen context"
           draggable={false}
+          onLoad={(event) => {
+            const image = event.currentTarget;
+            if (contextPreviewDataUrl && image.naturalWidth && image.naturalHeight) {
+              setLoadedContext({
+                source: contextPreviewDataUrl,
+                aspect: image.naturalWidth / image.naturalHeight,
+              });
+            }
+          }}
         />
       ) : null}
       {plan.simulation ? (
@@ -62,11 +89,14 @@ export function LessonCanvas({
           </small>
         </div>
       ) : null}
-      {primitives.length && (plan.simulation || showContextPreview) ? (
+      {drawablePrimitives.length && (plan.simulation || showContextPreview) ? (
         <svg
-          className={plan.simulation ? "lesson-primitives overlay" : "lesson-primitives"}
+          className={
+            plan.simulation ? "lesson-primitives overlay" : "lesson-primitives context-overlay"
+          }
           viewBox="0 0 1000 1000"
-          preserveAspectRatio="xMidYMid meet"
+          preserveAspectRatio={showContextPreview ? "none" : "xMidYMid meet"}
+          style={contextOverlayStyle}
           role="img"
           aria-label={plan.title}
         >
@@ -86,8 +116,12 @@ export function LessonCanvas({
               <feGaussianBlur stdDeviation="9" />
             </filter>
           </defs>
-          {primitives.map((primitive) => (
-            <Primitive key={primitive.id} primitive={primitive} />
+          {drawablePrimitives.map((primitive) => (
+            <Primitive
+              key={primitive.id}
+              primitive={primitive}
+              contextOverlay={showContextPreview}
+            />
           ))}
         </svg>
       ) : null}
@@ -95,7 +129,13 @@ export function LessonCanvas({
   );
 }
 
-function Primitive({ primitive }: { primitive: LessonPrimitive }) {
+function Primitive({
+  primitive,
+  contextOverlay = false,
+}: {
+  primitive: LessonPrimitive;
+  contextOverlay?: boolean;
+}) {
   // Screen annotations follow the product palette. Model-supplied colors are not
   // allowed to turn every generated lesson into a different visual system.
   const color = "var(--text)";
@@ -104,10 +144,20 @@ function Primitive({ primitive }: { primitive: LessonPrimitive }) {
   const lineProps = {
     stroke: color,
     strokeWidth,
+    vectorEffect: "non-scaling-stroke" as const,
     strokeDasharray: primitive.dashed ? "12 10" : undefined,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
   };
+  if (contextOverlay && ["text", "equation", "callout"].includes(primitive.kind)) {
+    // Captures can be extremely wide or tall. Painting model text in that
+    // normalized image space makes tiny labels that cover the source pixels.
+    return (
+      <g aria-label={primitive.text ?? "Screen annotation"}>
+        <title>{primitive.text ?? "Screen annotation"}</title>
+      </g>
+    );
+  }
   if (primitive.kind === "circle" || primitive.kind === "point")
     return (
       <circle

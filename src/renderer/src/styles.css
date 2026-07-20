@@ -22,6 +22,195 @@
   --radius: 14px;
 }
 
+/* A separate click-through window makes screen reading visible without entering the capture. */
+.screen-reading-overlay {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.screen-reading-edge,
+.screen-reading-corner {
+  position: absolute;
+  display: block;
+}
+
+.screen-reading-edge {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #41bfff 18%,
+    #61d7ff 50%,
+    #41bfff 82%,
+    transparent
+  );
+  filter: drop-shadow(0 0 4px rgba(48, 187, 255, 0.9));
+  opacity: 0.9;
+  animation: screen-reading-breathe 1.8s ease-in-out infinite;
+}
+
+.screen-reading-edge.edge-top,
+.screen-reading-edge.edge-bottom {
+  right: 18px;
+  left: 18px;
+  height: 2px;
+}
+
+.screen-reading-edge.edge-top {
+  top: 0;
+}
+
+.screen-reading-edge.edge-bottom {
+  bottom: 0;
+}
+
+.screen-reading-edge.edge-left,
+.screen-reading-edge.edge-right {
+  top: 18px;
+  bottom: 18px;
+  width: 2px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    #41bfff 18%,
+    #61d7ff 50%,
+    #41bfff 82%,
+    transparent
+  );
+}
+
+.screen-reading-edge.edge-left {
+  left: 0;
+}
+
+.screen-reading-edge.edge-right {
+  right: 0;
+}
+
+.screen-reading-corner {
+  width: 22px;
+  height: 22px;
+  border-color: #79ddff;
+  filter: drop-shadow(0 0 5px rgba(45, 190, 255, 0.95));
+}
+
+.corner-top-left {
+  top: 0;
+  left: 0;
+  border-top: 3px solid;
+  border-left: 3px solid;
+  border-radius: 7px 0 0;
+}
+
+.corner-top-right {
+  top: 0;
+  right: 0;
+  border-top: 3px solid;
+  border-right: 3px solid;
+  border-radius: 0 7px 0 0;
+}
+
+.corner-bottom-left {
+  bottom: 0;
+  left: 0;
+  border-bottom: 3px solid;
+  border-left: 3px solid;
+  border-radius: 0 0 0 7px;
+}
+
+.corner-bottom-right {
+  right: 0;
+  bottom: 0;
+  border-right: 3px solid;
+  border-bottom: 3px solid;
+  border-radius: 0 0 7px;
+}
+
+@keyframes screen-reading-breathe {
+  0%,
+  100% {
+    opacity: 0.58;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.speech-service-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.speech-service {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-2) 72%, transparent);
+}
+
+.speech-service header {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.speech-service header > span:nth-child(2) {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.speech-service header strong,
+.speech-service header small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.speech-service header small,
+.speech-services-card > small {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.speech-service-logo {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line-strong);
+  border-radius: 9px;
+  color: var(--text);
+  background: var(--panel);
+}
+
+.secret-input.compact {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+}
+
+.speech-service .danger-text-button {
+  justify-self: start;
+}
+
+@media (max-width: 1040px) {
+  .speech-service-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .screen-reading-edge {
+    animation: none;
+    opacity: 0.85;
+  }
+}
+
 * {
   box-sizing: border-box;
 }

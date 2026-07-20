@@ -18,15 +18,17 @@ import {
   type WakeInputState,
 } from "../shared/ipc";
 import { providerSummaries } from "../shared/providers";
-import { providerIdSchema } from "../shared/schema";
+import { credentialIdSchema, providerIdSchema } from "../shared/schema";
 import type {
   AppSettings,
+  CredentialId,
   LauncherMode,
   LessonSurface,
   ProviderId,
   VoiceActivityState,
   WakeListenerStatus,
 } from "../shared/types";
+import { voiceServiceSummaries } from "../shared/voice";
 import type { CaptureService } from "./capture";
 import type { LessonService } from "./lesson";
 import { searchCommons } from "./media";
@@ -49,6 +51,8 @@ interface IpcDependencies {
   onVoiceActivity: (state: VoiceActivityState) => void;
   onWakeAudio: (bytes: Uint8Array) => void;
   onWakeInputState: (state: WakeInputState) => void;
+  suspendWake: () => void;
+  resumeWake: () => void;
   getWakeStatus: () => WakeListenerStatus;
 }
 
@@ -57,9 +61,11 @@ export function registerIpc(dependencies: IpcDependencies): void {
 
   handle(CHANNELS.appBootstrap, async () => {
     const settings = store.getSettings();
+    const configured = secrets.configured();
     return {
       settings,
-      providers: providerSummaries(settings, secrets.configured()),
+      providers: providerSummaries(settings, configured),
+      voiceServices: voiceServiceSummaries(configured),
       recentLessons: store.listLessons("", 8),
       memorySummary: store.memorySummary(),
       permissions: permissionStatus(capture),
@@ -101,9 +107,15 @@ export function registerIpc(dependencies: IpcDependencies): void {
   });
 
   handle(CHANNELS.captureBegin, async () => {
-    const payload = await capture.begin();
-    windows.openSelection(payload.display.id);
-    return payload;
+    dependencies.suspendWake();
+    try {
+      const payload = await capture.begin();
+      windows.openSelection(payload.display.id);
+      return payload;
+    } catch (error) {
+      dependencies.resumeWake();
+      throw error;
+    }
   });
   handle(CHANNELS.captureVoiceContext, async () => {
     const prepared = await capture.captureVoiceContext();
@@ -121,9 +133,13 @@ export function registerIpc(dependencies: IpcDependencies): void {
     windows.closeSelection();
     windows.setLauncherMode("revealed");
     windows.showLauncher();
+    dependencies.resumeWake();
   });
   handle(CHANNELS.capturePrepared, async () => capture.prepared());
-  handle(CHANNELS.captureClear, async () => capture.clear());
+  handle(CHANNELS.captureClear, async () => {
+    capture.clear();
+    dependencies.resumeWake();
+  });
   handle(CHANNELS.launcherSetMode, async (_event, mode: LauncherMode) => {
     if (
       ![
@@ -141,12 +157,12 @@ export function registerIpc(dependencies: IpcDependencies): void {
     windows.setLauncherMode(mode);
   });
 
-  handle(CHANNELS.providerSaveKey, async (_event, rawProvider: ProviderId, key: string) => {
-    const provider = providerIdSchema.parse(rawProvider);
+  handle(CHANNELS.providerSaveKey, async (_event, rawProvider: CredentialId, key: string) => {
+    const provider = credentialIdSchema.parse(rawProvider);
     secrets.set(provider, key);
   });
-  handle(CHANNELS.providerDeleteKey, async (_event, rawProvider: ProviderId) => {
-    secrets.delete(providerIdSchema.parse(rawProvider));
+  handle(CHANNELS.providerDeleteKey, async (_event, rawProvider: CredentialId) => {
+    secrets.delete(credentialIdSchema.parse(rawProvider));
   });
   handle(CHANNELS.providerTest, async (_event, rawProvider: ProviderId, model: string) =>
     providers.test(providerIdSchema.parse(rawProvider), String(model).slice(0, 240)),
@@ -157,15 +173,21 @@ export function registerIpc(dependencies: IpcDependencies): void {
 
   handle(CHANNELS.lessonGenerate, async (_event, request) => {
     windows.setLauncherMode("thinking");
+    const context = capture.getPrepared(request.captureId);
+    windows.showScreenReading(context.display.id);
     try {
       const result = await lessons.generate(request);
+      windows.hideScreenReading();
       windows.showLesson(result.presentation);
       windows.setLauncherMode("idle");
       windows.showLauncher();
+      dependencies.resumeWake();
       return result;
     } catch (error) {
       windows.setLauncherMode("question");
       throw error;
+    } finally {
+      windows.hideScreenReading();
     }
   });
   handle(CHANNELS.lessonAdapt, async (_event, input: AdaptLessonInput) => {
@@ -199,13 +221,19 @@ export function registerIpc(dependencies: IpcDependencies): void {
   });
   handle(CHANNELS.voiceSynthesize, async (_event, text: string) => {
     const settings = store.getSettings();
-    if (settings.voiceOutputProvider !== "openai") {
+    if (settings.voiceOutputProvider === "system") {
       throw new CommandError(
         "SYSTEM_VOICE_LOCAL",
         "System voice is synthesized locally in the lesson window.",
       );
     }
-    return providers.synthesize(String(text), settings.voice, settings.speechRate);
+    return providers.synthesize(
+      settings.voiceOutputProvider,
+      String(text),
+      settings.voice,
+      settings.elevenLabsVoice,
+      settings.speechRate,
+    );
   });
   handle(CHANNELS.voiceActivity, async (_event, state: VoiceActivityState) => {
     if (!["idle", "listening", "transcribing", "speaking"].includes(state)) {
@@ -334,9 +362,11 @@ function mapMediaStatus(status: string): "unknown" | "granted" | "denied" | "uns
 
 function bootstrapSnapshot(dependencies: IpcDependencies) {
   const settings = dependencies.store.getSettings();
+  const configured = dependencies.secrets.configured();
   return {
     settings,
-    providers: providerSummaries(settings, dependencies.secrets.configured()),
+    providers: providerSummaries(settings, configured),
+    voiceServices: voiceServiceSummaries(configured),
     recentLessons: dependencies.store.listLessons("", 8),
     memorySummary: dependencies.store.memorySummary(),
     permissions: permissionStatus(dependencies.capture),

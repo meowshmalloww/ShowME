@@ -711,7 +711,10 @@ function ThinkingProgress({ stage }: { stage: LessonProgress["stage"] | undefine
 
 function voiceCopy(mode: "listening" | "transcribing" | "speaking") {
   if (mode === "listening") {
-    return { title: "ShowME is listening", detail: "Ask what you want to understand" };
+    return {
+      title: "ShowME is listening",
+      detail: "Finish your thought, then pause for 2 seconds",
+    };
   }
   if (mode === "transcribing") {
     return { title: "Understanding your request", detail: "Turning your voice into a question" };
