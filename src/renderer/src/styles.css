@@ -5781,7 +5781,7 @@ select:focus {
   box-shadow: none;
 }
 
-/* Launcher state language: meters listen, progress tracks think, waveforms speak. */
+/* Launcher state language: live input bars listen, progress tracks think, output bars speak. */
 .voice-island,
 .thinking-island,
 .question-island {
@@ -5812,7 +5812,6 @@ select:focus {
   font-size: 6.5px;
 }
 
-.listening-meter,
 .activity-loader {
   width: 25px;
   height: 25px;
@@ -5826,18 +5825,6 @@ select:focus {
   background: #171719;
 }
 
-.listening-meter::before {
-  content: "";
-  position: absolute;
-  inset: -3px;
-  border: 1px solid rgba(119, 201, 190, calc(0.16 + var(--voice-level) * 0.62));
-  border-radius: inherit;
-  transform: scale(calc(0.82 + var(--voice-level) * 0.24));
-  transition:
-    transform 55ms linear,
-    border-color 55ms linear;
-}
-
 .activity-loader svg {
   animation: activity-spin 850ms linear infinite;
 }
@@ -5848,15 +5835,27 @@ select:focus {
   }
 }
 
+.audio-wave-listening,
 .audio-wave-speaking {
   height: 16px;
   gap: 1.5px;
-  color: #dedee1;
 }
 
+.audio-wave-listening {
+  color: #67c7ba;
+}
+
+.audio-wave-speaking {
+  color: #e1ad69;
+}
+
+.audio-wave-listening > span,
 .audio-wave-speaking > span {
   width: 1.5px;
   height: 14px;
+}
+
+.audio-wave-speaking > span {
   animation-duration: 680ms;
 }
 

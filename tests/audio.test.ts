@@ -3,6 +3,7 @@ import {
   calibratedSpeechThreshold,
   downsampleToPcm16,
   floatRmsLevel,
+  frequencySpectrumLevels,
   WakeUtteranceCollector,
 } from "../src/shared/audio";
 
@@ -28,6 +29,17 @@ describe("wake microphone PCM conversion", () => {
     expect(calibratedSpeechThreshold(Number.POSITIVE_INFINITY)).toBe(0.0055);
     expect(calibratedSpeechThreshold(0.004)).toBe(0.0055);
     expect(calibratedSpeechThreshold(0.0054)).toBeCloseTo(0.00729, 5);
+  });
+
+  it("turns live frequency bins into bounded visual spectrum bars", () => {
+    const silence = frequencySpectrumLevels(new Uint8Array(128), 12);
+    expect(silence).toEqual(new Array(12).fill(0.05));
+    const bins = new Uint8Array(128);
+    bins.fill(210, 2, 24);
+    const speech = frequencySpectrumLevels(bins, 12);
+    expect(speech).toHaveLength(12);
+    expect(Math.max(...speech)).toBeGreaterThan(0.7);
+    expect(speech.every((level) => level >= 0.05 && level <= 1)).toBe(true);
   });
 
   it("sends one bounded utterance with pre-roll after speech ends", () => {

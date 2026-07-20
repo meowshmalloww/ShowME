@@ -3,7 +3,6 @@ import {
   ArrowUp,
   LoaderCircle,
   LockKeyhole,
-  Mic,
   MousePointer2,
   Scan,
   Square,
@@ -14,6 +13,7 @@ import {
   calibratedSpeechThreshold,
   downsampleToPcm16,
   floatRmsLevel,
+  frequencySpectrumLevels,
   WakeUtteranceCollector,
 } from "../../../shared/audio";
 import { launcherActivityVisual } from "../../../shared/launcher";
@@ -69,28 +69,35 @@ export function Launcher() {
     setVoiceLevels(EMPTY_LEVELS);
   }, []);
 
-  const stopWakeInput = useCallback((reportStopped = false): void => {
-    wakeGeneration.current += 1;
-    if (wakeProcessor.current) wakeProcessor.current.onaudioprocess = null;
-    wakeProcessor.current?.disconnect();
-    wakeSource.current?.disconnect();
-    wakeMute.current?.disconnect();
-    wakeProcessor.current = null;
-    wakeSource.current = null;
-    wakeMute.current = null;
-    for (const track of wakeStream.current?.getTracks() ?? []) track.stop();
-    wakeStream.current = null;
-    const context = wakeContext.current;
-    wakeContext.current = null;
-    if (context && context.state !== "closed") void context.close();
-    setWakeLevel(0);
-    if (reportStopped) {
-      window.showme.wake.inputState({
-        state: "stopped",
-        message: "Wake microphone standby is off.",
-      });
-    }
-  }, []);
+  const stopWakeInput = useCallback(
+    (reportStopped = false, preserveStream = false): MediaStream | null => {
+      wakeGeneration.current += 1;
+      if (wakeProcessor.current) wakeProcessor.current.onaudioprocess = null;
+      wakeProcessor.current?.disconnect();
+      wakeSource.current?.disconnect();
+      wakeMute.current?.disconnect();
+      wakeProcessor.current = null;
+      wakeSource.current = null;
+      wakeMute.current = null;
+      const stream = wakeStream.current;
+      if (!preserveStream) {
+        for (const track of stream?.getTracks() ?? []) track.stop();
+      }
+      wakeStream.current = null;
+      const context = wakeContext.current;
+      wakeContext.current = null;
+      if (context && context.state !== "closed") void context.close();
+      setWakeLevel(0);
+      if (reportStopped) {
+        window.showme.wake.inputState({
+          state: "stopped",
+          message: "Wake microphone standby is off.",
+        });
+      }
+      return preserveStream ? stream : null;
+    },
+    [],
+  );
 
   const startWakeInput = useCallback(
     async (settings: AppBootstrap["settings"]): Promise<void> => {
@@ -244,24 +251,36 @@ export function Launcher() {
 
   const startRecording = useCallback(async (): Promise<void> => {
     if (recorder.current) return;
-    stopWakeInput(false);
+    let stream = stopWakeInput(false, true);
     setError("");
     try {
       const settings = bootstrapRef.current?.settings;
       if (!settings) throw new Error("ShowME is still loading audio settings.");
-      const { stream, fellBackToDefault } = await openConfiguredMicrophone(settings);
+      let fellBackToDefault = false;
+      if (
+        !stream?.active ||
+        stream.getAudioTracks().every((track) => track.readyState !== "live")
+      ) {
+        for (const track of stream?.getTracks() ?? []) track.stop();
+        const opened = await openConfiguredMicrophone(settings);
+        stream = opened.stream;
+        fellBackToDefault = opened.fellBackToDefault;
+      }
       if (fellBackToDefault) {
         setError("The saved microphone is unavailable, so ShowME used the system default.");
       }
+      if (!stream) throw new Error("ShowME could not open the selected microphone.");
+      const recordingStream = stream;
       const preferred = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
         ? "audio/webm;codecs=opus"
         : "audio/webm";
-      const next = new MediaRecorder(stream, { mimeType: preferred });
+      const next = new MediaRecorder(recordingStream, { mimeType: preferred });
       const nextAudioContext = new AudioContext({ latencyHint: "interactive" });
-      const source = nextAudioContext.createMediaStreamSource(stream);
+      await nextAudioContext.resume();
+      const source = nextAudioContext.createMediaStreamSource(recordingStream);
       const analyser = nextAudioContext.createAnalyser();
       analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.68;
+      analyser.smoothingTimeConstant = 0.55;
       source.connect(analyser);
       audioContext.current = nextAudioContext;
       chunks.current = [];
@@ -269,16 +288,15 @@ export function Launcher() {
       let lastSpeechAt = performance.now();
       const startedAt = performance.now();
       let noiseFloor = Number.POSITIVE_INFINITY;
-      let history = [...EMPTY_LEVELS];
       const samples = new Uint8Array(analyser.fftSize);
+      const frequencyBins = new Uint8Array(analyser.frequencyBinCount);
 
       const monitor = (): void => {
         if (next.state === "inactive") return;
         analyser.getByteTimeDomainData(samples);
+        analyser.getByteFrequencyData(frequencyBins);
         const rms = rmsLevel(samples);
-        const level = Math.min(1, Math.max(0.05, rms * 28));
-        history = [...history.slice(1), level];
-        setVoiceLevels(history);
+        setVoiceLevels(frequencySpectrumLevels(frequencyBins, EMPTY_LEVELS.length));
 
         const now = performance.now();
         const elapsed = now - startedAt;
@@ -292,7 +310,7 @@ export function Launcher() {
         const finishedWithoutSpeech = !heardSpeech && now - startedAt > 6_000;
         const reachedLimit = now - startedAt > settings.voiceMaxSeconds * 1000;
         if (finishedBySilence || finishedWithoutSpeech || reachedLimit) next.stop();
-        else monitorTimer.current = window.setTimeout(monitor, 46);
+        else monitorTimer.current = window.setTimeout(monitor, 32);
       };
 
       next.ondataavailable = (event) => {
@@ -302,7 +320,7 @@ export function Launcher() {
         recorder.current = null;
         setRecording(false);
         stopAudioMonitoring();
-        for (const track of stream.getTracks()) track.stop();
+        for (const track of recordingStream.getTracks()) track.stop();
         const blob = new Blob(chunks.current, { type: next.mimeType });
         if (blob.size === 0 || !heardSpeech) {
           await finishVoiceWithError("ShowME did not hear a question. Please try again.");
@@ -334,6 +352,7 @@ export function Launcher() {
       await window.showme.voice.activity("listening");
       monitor();
     } catch (reason) {
+      for (const track of stream?.getTracks() ?? []) track.stop();
       await finishVoiceWithError(errorMessage(reason));
     }
   }, [finishVoiceWithError, stopAudioMonitoring, stopWakeInput, submitText]);
@@ -408,7 +427,9 @@ export function Launcher() {
     } else {
       stopWakeInput(false);
     }
-    return () => stopWakeInput(false);
+    return () => {
+      stopWakeInput(false);
+    };
   }, [bootstrap?.platform, bootstrap?.settings, mode, startWakeInput, stopWakeInput]);
 
   useEffect(() => {
@@ -531,16 +552,10 @@ export function Launcher() {
             <strong>{labels.title}</strong>
             <small>{labels.detail}</small>
           </span>
-          {activityVisual === "waveform" ? (
+          {activityVisual === "input-waveform" ? (
+            <AudioWave levels={voiceLevels} state="listening" />
+          ) : activityVisual === "output-waveform" ? (
             <AudioWave levels={EMPTY_LEVELS} state="speaking" />
-          ) : activityVisual === "microphone" ? (
-            <span
-              className="listening-meter"
-              style={{ "--voice-level": Math.max(...voiceLevels) } as React.CSSProperties}
-              aria-hidden="true"
-            >
-              <Mic size={14} />
-            </span>
           ) : (
             <span className="activity-loader" aria-hidden="true">
               <LoaderCircle size={15} />
@@ -663,7 +678,7 @@ function StandbyWave({ level, ready }: { level: number; ready: boolean }) {
   );
 }
 
-function AudioWave({ levels, state }: { levels: number[]; state: "speaking" }) {
+function AudioWave({ levels, state }: { levels: number[]; state: "listening" | "speaking" }) {
   return (
     <span className={"audio-wave audio-wave-" + state} aria-hidden="true">
       {levels.map((level, index) => (

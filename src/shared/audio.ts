@@ -10,6 +10,36 @@ export function calibratedSpeechThreshold(noiseFloor: number): number {
   return Math.max(0.0055, boundedFloor * 1.35);
 }
 
+export function frequencySpectrumLevels(bins: Uint8Array, barCount = 12): number[] {
+  if (barCount <= 0) return [];
+  if (bins.length < 2) return Array.from({ length: barCount }, () => 0.05);
+  const firstBin = 1;
+  const lastBin = Math.max(firstBin + 1, Math.floor(bins.length * 0.32));
+  const logStart = Math.log(firstBin);
+  const logEnd = Math.log(lastBin);
+  return Array.from({ length: barCount }, (_, index) => {
+    const start = Math.max(
+      firstBin,
+      Math.floor(Math.exp(logStart + (logEnd - logStart) * (index / barCount))),
+    );
+    const end = Math.max(
+      start + 1,
+      Math.ceil(Math.exp(logStart + (logEnd - logStart) * ((index + 1) / barCount))),
+    );
+    let peak = 0;
+    let total = 0;
+    let count = 0;
+    for (let bin = start; bin < Math.min(end, bins.length); bin += 1) {
+      const value = bins[bin] ?? 0;
+      peak = Math.max(peak, value);
+      total += value;
+      count += 1;
+    }
+    const energy = count > 0 ? peak * 0.62 + (total / count) * 0.38 : 0;
+    return Math.max(0.05, Math.min(1, (energy / 255) ** 0.72));
+  });
+}
+
 export function downsampleToPcm16(
   samples: Float32Array,
   sourceRate: number,

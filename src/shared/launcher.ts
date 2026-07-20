@@ -9,11 +9,11 @@ export function launcherSize(mode: LauncherMode): { width: number; height: numbe
   return { width: 388, height: 160 };
 }
 
-export type LauncherActivityVisual = "microphone" | "progress" | "waveform" | "none";
+export type LauncherActivityVisual = "input-waveform" | "progress" | "output-waveform" | "none";
 
 export function launcherActivityVisual(mode: LauncherMode): LauncherActivityVisual {
-  if (mode === "listening") return "microphone";
+  if (mode === "listening") return "input-waveform";
   if (mode === "transcribing" || mode === "thinking") return "progress";
-  if (mode === "speaking") return "waveform";
+  if (mode === "speaking") return "output-waveform";
   return "none";
 }

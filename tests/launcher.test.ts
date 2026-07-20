@@ -12,11 +12,11 @@ describe("top-edge launcher geometry", () => {
     expect(launcherSize("question")).toEqual({ width: 388, height: 160 });
   });
 
-  it("uses a waveform only while ShowME is speaking", () => {
-    expect(launcherActivityVisual("listening")).toBe("microphone");
+  it("separates live input, progress, and spoken-output visuals", () => {
+    expect(launcherActivityVisual("listening")).toBe("input-waveform");
     expect(launcherActivityVisual("transcribing")).toBe("progress");
     expect(launcherActivityVisual("thinking")).toBe("progress");
-    expect(launcherActivityVisual("speaking")).toBe("waveform");
+    expect(launcherActivityVisual("speaking")).toBe("output-waveform");
     expect(launcherActivityVisual("question")).toBe("none");
   });
 });
