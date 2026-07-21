@@ -69,6 +69,37 @@ describe("trusted lesson schema", () => {
     ).toThrow(/unknown primitive/i);
   });
 
+  it("rejects invisible paths and incomplete arrows instead of silently rendering nothing", () => {
+    expect(() =>
+      validateLessonPlan({
+        ...lesson,
+        primitives: [{ id: "missing-shape", kind: "path", x: 100, y: 100 }],
+        steps: [
+          {
+            ...lesson.steps[0],
+            primitiveIds: ["missing-shape"],
+          },
+        ],
+      }),
+    ).toThrow(/Visual grounding.*path/i);
+  });
+
+  it("rejects multi-step text-only output as an incomplete visual lesson", () => {
+    expect(() =>
+      validateLessonPlan({
+        ...lesson,
+        primitives: [
+          { id: "formula-a", kind: "equation", x: 100, y: 100, text: "a = b" },
+          { id: "formula-b", kind: "equation", x: 100, y: 200, text: "b = c" },
+        ],
+        steps: [
+          { ...lesson.steps[0], id: "text-step-1", primitiveIds: ["formula-a"] },
+          { ...lesson.steps[0], id: "text-step-2", primitiveIds: ["formula-b"] },
+        ],
+      }),
+    ).toThrow(/Visual grounding/i);
+  });
+
   it("exports a closed JSON schema for strict provider output", () => {
     const schema = lessonJsonSchema();
     expect(schema.additionalProperties).toBe(false);

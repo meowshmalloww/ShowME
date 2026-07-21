@@ -8,6 +8,7 @@ interface WakeWordEvent {
   type: "ready" | "level" | "wake" | "processed" | "error";
   level?: number;
   phrase?: string;
+  confidence?: number;
   message?: string;
   culture?: string;
   recognizer?: string;
@@ -16,6 +17,7 @@ interface WakeWordEvent {
 interface WakeWordCallbacks {
   onLevel: (level: number) => void;
   onWake: (phrase: string) => void;
+  onCommand: (phrase: string, confidence: number) => void;
   onStatus: (status: WakeListenerStatus) => void;
 }
 
@@ -24,6 +26,7 @@ export class WakeWordService {
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private desired = false;
   private suspended = false;
+  private commandMode = false;
   private disposed = false;
   private recognizerReady = false;
   private inputBackpressured = false;
@@ -89,6 +92,7 @@ export class WakeWordService {
   }
 
   suspend(): void {
+    this.commandMode = false;
     this.suspended = true;
     this.stop();
   }
@@ -96,6 +100,10 @@ export class WakeWordService {
   resume(): void {
     this.suspended = false;
     this.start();
+  }
+
+  setCommandMode(enabled: boolean): void {
+    this.commandMode = enabled;
   }
 
   dispose(): void {
@@ -206,6 +214,12 @@ export class WakeWordService {
       if (event.type === "level" && typeof event.level === "number") {
         this.callbacks.onLevel(normalizeWakeLevel(event.level));
       } else if (event.type === "wake") {
+        if (this.commandMode) {
+          this.inputInFlight = false;
+          this.callbacks.onCommand(event.phrase ?? this.assistantName, event.confidence ?? 0);
+          this.dispatchAudioWindow();
+          return;
+        }
         this.suspended = true;
         this.callbacks.onWake(event.phrase ?? this.assistantName);
         this.stop();
@@ -217,6 +231,13 @@ export class WakeWordService {
         this.dispatchAudioWindow();
       } else if (event.type === "processed") {
         this.inputInFlight = false;
+        if (
+          this.commandMode &&
+          event.phrase?.trim() &&
+          (event.confidence ?? 0) >= Math.max(0.5, this.sensitivity - 0.08)
+        ) {
+          this.callbacks.onCommand(event.phrase, event.confidence ?? 0);
+        }
         this.dispatchAudioWindow();
       } else if (event.type === "error" && event.message) {
         this.updateStatus({ state: "error", message: event.message });

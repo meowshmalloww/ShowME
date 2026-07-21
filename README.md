@@ -21,8 +21,9 @@ ShowME lives in a small island at the top of the screen. Say **ShowME** or choos
 - Captures only after a deliberate selection or recognized wake phrase.
 - Shows a live microphone spectrum while listening, a clear thinking state, and a blue screen-reading border while the model examines the capture.
 - Turns model output into validated lesson steps, annotations, motion, controls, narration, and follow-up questions.
-- Supports local Windows narration plus OpenAI or ElevenLabs speech.
-- Transcribes questions through OpenAI, Groq, Deepgram, or ElevenLabs.
+- Uses the learner's age and grade/learning level as a compact teaching baseline, while giving the learner's questions and feedback higher priority.
+- Supports local Windows narration plus Deepgram Aura or ElevenLabs speech. OpenAI is never used for audio.
+- Transcribes questions through Groq, Deepgram, or ElevenLabs.
 - Stores lesson history locally and never stores the original screenshot in history.
 
 ## Run it
@@ -36,11 +37,11 @@ npm run build:icons
 npm run dev
 ```
 
-Enter API keys inside ShowME, not in `.env`. Saved keys are protected with Windows DPAPI. The default shortcuts are `Ctrl+Shift+Space` for selection and `Ctrl+Shift+V` for voice-first capture.
+Enter API keys inside ShowME, not in `.env`. Saved keys are protected with Windows DPAPI. After a key is saved, ShowME reads that provider's live model catalog and limits the lesson selector to generative models, preferring models with verified image-input metadata. A catalog entry is not treated as proof of free or account-level access; the selected model must pass its connection test. The default shortcuts are `Ctrl+Shift+Space` for selection and `Ctrl+Shift+V` for voice-first capture.
 
 ## Built for trust
 
-Model output is untrusted data. It must pass a closed Zod schema, reference checks, numerical bounds, and an independent verification worker before the renderer accepts it. ShowME never runs model-authored HTML, JavaScript, SVG markup, shell commands, Python, or Rust.
+Model output is untrusted data. OpenAI uses a strict schema; compatible providers use the strongest contract their current API supports, followed by the same closed Zod schema, reference checks, numerical bounds, and independent verification worker before the renderer accepts anything. ShowME never runs model-authored HTML, JavaScript, SVG markup, shell commands, Python, or Rust.
 
 The renderer is sandboxed with context isolation and no Node access. Capture, provider traffic, credentials, SQLite, and worker processes stay in Electron main. See [Privacy and security](PRIVACY-SECURITY.md) for the full boundary.
 
@@ -64,7 +65,7 @@ npm run pack
 | Path | Purpose |
 | --- | --- |
 | `src/main` | Electron authority, capture, providers, credentials, windows, and storage |
-| `src/renderer` | Main app, selection tools, dynamic island, and lesson player |
+| `src/renderer` | Main app, selection tools, dynamic island, and click-through desktop whiteboard |
 | `src/shared` | Types, schemas, models, geometry, and simulations |
 | `workers` | Rust capture/credential worker, Python verifier, and local wake listener |
 | `tests` | Provider, schema, simulation, storage, and interface tests |

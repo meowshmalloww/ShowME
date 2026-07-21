@@ -42,6 +42,7 @@ if (result.status !== 0 || !selfTest?.success) {
 
 const pcmPath = join(tmpdir(), `showme-wake-${process.pid}-${Date.now()}.pcm`);
 const negativePcmPath = join(tmpdir(), `showme-wake-negative-${process.pid}-${Date.now()}.pcm`);
+const prefixOnlyPcmPath = join(tmpdir(), `showme-wake-prefix-${process.pid}-${Date.now()}.pcm`);
 try {
   const generated = spawnSync(
     powershell,
@@ -81,11 +82,32 @@ try {
     throw new Error(generatedNegative.stderr || "Could not generate negative wake PCM.");
   }
   const rejected = await recognizeStream(readFileSync(negativePcmPath), false);
+  const generatedPrefixOnly = spawnSync(
+    powershell,
+    [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      resolve("scripts", "generate-wake-test-pcm.ps1"),
+      "-OutputPath",
+      prefixOnlyPcmPath,
+      "-Phrase",
+      "Hey",
+    ],
+    { encoding: "utf8", windowsHide: true, timeout: 20_000 },
+  );
+  if (generatedPrefixOnly.status !== 0) {
+    throw new Error(generatedPrefixOnly.stderr || "Could not generate prefix-only wake PCM.");
+  }
+  const prefixOnlyRejected = await recognizeStream(readFileSync(prefixOnlyPcmPath), false);
   console.log(
-    `Wake recognizer understood "${selfTest.phrase}" with confidence ${selfTest.confidence} (${selfTest.culture}); stdin PCM recognized "${streamed.phrase}" at ${streamed.confidence}; ordinary speech was rejected at ${rejected.confidence ?? 0}.`,
+    `Wake recognizer understood "${selfTest.phrase}" with confidence ${selfTest.confidence} (${selfTest.culture}); stdin PCM recognized "${streamed.phrase}" at ${streamed.confidence}; ordinary speech was rejected at ${rejected.confidence ?? 0}; "hey" alone was rejected at ${prefixOnlyRejected.confidence ?? 0}.`,
   );
 } finally {
-  for (const path of [pcmPath, negativePcmPath]) {
+  for (const path of [pcmPath, negativePcmPath, prefixOnlyPcmPath]) {
     try {
       unlinkSync(path);
     } catch {

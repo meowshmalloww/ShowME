@@ -10,6 +10,7 @@ import {
   CloudCog,
   Command,
   Download,
+  ExternalLink,
   Eye,
   Gauge,
   GraduationCap,
@@ -33,13 +34,16 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  DEEPGRAM_VOICES,
   ELEVENLABS_VOICES,
   HOTKEYS,
   LANGUAGES,
+  LEARNER_GRADE_OPTIONS,
+  QWEN_CLOUD_API_HOSTS,
   TEACHING_STYLE_LABELS,
   VOICE_HOTKEYS,
-  VOICES,
 } from "../../../shared/defaults";
+import { isLessonPlanningModel } from "../../../shared/model-catalog";
 import type {
   AppBootstrap,
   AppSettings,
@@ -108,7 +112,21 @@ export function MainWindow() {
       window.showme.events.onNavigate((value) => {
         if (["home", "library", "settings"].includes(value)) setSection(value as Section);
       }),
-      window.showme.events.onSettingsChanged((settings) => setDraft(settings)),
+      window.showme.events.onSettingsChanged((settings) => {
+        setBootstrap((current) =>
+          current
+            ? {
+                ...current,
+                settings: { ...current.settings, wakeEnabled: settings.wakeEnabled },
+              }
+            : current,
+        );
+        // The tray changes only the wake-microphone preference. Preserve any other unsaved
+        // settings draft while reflecting that external privacy toggle immediately.
+        setDraft((current) =>
+          current ? { ...current, wakeEnabled: settings.wakeEnabled } : settings,
+        );
+      }),
       window.showme.events.onWakeStatus((wakeListener) => {
         wakeStatusRef.current = wakeListener;
         setBootstrap((current) => (current ? { ...current, wakeListener } : current));
@@ -155,7 +173,33 @@ export function MainWindow() {
           onComplete={async (key, provider) => {
             try {
               if (key.trim()) await window.showme.providers.saveKey(provider, key);
-              const next = { ...draft, provider, onboardingComplete: true };
+              let next: AppSettings = { ...draft, provider, onboardingComplete: true };
+              const providerReady =
+                key.trim().length > 0 ||
+                bootstrap.providers.some((item) => item.id === provider && item.configured);
+              if (providerReady) {
+                const available = (await window.showme.providers.models(provider)).filter(
+                  isLessonPlanningModel,
+                );
+                if (!available.length) {
+                  throw new Error("The provider key worked, but it returned no lesson models.");
+                }
+                const vision = available.filter((model) => model.capabilities?.vision === true);
+                const lessonCandidates = vision.length ? vision : available;
+                const lessonModel = lessonCandidates.some(
+                  (model) => model.id === draft.models[provider],
+                )
+                  ? draft.models[provider]
+                  : (lessonCandidates[0]?.id ?? draft.models[provider]);
+                const textModel = available.some((model) => model.id === draft.textModels[provider])
+                  ? draft.textModels[provider]
+                  : (available[0]?.id ?? lessonModel);
+                next = {
+                  ...next,
+                  models: { ...draft.models, [provider]: lessonModel },
+                  textModels: { ...draft.textModels, [provider]: textModel },
+                };
+              }
               const value = await window.showme.settings.save(next);
               setBootstrap(value);
               setDraft(value.settings);
@@ -277,6 +321,7 @@ function Onboarding({
   const [working, setWorking] = useState(false);
   const selectedProvider = bootstrap.providers.find((item) => item.id === provider);
   const configured = selectedProvider?.configured ?? false;
+  const profileComplete = draft.learnerAge !== null && draft.learnerGrade !== null;
 
   const complete = async (savedKey: string): Promise<void> => {
     setWorking(true);
@@ -349,9 +394,9 @@ function Onboarding({
         <section className="onboarding-card">
           <header className="setup-header">
             <div>
-              <p className="eyebrow">Model access</p>
-              <h2>Connect a provider</h2>
-              <small>Bring your own API key. You can change providers later.</small>
+              <p className="eyebrow">Learner & model setup</p>
+              <h2>Personalize and connect</h2>
+              <small>Set a teaching baseline, then connect a provider when you are ready.</small>
             </div>
             {configured ? (
               <span className="connection-state">
@@ -359,6 +404,55 @@ function Onboarding({
               </span>
             ) : null}
           </header>
+
+          <p className="field-label">Who is ShowME teaching?</p>
+          <div className="two-column-fields onboarding-profile-fields">
+            <label>
+              <span>Age</span>
+              <input
+                aria-label="Learner age"
+                type="number"
+                min="5"
+                max="100"
+                inputMode="numeric"
+                placeholder="Age"
+                value={draft.learnerAge ?? ""}
+                onChange={(event) => {
+                  const age = event.target.valueAsNumber;
+                  setDraft({
+                    ...draft,
+                    learnerAge: Number.isInteger(age) && age >= 5 && age <= 100 ? age : null,
+                  });
+                }}
+              />
+            </label>
+            <label>
+              <span>Grade or level</span>
+              <select
+                aria-label="Learner grade or level"
+                value={draft.learnerGrade ?? ""}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    learnerGrade: (event.target.value || null) as AppSettings["learnerGrade"],
+                  })
+                }
+              >
+                <option value="" disabled>
+                  Select level
+                </option>
+                {LEARNER_GRADE_OPTIONS.map((grade) => (
+                  <option key={grade.id} value={grade.id}>
+                    {grade.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <small className="profile-note">
+            Used only as a baseline for vocabulary and prerequisites; your questions and feedback
+            take priority.
+          </small>
 
           <p className="field-label">Choose a provider</p>
           <div className="provider-chooser compact">
@@ -405,7 +499,7 @@ function Onboarding({
           <div className="onboarding-actions">
             <button
               className="primary-button wide"
-              disabled={working || (!configured && key.trim().length < 8)}
+              disabled={working || !profileComplete || (!configured && key.trim().length < 8)}
               onClick={() => void complete(key)}
               type="button"
             >
@@ -417,7 +511,7 @@ function Onboarding({
             {!configured && key.trim().length < 8 ? (
               <button
                 className="onboarding-skip"
-                disabled={working}
+                disabled={working || !profileComplete}
                 onClick={() => void complete("")}
                 type="button"
               >
@@ -426,7 +520,8 @@ function Onboarding({
             ) : null}
           </div>
           <small className="setup-footer">
-            Only context you explicitly submit is sent to the selected provider.
+            Your learner baseline and only context you explicitly submit are sent to the selected
+            provider.
           </small>
         </section>
       </div>
@@ -786,7 +881,16 @@ function ModelsSettings({
       try {
         const items = await window.showme.providers.models(selected);
         setModels(items);
-        if (announce) notify("Loaded " + items.length + " available models", "success");
+        if (announce) {
+          notify(
+            selected === "nvidia"
+              ? "NVIDIA returned " +
+                  items.length +
+                  " catalog entries. This is not a free-access list; test the selected model."
+              : "Loaded " + items.length + " provider models",
+            selected === "nvidia" ? "info" : "success",
+          );
+        }
       } catch (reason) {
         setModels([]);
         notify(errorMessage(reason), "error");
@@ -806,7 +910,7 @@ function ModelsSettings({
   if (!provider) return null;
   const providerOverrides = draft.providerCapabilityOverrides[selected] ?? {};
   const effectiveCapabilities = { ...provider.defaultCapabilities, ...providerOverrides };
-  const generativeModels = models.filter(isGenerativeModel);
+  const generativeModels = models.filter(isLessonPlanningModel);
   const verifiedVisionModels = generativeModels.filter(
     (model) => model.capabilities?.vision === true,
   );
@@ -885,7 +989,7 @@ function ModelsSettings({
             </span>
           </div>
           <span className={provider.configured ? "connected-pill" : "muted-pill"}>
-            {provider.configured ? "Connected" : "Needs key"}
+            {provider.configured ? "Key saved" : "Needs key"}
           </span>
         </div>
         <div className="capability-row">
@@ -982,7 +1086,7 @@ function ModelsSettings({
               </select>
               <small>
                 {verifiedVisionModels.length
-                  ? verifiedVisionModels.length + " image-input models available"
+                  ? verifiedVisionModels.length + " image-input models in the provider catalog"
                   : "Provider does not publish per-model vision metadata; verify before use."}
               </small>
             </label>
@@ -1019,6 +1123,12 @@ function ModelsSettings({
             </span>
           </div>
         )}
+        {selected === "nvidia" && provider.configured ? (
+          <small>
+            NVIDIA's model endpoint is a catalog, not a promise that every entry is free or enabled
+            for your organization. Test the exact selected model before using it.
+          </small>
+        ) : null}
         <div className="setup-section-label credential-step-label">
           <span className="setup-step-number">2</span>
           <span>
@@ -1026,6 +1136,36 @@ function ModelsSettings({
             <small>Test the connection before choosing models.</small>
           </span>
         </div>
+        {selected === "alibaba" ? (
+          <label>
+            <span>Qwen Cloud API Host</span>
+            <input
+              type="url"
+              autoComplete="off"
+              list="qwen-cloud-api-hosts"
+              value={draft.qwenBaseUrl}
+              onChange={(event) => setDraft({ ...draft, qwenBaseUrl: event.target.value })}
+            />
+            <datalist id="qwen-cloud-api-hosts">
+              {QWEN_CLOUD_API_HOSTS.map((host) => (
+                <option key={host.url} value={host.url}>
+                  {host.label}
+                </option>
+              ))}
+            </datalist>
+            <small>
+              Use the OpenAI-compatible API Host paired with your key. Qwen Cloud plans cannot share
+              hosts.
+            </small>
+            <button
+              className="link-button"
+              onClick={() => window.showme.app.openExternal("https://www.qwencloud.com/")}
+              type="button"
+            >
+              Open Qwen Cloud <ExternalLink size={13} />
+            </button>
+          </label>
+        ) : null}
         <label>
           <span>API key</span>
           <div className="secret-input">
@@ -1070,6 +1210,7 @@ function ModelsSettings({
             onClick={async () => {
               setBusy("test");
               try {
+                await window.showme.settings.save(draft);
                 notify(
                   await window.showme.providers.test(selected, draft.models[selected]),
                   "success",
@@ -1119,6 +1260,47 @@ function TeachingSettings({
         body="Set the default shape of a lesson. You can still adapt every lesson afterward."
       />
       <section className="settings-card form-stack">
+        <div className="two-column-fields">
+          <label>
+            <span>Learner age</span>
+            <input
+              type="number"
+              min="5"
+              max="100"
+              value={draft.learnerAge ?? ""}
+              onChange={(event) => {
+                const age = event.target.valueAsNumber;
+                setDraft({
+                  ...draft,
+                  learnerAge: Number.isInteger(age) && age >= 5 && age <= 100 ? age : null,
+                });
+              }}
+            />
+          </label>
+          <label>
+            <span>Grade or learning level</span>
+            <select
+              value={draft.learnerGrade ?? ""}
+              onChange={(event) =>
+                setDraft({
+                  ...draft,
+                  learnerGrade: (event.target.value || null) as AppSettings["learnerGrade"],
+                })
+              }
+            >
+              <option value="">Not set</option>
+              {LEARNER_GRADE_OPTIONS.map((grade) => (
+                <option key={grade.id} value={grade.id}>
+                  {grade.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <small>
+          This baseline keeps explanations age-appropriate without treating age or grade as a
+          measure of ability.
+        </small>
         <label>
           <span>Default teaching approach</span>
           <select
@@ -1154,21 +1336,6 @@ function TeachingSettings({
             >
               Deep
             </button>
-          </div>
-        </div>
-        <div className="segmented-field">
-          <span>Lesson surface</span>
-          <div>
-            {(["inline", "side", "focus"] as const).map((surface) => (
-              <button
-                className={draft.lessonSurface === surface ? "active" : ""}
-                key={surface}
-                onClick={() => setDraft({ ...draft, lessonSurface: surface })}
-                type="button"
-              >
-                {surface}
-              </button>
-            ))}
           </div>
         </div>
         <Toggle
@@ -1258,11 +1425,19 @@ function VoiceSettings({
     Partial<Record<"deepgram" | "elevenlabs", string>>
   >({});
   const [credentialBusy, setCredentialBusy] = useState<"deepgram" | "elevenlabs" | null>(null);
+  const [systemVoices, setSystemVoices] = useState<SpeechSynthesisVoice[]>([]);
   const testStream = useRef<MediaStream | null>(null);
   const testContext = useRef<AudioContext | null>(null);
   const testFrame = useRef<number | null>(null);
   const transcriptionProvider = voiceServices.find((item) => item.id === draft.voiceInputProvider);
   const cloudVoiceProvider = voiceServices.find((item) => item.id === draft.voiceOutputProvider);
+  const speechRateMin = draft.voiceOutputProvider === "system" ? 0.6 : 0.7;
+  const speechRateMax =
+    draft.voiceOutputProvider === "system"
+      ? 1.8
+      : draft.voiceOutputProvider === "deepgram"
+        ? 1.5
+        : 1.2;
 
   const stopMicrophoneTest = useCallback((): void => {
     if (testFrame.current !== null) cancelAnimationFrame(testFrame.current);
@@ -1301,6 +1476,26 @@ function VoiceSettings({
       stopMicrophoneTest();
     };
   }, [refreshDevices, stopMicrophoneTest]);
+
+  useEffect(() => {
+    const refreshSystemVoices = (): void => {
+      setSystemVoices(
+        [...window.speechSynthesis.getVoices()]
+          .filter(
+            (voice, index, all) =>
+              all.findIndex((candidate) => candidate.voiceURI === voice.voiceURI) === index,
+          )
+          .sort(
+            (left, right) =>
+              Number(right.localService) - Number(left.localService) ||
+              left.name.localeCompare(right.name),
+          ),
+      );
+    };
+    refreshSystemVoices();
+    window.speechSynthesis.addEventListener("voiceschanged", refreshSystemVoices);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", refreshSystemVoices);
+  }, []);
 
   const toggleMicrophoneTest = async (): Promise<void> => {
     if (testingMicrophone) {
@@ -1403,13 +1598,7 @@ function VoiceSettings({
           checked={draft.voiceEnabled}
           onChange={(value) => setDraft({ ...draft, voiceEnabled: value })}
           label="Voice replies"
-          note="Automatically speak answers that started by wake phrase or voice button. Lesson controls can replay any step."
-        />
-        <Toggle
-          checked={draft.captionsEnabled}
-          onChange={(value) => setDraft({ ...draft, captionsEnabled: value })}
-          label="Captions"
-          note="Keep narration visible alongside the lesson."
+          note="Speaks each whiteboard step automatically after a wake phrase or voice-button question; cloud failures fall back to local speech."
         />
         <label>
           <span>Lesson language</span>
@@ -1435,7 +1624,6 @@ function VoiceSettings({
               })
             }
           >
-            <option value="openai">OpenAI transcription</option>
             <option value="groq">Groq transcription</option>
             <option value="deepgram">Deepgram Nova-3</option>
             <option value="elevenlabs">ElevenLabs Scribe v2</option>
@@ -1445,15 +1633,19 @@ function VoiceSettings({
           <span>Narration engine</span>
           <select
             value={draft.voiceOutputProvider}
-            onChange={(event) =>
+            onChange={(event) => {
+              const provider = event.target.value as AppSettings["voiceOutputProvider"];
+              const minimum = provider === "system" ? 0.6 : 0.7;
+              const maximum = provider === "system" ? 1.8 : provider === "deepgram" ? 1.5 : 1.2;
               setDraft({
                 ...draft,
-                voiceOutputProvider: event.target.value as AppSettings["voiceOutputProvider"],
-              })
-            }
+                voiceOutputProvider: provider,
+                speechRate: Math.max(minimum, Math.min(maximum, draft.speechRate)),
+              });
+            }}
           >
             <option value="system">System voice · local</option>
-            <option value="openai">OpenAI speech · cloud</option>
+            <option value="deepgram">Deepgram Aura speech · cloud</option>
             <option value="elevenlabs">ElevenLabs speech · cloud</option>
           </select>
         </label>
@@ -1508,20 +1700,43 @@ function VoiceSettings({
             </em>
           </div>
         </fieldset>
-        {draft.voiceOutputProvider === "openai" ? (
+        {draft.voiceOutputProvider === "system" ? (
           <label>
-            <span>OpenAI voice</span>
+            <span>Local system voice</span>
             <select
-              value={draft.voice}
-              onChange={(event) => setDraft({ ...draft, voice: event.target.value })}
+              value={draft.systemVoice}
+              onChange={(event) => setDraft({ ...draft, systemVoice: event.target.value })}
             >
-              {VOICES.map((voice) => (
+              <option value="default">System default voice</option>
+              {!systemVoices.some((voice) => voice.voiceURI === draft.systemVoice) &&
+              draft.systemVoice !== "default" ? (
+                <option value={draft.systemVoice}>Saved voice (currently unavailable)</option>
+              ) : null}
+              {systemVoices.map((voice) => (
+                <option key={voice.voiceURI} value={voice.voiceURI}>
+                  {voice.name} · {voice.lang} · {voice.localService ? "local" : "system service"}
+                </option>
+              ))}
+            </select>
+            <small>
+              Uses Windows speech synthesis with no cloud request or downloaded model overhead.
+            </small>
+          </label>
+        ) : null}
+        {draft.voiceOutputProvider === "deepgram" ? (
+          <label>
+            <span>Deepgram Aura voice</span>
+            <select
+              value={draft.deepgramVoice}
+              onChange={(event) => setDraft({ ...draft, deepgramVoice: event.target.value })}
+            >
+              {DEEPGRAM_VOICES.map((voice) => (
                 <option key={voice.id} value={voice.id}>
                   {voice.label} — {voice.note}
                 </option>
               ))}
             </select>
-            <small>AI-generated voice will be identified as such in the lesson player.</small>
+            <small>Uses Deepgram Aura-2 and the same encrypted key as transcription.</small>
           </label>
         ) : null}
         {draft.voiceOutputProvider === "elevenlabs" ? (
@@ -1545,8 +1760,8 @@ function VoiceSettings({
           <input
             className="range-input"
             type="range"
-            min="0.6"
-            max="1.8"
+            min={speechRateMin}
+            max={speechRateMax}
             step="0.1"
             value={draft.speechRate}
             onChange={(event) => setDraft({ ...draft, speechRate: Number(event.target.value) })}
@@ -1615,9 +1830,17 @@ function VoiceSettings({
                           service.id,
                           serviceKeys[service.id] ?? "",
                         );
+                        const verification = await window.showme.voice.testProvider(service.id);
+                        await window.showme.settings.save({
+                          ...draft,
+                          voiceInputProvider: service.id,
+                        });
                         await onRefresh();
                         setServiceKeys((current) => ({ ...current, [service.id]: "" }));
-                        notify(service.name + " key saved in encrypted storage", "success");
+                        notify(
+                          verification + " It is now selected for spoken questions.",
+                          "success",
+                        );
                       } catch (reason) {
                         notify(errorMessage(reason), "error");
                       } finally {
@@ -1630,34 +1853,51 @@ function VoiceSettings({
                   </button>
                 </div>
                 {service.configured ? (
-                  <button
-                    className="danger-text-button"
-                    disabled={credentialBusy !== null}
-                    onClick={async () => {
-                      if (!confirm("Remove this speech-service key from encrypted storage?"))
-                        return;
-                      setCredentialBusy(service.id);
-                      try {
-                        await window.showme.providers.deleteKey(service.id);
-                        await onRefresh();
-                        notify(service.name + " key removed", "info");
-                      } catch (reason) {
-                        notify(errorMessage(reason), "error");
-                      } finally {
-                        setCredentialBusy(null);
-                      }
-                    }}
-                    type="button"
-                  >
-                    <Trash2 size={14} /> Remove key
-                  </button>
+                  <div className="provider-actions">
+                    <button
+                      className="secondary-button compact"
+                      disabled={credentialBusy !== null}
+                      onClick={async () => {
+                        setCredentialBusy(service.id);
+                        try {
+                          notify(await window.showme.voice.testProvider(service.id), "success");
+                        } catch (reason) {
+                          notify(errorMessage(reason), "error");
+                        } finally {
+                          setCredentialBusy(null);
+                        }
+                      }}
+                      type="button"
+                    >
+                      <Play size={14} /> Test
+                    </button>
+                    <button
+                      className="danger-text-button"
+                      disabled={credentialBusy !== null}
+                      onClick={async () => {
+                        if (!confirm("Remove this speech-service key from encrypted storage?"))
+                          return;
+                        setCredentialBusy(service.id);
+                        try {
+                          await window.showme.providers.deleteKey(service.id);
+                          await onRefresh();
+                          notify(service.name + " key removed", "info");
+                        } catch (reason) {
+                          notify(errorMessage(reason), "error");
+                        } finally {
+                          setCredentialBusy(null);
+                        }
+                      }}
+                      type="button"
+                    >
+                      <Trash2 size={14} /> Remove key
+                    </button>
+                  </div>
                 ) : null}
               </article>
             ))}
         </div>
-        <small>
-          OpenAI and Groq speech reuse the provider keys already saved under Models & API.
-        </small>
+        <small>Groq transcription reuses its provider key under Models & API.</small>
       </section>
       <section className="settings-card form-stack audio-device-card">
         <div className="card-heading">
@@ -1774,8 +2014,8 @@ function VoiceSettings({
             <input
               className="range-input"
               type="range"
-              min="3000"
-              max="4000"
+              min="800"
+              max="2500"
               step="100"
               value={draft.voiceSilenceMs}
               onChange={(event) =>
@@ -2243,12 +2483,6 @@ function humanCapability(value: string): string {
   return value.replace(/([A-Z])/g, " $1").replace(/^./, (letter) => letter.toUpperCase());
 }
 
-function isGenerativeModel(model: ProviderModel): boolean {
-  return !/(^|[-_/])(embed|embedding|rerank|whisper|transcri|speech|tts|guard|moderation)([-_/]|$)/i.test(
-    model.id,
-  );
-}
-
 function withSavedModel(models: ProviderModel[], savedId: string): ProviderModel[] {
   if (!savedId || models.some((model) => model.id === savedId)) return models;
   return [{ id: savedId, name: savedId, availability: "provider" }, ...models];
@@ -2257,7 +2491,7 @@ function withSavedModel(models: ProviderModel[], savedId: string): ProviderModel
 function modelOptionLabel(model: ProviderModel, visionSelector: boolean): string {
   const badges = [
     visionSelector && model.capabilities?.vision ? "Vision" : "",
-    model.availability === "free" ? "Free endpoint" : "",
+    model.availability === "catalog" ? "Access varies" : "",
     model.availability === "deprecating" ? "Deprecating" : "",
   ].filter(Boolean);
   return model.name + (badges.length ? " - " + badges.join(" / ") : "");

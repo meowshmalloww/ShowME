@@ -1,3 +1,4 @@
+import { LEARNER_GRADE_LABELS } from "../shared/defaults";
 import { CommandError } from "../shared/errors";
 import { generateLessonRequestSchema } from "../shared/schema";
 import type {
@@ -62,8 +63,15 @@ export class LessonService {
         verification,
         createdAt: new Date().toISOString(),
         surface: settings.lessonSurface,
-        contextPreviewDataUrl: context.previewDataUrl,
-        contextPreviewExpiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
+        contextGeometry: {
+          display: context.display,
+          cropBounds: context.cropBounds,
+          pixelWidth: context.pixelWidth,
+          pixelHeight: context.pixelHeight,
+          capturePixelWidth: context.capturePixelWidth,
+          capturePixelHeight: context.capturePixelHeight,
+          scope: context.scope,
+        },
       };
       this.store.saveLesson(presentation);
       if (settings.memoryEnabled) {
@@ -89,7 +97,6 @@ export class LessonService {
     const request: GenerateLessonRequest = {
       ...presentation.request,
       question: adaptationPrompt(adaptation, presentation, question),
-      replyWithVoice: false,
       copiedText: [
         presentation.request.copiedText,
         "Prior lesson title: " + presentation.plan.title,
@@ -120,13 +127,26 @@ export class LessonService {
   }
 }
 
-function buildMemoryContext(settings: AppSettings, store: AppStore): string {
-  if (!settings.memoryEnabled) return "";
-  return store
-    .listMemories()
-    .slice(0, 10)
-    .map((memory) => memory.kind + ": " + memory.topic + " = " + memory.value)
-    .join("\n");
+export function buildMemoryContext(settings: AppSettings, store: AppStore): string {
+  const context: string[] = [];
+  if (settings.learnerAge !== null && settings.learnerGrade !== null) {
+    context.push(
+      "Learner-provided baseline: age " +
+        String(settings.learnerAge) +
+        "; learning level " +
+        LEARNER_GRADE_LABELS[settings.learnerGrade] +
+        ". Adapt vocabulary and prerequisite assumptions, but treat the learner's question and feedback as stronger evidence. Never infer ability or diagnose from age or grade.",
+    );
+  }
+  if (settings.memoryEnabled) {
+    context.push(
+      ...store
+        .listMemories()
+        .slice(0, 10)
+        .map((memory) => memory.kind + ": " + memory.topic + " = " + memory.value),
+    );
+  }
+  return context.join("\n");
 }
 
 function adaptationPrompt(

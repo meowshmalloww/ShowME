@@ -3,7 +3,7 @@ import { launcherActivityVisual, launcherSize } from "../src/shared/launcher";
 
 describe("top-edge launcher geometry", () => {
   it("keeps every launcher mode tightly fitted to its visible surface", () => {
-    expect(launcherSize("idle")).toEqual({ width: 56, height: 8 });
+    expect(launcherSize("idle")).toEqual({ width: 72, height: 10 });
     expect(launcherSize("revealed")).toEqual({ width: 236, height: 40 });
     expect(launcherSize("thinking")).toEqual({ width: 252, height: 44 });
     expect(launcherSize("transcribing")).toEqual({ width: 258, height: 44 });

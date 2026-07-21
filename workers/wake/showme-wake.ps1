@@ -88,6 +88,16 @@ try {
     $synthesizer = [System.Speech.Synthesis.SpeechSynthesizer]::new()
     $selfTestAudio = [System.IO.MemoryStream]::new()
     try {
+      try {
+        $synthesizer.SelectVoiceByHints(
+          [System.Speech.Synthesis.VoiceGender]::Female,
+          [System.Speech.Synthesis.VoiceAge]::Adult,
+          0,
+          $recognizerCulture
+        )
+      } catch {
+        # Fall back to the system voice when no culture-matched female voice is installed.
+      }
       $synthesizer.SetOutputToAudioStream($selfTestAudio, $audioFormat)
       $synthesizer.Speak("Hey show me")
       $synthesizer.SetOutputToNull()

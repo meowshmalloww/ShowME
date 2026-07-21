@@ -69,8 +69,13 @@ export class AppStore {
       | undefined;
     if (!row) return structuredClone(DEFAULT_SETTINGS);
     try {
-      const saved = JSON.parse(String(row.value_json)) as Partial<AppSettings> & {
+      const saved = JSON.parse(String(row.value_json)) as Omit<
+        Partial<AppSettings>,
+        "voiceInputProvider" | "voiceOutputProvider"
+      > & {
         accent?: unknown;
+        voiceInputProvider?: unknown;
+        voiceOutputProvider?: unknown;
       };
       // Remove the pre-release appearance flag while retaining the now-connected wake setting.
       // Keeping this small read migration avoids resetting otherwise valid user settings.
@@ -102,11 +107,30 @@ export class AppStore {
           saved.wakeSensitivity === 0.74
             ? DEFAULT_SETTINGS.wakeSensitivity
             : Math.max(0.55, saved.wakeSensitivity ?? DEFAULT_SETTINGS.wakeSensitivity),
-        // Move the former short defaults to a full-turn pause so quiet clauses are not cut off.
+        // Replace the former 3-4 second endpoint with a responsive conversational pause while
+        // preserving any already-saved value that falls inside the new supported range.
         voiceSilenceMs:
-          saved.voiceSilenceMs === undefined || saved.voiceSilenceMs < 3000
+          saved.voiceSilenceMs === undefined || saved.voiceSilenceMs >= 3000
             ? DEFAULT_SETTINGS.voiceSilenceMs
-            : Math.min(4000, saved.voiceSilenceMs),
+            : Math.max(800, Math.min(2500, saved.voiceSilenceMs)),
+        // OpenAI remains available as a lesson-model provider, but ShowME no longer routes audio
+        // to it. Retire the pre-release OpenAI speech selections without losing other settings.
+        voiceInputProvider:
+          saved.voiceInputProvider === "openai"
+            ? DEFAULT_SETTINGS.voiceInputProvider
+            : (saved.voiceInputProvider ?? DEFAULT_SETTINGS.voiceInputProvider),
+        voiceOutputProvider:
+          saved.voiceOutputProvider === "openai"
+            ? DEFAULT_SETTINGS.voiceOutputProvider
+            : (saved.voiceOutputProvider ?? DEFAULT_SETTINGS.voiceOutputProvider),
+        deepgramVoice:
+          saved.deepgramVoice === "aura-2-thalia-en" || saved.deepgramVoice === undefined
+            ? DEFAULT_SETTINGS.deepgramVoice
+            : saved.deepgramVoice,
+        elevenLabsVoice:
+          saved.elevenLabsVoice === "JBFqnCBsd6RMkjVDRZzb" || saved.elevenLabsVoice === undefined
+            ? DEFAULT_SETTINGS.elevenLabsVoice
+            : saved.elevenLabsVoice,
         voiceMaxSeconds:
           saved.voiceMaxSeconds === 20 || saved.voiceMaxSeconds === undefined
             ? DEFAULT_SETTINGS.voiceMaxSeconds
@@ -141,6 +165,7 @@ export class AppStore {
     const persistedPresentation = { ...presentation };
     delete persistedPresentation.contextPreviewDataUrl;
     delete persistedPresentation.contextPreviewExpiresAt;
+    delete persistedPresentation.contextGeometry;
     const existing = this.db
       .prepare("SELECT created_at, helpful FROM lessons WHERE id = ?")
       .get(plan.id) as Row | undefined;

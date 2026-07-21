@@ -394,7 +394,7 @@ function SimulationView({
   );
 }
 
-function SimulationGraphic({
+export function SimulationGraphic({
   simulation,
   reducedMotion,
 }: {

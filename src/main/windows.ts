@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BrowserWindow, nativeTheme, screen } from "electron";
+import { BrowserWindow, globalShortcut, nativeTheme, screen } from "electron";
 import { redactSecrets } from "../shared/errors";
 import { CHANNELS } from "../shared/ipc";
 import { launcherSize } from "../shared/launcher";
@@ -25,10 +25,16 @@ export class WindowManager {
   private launcherMode: LauncherMode = "idle";
   private launcherAnimation: ReturnType<typeof setTimeout> | null = null;
   private launcherRecovery: ReturnType<typeof setTimeout> | null = null;
+  private lessonDisplayId: number | null = null;
+  private lessonEscapeRegistered = false;
+  private notifyWhenLessonCloses = true;
   private reducedMotion = false;
   private quitting = false;
 
-  constructor(private readonly iconPath: string) {
+  constructor(
+    private readonly iconPath: string,
+    private readonly onLessonClosed: () => void = () => undefined,
+  ) {
     screen.on("display-added", this.handleDisplayChange);
     screen.on("display-removed", this.handleDisplayChange);
     screen.on("display-metrics-changed", this.handleDisplayChange);
@@ -66,7 +72,7 @@ export class WindowManager {
       show: false,
     });
     this.launcher = window;
-    window.setAlwaysOnTop(true, "floating", 1);
+    window.setAlwaysOnTop(true, "screen-saver", 3);
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     window.on("closed", () => {
       if (this.launcher === window) this.launcher = null;
@@ -178,7 +184,7 @@ export class WindowManager {
   showLauncher(inactive = true): void {
     const launcher = this.createLauncher();
     if (!this.launcherAnimation) this.positionLauncher();
-    launcher.setAlwaysOnTop(true, "floating", 1);
+    launcher.setAlwaysOnTop(true, "screen-saver", 3);
     launcher.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     if (launcher.webContents.isLoadingMainFrame()) {
       launcher.webContents.once("did-finish-load", () => this.showLauncher(inactive));
@@ -206,33 +212,51 @@ export class WindowManager {
 
   refreshThemeBackground(): void {
     const color = windowBackground();
-    for (const window of [this.main, this.lesson]) {
+    for (const window of [this.main]) {
       if (window && !window.isDestroyed()) window.setBackgroundColor(color);
     }
   }
 
   showLesson(presentation: LessonPresentation): BrowserWindow {
+    const display = this.lessonDisplay(presentation);
+    this.lessonDisplayId = display.id;
     if (!this.lesson || this.lesson.isDestroyed()) {
       this.lesson = this.createWindow("lesson", {
-        width: 540,
-        height: 780,
-        minWidth: 420,
-        minHeight: 520,
+        ...display.bounds,
         frame: false,
-        transparent: false,
-        backgroundColor: windowBackground(),
-        alwaysOnTop: false,
+        transparent: true,
+        backgroundColor: "#00000000",
+        resizable: false,
+        movable: false,
+        focusable: false,
+        skipTaskbar: true,
+        alwaysOnTop: true,
+        hasShadow: false,
+        enableLargerThanScreen: true,
         show: false,
       });
-      this.lesson.on("closed", () => {
+      const lesson = this.lesson;
+      lesson.setIgnoreMouseEvents(true, { forward: true });
+      lesson.setAlwaysOnTop(true, "screen-saver", 1);
+      lesson.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      lesson.on("closed", () => {
+        if (this.lesson !== lesson) return;
+        const notify = this.notifyWhenLessonCloses;
+        this.notifyWhenLessonCloses = true;
         this.lesson = null;
+        this.lessonDisplayId = null;
+        this.unregisterLessonEscape();
+        if (!this.quitting && notify) this.onLessonClosed();
       });
     }
-    this.positionLesson(presentation.surface);
+    this.positionLesson(display.id);
+    this.lesson.setIgnoreMouseEvents(true, { forward: true });
+    this.lesson.setAlwaysOnTop(true, "screen-saver", 1);
+    this.lesson.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    this.registerLessonEscape();
     const send = (): void => {
       this.lesson?.webContents.send(CHANNELS.eventLessonReady, presentation);
-      this.lesson?.show();
-      this.lesson?.focus();
+      this.lesson?.showInactive();
     };
     if (this.lesson.webContents.isLoadingMainFrame())
       this.lesson.webContents.once("did-finish-load", send);
@@ -240,12 +264,20 @@ export class WindowManager {
     return this.lesson;
   }
 
-  setLessonSurface(surface: LessonSurface): void {
-    this.positionLesson(surface);
+  setLessonSurface(_surface: LessonSurface): void {
+    if (this.lessonDisplayId !== null) this.positionLesson(this.lessonDisplayId);
   }
 
-  closeLesson(): void {
-    this.lesson?.hide();
+  closeLesson(notify = true): void {
+    const lesson = this.lesson;
+    if (lesson && !lesson.isDestroyed()) {
+      this.notifyWhenLessonCloses = notify;
+      lesson.destroy();
+    }
+  }
+
+  hasLesson(): boolean {
+    return Boolean(this.lesson && !this.lesson.isDestroyed());
   }
 
   showScreenReading(displayId: number): void {
@@ -317,12 +349,22 @@ export class WindowManager {
     }
   }
 
+  broadcastVoiceCommand(phrase: string, confidence: number): void {
+    const lesson = this.lesson;
+    if (!lesson || lesson.isDestroyed()) return;
+    lesson.webContents.send(CHANNELS.eventVoiceCommand, {
+      phrase: phrase.slice(0, 500),
+      confidence: Math.max(0, Math.min(1, confidence)),
+    });
+  }
+
   windowAction(sender: Electron.WebContents, action: "minimize" | "maximize" | "close"): void {
     const window = BrowserWindow.fromWebContents(sender);
     if (!window) return;
     if (action === "minimize") window.minimize();
     else if (action === "maximize") window.isMaximized() ? window.unmaximize() : window.maximize();
-    else if (window === this.main || window === this.lesson) window.hide();
+    else if (window === this.lesson) this.closeLesson();
+    else if (window === this.main) window.hide();
     else window.close();
   }
 
@@ -332,6 +374,7 @@ export class WindowManager {
     this.launcherAnimation = null;
     if (this.launcherRecovery) clearTimeout(this.launcherRecovery);
     this.launcherRecovery = null;
+    this.unregisterLessonEscape();
     screen.removeListener("display-added", this.handleDisplayChange);
     screen.removeListener("display-removed", this.handleDisplayChange);
     screen.removeListener("display-metrics-changed", this.handleDisplayChange);
@@ -359,6 +402,7 @@ export class WindowManager {
 
   private readonly handleDisplayChange = (): void => {
     if (!this.launcherAnimation) this.positionLauncher();
+    if (this.lessonDisplayId !== null) this.positionLesson(this.lessonDisplayId);
   };
 
   private scheduleLauncherRecovery(reload = false): void {
@@ -443,30 +487,35 @@ export class WindowManager {
     launcher.setShape([{ x: 0, y: 0, width: size.width, height: size.height }]);
   }
 
-  private positionLesson(surface: LessonSurface): void {
+  private positionLesson(displayId: number): void {
     if (!this.lesson || this.lesson.isDestroyed()) return;
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-    const area = display.workArea;
-    if (surface === "focus") {
-      const width = Math.min(1180, area.width - 64);
-      const height = Math.min(820, area.height - 64);
-      this.lesson.setBounds({
-        x: Math.round(area.x + (area.width - width) / 2),
-        y: Math.round(area.y + (area.height - height) / 2),
-        width,
-        height,
-      });
-      return;
-    }
-    const width =
-      surface === "inline" ? Math.min(680, area.width - 40) : Math.min(560, area.width - 40);
-    const height = surface === "inline" ? Math.min(520, area.height - 40) : area.height - 24;
-    this.lesson.setBounds({
-      x: area.x + area.width - width - 12,
-      y: surface === "inline" ? area.y + area.height - height - 12 : area.y + 12,
-      width,
-      height,
-    });
+    const display =
+      screen.getAllDisplays().find((candidate) => candidate.id === displayId) ??
+      screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    this.lessonDisplayId = display.id;
+    this.lesson.setBounds(display.bounds, false);
+  }
+
+  private lessonDisplay(presentation: LessonPresentation): Electron.Display {
+    const id = presentation.contextGeometry?.display.id;
+    return (
+      (id === undefined
+        ? undefined
+        : screen.getAllDisplays().find((candidate) => candidate.id === id)) ??
+      screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
+    );
+  }
+
+  private registerLessonEscape(): void {
+    if (this.lessonEscapeRegistered) return;
+    if (globalShortcut.isRegistered("Escape")) return;
+    this.lessonEscapeRegistered = globalShortcut.register("Escape", () => this.closeLesson());
+  }
+
+  private unregisterLessonEscape(): void {
+    if (!this.lessonEscapeRegistered) return;
+    globalShortcut.unregister("Escape");
+    this.lessonEscapeRegistered = false;
   }
 
   private createWindow(
@@ -495,7 +544,8 @@ export class WindowManager {
         nodeIntegrationInWorker: false,
         webSecurity: true,
         allowRunningInsecureContent: false,
-        backgroundThrottling: role !== "launcher" && role !== "screen-reading",
+        backgroundThrottling: role !== "launcher" && role !== "lesson" && role !== "screen-reading",
+        autoplayPolicy: "no-user-gesture-required",
         spellcheck: false,
       },
     });

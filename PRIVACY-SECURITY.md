@@ -16,13 +16,14 @@ A provider request can contain:
 
 - the prepared crop or explicitly captured display;
 - the learner’s question;
+- the learner-provided age and grade/learning-level baseline;
 - copied text or a source URL when the learner supplied it;
 - selected teaching and language preferences;
 - a short local memory summary when learning memory is enabled.
 
-The local wake phrase does not send audio to a model provider. After ShowME wakes, the separately recorded question is sent only to the transcription provider selected by the user: OpenAI, Groq, Deepgram, or ElevenLabs. If that provider has no key, the application reports that voice transcription is unavailable rather than sending audio elsewhere.
+The age and learning-level baseline is stored locally in settings and is included in lesson requests even when adaptive memory is disabled. It is used to tune vocabulary and prerequisite assumptions, not to infer ability. The local wake phrase does not send audio to a model provider. After ShowME wakes, the separately recorded question is sent only to the transcription provider selected by the user: Groq, Deepgram, or ElevenLabs. If that provider has no key, the application reports that voice transcription is unavailable rather than sending audio elsewhere.
 
-Deep mode can ask the selected provider to perform web research. Wikimedia Commons is queried only when the learner enabled licensed image aids and a lesson requests a search. OpenAI or ElevenLabs receives only the selected narration text when its cloud speech route is selected. The default narration engine is the local system voice.
+Deep mode can ask the selected provider to perform web research. Wikimedia Commons is queried only when the learner enabled licensed image aids and a lesson requests a search. Deepgram or ElevenLabs receives only the selected narration text when its cloud speech route is selected. OpenAI is not an audio route. The default narration engine is the local system voice.
 
 Provider services apply their own retention and account policies. ShowME sets store:false on OpenAI Responses requests, but users should still review the policy for the provider and account they choose.
 

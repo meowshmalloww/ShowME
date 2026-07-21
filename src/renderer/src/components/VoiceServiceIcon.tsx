@@ -9,7 +9,7 @@ export function VoiceServiceIcon({
   provider: VoiceInputProvider;
   size?: number;
 }) {
-  if (provider === "openai" || provider === "groq") {
+  if (provider === "groq") {
     return <ProviderIcon provider={provider} size={size} />;
   }
   const path = provider === "deepgram" ? siDeepgram.path : siElevenlabs.path;

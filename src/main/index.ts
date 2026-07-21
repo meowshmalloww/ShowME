@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { app, globalShortcut, Menu, nativeImage, nativeTheme, Tray } from "electron";
 import { redactSecrets } from "../shared/errors";
 import { type AppSettings, PROVIDER_IDS } from "../shared/types";
+import { reconcileVoiceRoutes } from "../shared/voice";
 import { CaptureService } from "./capture";
 import { registerIpc } from "./ipc";
 import { LessonService } from "./lesson";
@@ -9,6 +10,7 @@ import { ProviderService } from "./providers";
 import { SecretStore } from "./secrets";
 import { installSecurityPolicy } from "./security";
 import { AppStore } from "./store";
+import { buildTrayMenuTemplate, trayToolTip } from "./tray-menu";
 import { WakeWordService } from "./wake-word";
 import { WindowManager } from "./windows";
 import { WorkerService } from "./workers";
@@ -29,6 +31,7 @@ let windows: WindowManager | null = null;
 let capture: CaptureService | null = null;
 let wakeWord: WakeWordService | null = null;
 let hotkeyBusy = false;
+const registeredAppShortcuts = new Set<string>();
 
 async function startApplication(): Promise<void> {
   app.setAppUserModelId("com.showme.desktop");
@@ -54,15 +57,23 @@ async function startApplication(): Promise<void> {
       provider: soleConfiguredProvider,
     });
   }
+  const voiceRoutedSettings = reconcileVoiceRoutes(initialSettings, configured);
+  if (
+    voiceRoutedSettings.voiceInputProvider !== initialSettings.voiceInputProvider ||
+    voiceRoutedSettings.voiceOutputProvider !== initialSettings.voiceOutputProvider
+  ) {
+    initialSettings = store.saveSettings(voiceRoutedSettings);
+  }
   nativeTheme.themeSource = initialSettings.theme;
   const workers = new WorkerService(rootPath, process.resourcesPath, app.isPackaged);
-  windows = new WindowManager(iconPath);
+  windows = new WindowManager(iconPath, () => handleVoiceActivity("idle"));
   windows.applyReducedMotion(initialSettings.reducedMotion);
   nativeTheme.on("updated", () => windows?.refreshThemeBackground());
   capture = new CaptureService(workers, () => windows?.getLauncher() ?? null);
   wakeWord = new WakeWordService(rootPath, process.resourcesPath, app.isPackaged, {
     onLevel: (level) => windows?.broadcastVoiceLevel(level),
     onWake: () => void beginWakeInteraction(),
+    onCommand: (phrase, confidence) => windows?.broadcastVoiceCommand(phrase, confidence),
     onStatus: (status) => {
       console.info(status.message);
       windows?.broadcastWakeStatus(status);
@@ -83,12 +94,7 @@ async function startApplication(): Promise<void> {
     windows,
     workers,
     appVersion: app.getVersion(),
-    onSettingsChanged: (settings) => {
-      registerShortcuts(settings);
-      windows?.applyTheme(settings.theme);
-      windows?.applyReducedMotion(settings.reducedMotion);
-      wakeWord?.configure(settings.wakeEnabled, settings.assistantName, settings.wakeSensitivity);
-    },
+    onSettingsChanged: applySettings,
     onVoiceActivity: handleVoiceActivity,
     onWakeAudio: (bytes) => wakeWord?.pushAudio(bytes),
     onWakeInputState: (state) => wakeWord?.reportInputState(state),
@@ -108,7 +114,7 @@ async function startApplication(): Promise<void> {
     initialSettings.assistantName,
     initialSettings.wakeSensitivity,
   );
-  createTray(iconPath);
+  createTray(iconPath, initialSettings);
   windows.openMain("home");
 
   app.on("activate", () => {
@@ -148,19 +154,29 @@ async function beginWakeInteraction(): Promise<void> {
 function handleVoiceActivity(state: "idle" | "listening" | "transcribing" | "speaking"): void {
   if (!windows) return;
   if (state === "idle") {
+    wakeWord?.setCommandMode(windows.hasLesson());
     wakeWord?.resume();
-    if (["listening", "transcribing", "speaking"].includes(windows.getLauncherMode())) {
+    if (["listening", "transcribing", "thinking", "speaking"].includes(windows.getLauncherMode())) {
       windows.setLauncherMode("idle");
     }
     return;
   }
+  if (state === "speaking") {
+    wakeWord?.setCommandMode(true);
+    wakeWord?.resume();
+    windows.setLauncherMode(state);
+    windows.showLauncher(true);
+    return;
+  }
+  wakeWord?.setCommandMode(false);
   wakeWord?.suspend();
   windows.setLauncherMode(state);
   windows.showLauncher(state !== "listening");
 }
 
 function registerShortcuts(settings: AppSettings): void {
-  globalShortcut.unregisterAll();
+  for (const shortcut of registeredAppShortcuts) globalShortcut.unregister(shortcut);
+  registeredAppShortcuts.clear();
   registerShortcut(settings.hotkey, async () => {
     await beginManualSelection();
   });
@@ -177,7 +193,7 @@ function registerShortcuts(settings: AppSettings): void {
 
 function registerShortcut(accelerator: string, action: () => Promise<void>): void {
   try {
-    globalShortcut.register(accelerator, () => {
+    const registered = globalShortcut.register(accelerator, () => {
       if (hotkeyBusy) return;
       hotkeyBusy = true;
       void action()
@@ -190,6 +206,7 @@ function registerShortcut(accelerator: string, action: () => Promise<void>): voi
           hotkeyBusy = false;
         });
     });
+    if (registered) registeredAppShortcuts.add(accelerator);
   } catch (error) {
     console.error("Could not register shortcut:", redactSecrets(String(error)));
   }
@@ -197,6 +214,7 @@ function registerShortcut(accelerator: string, action: () => Promise<void>): voi
 
 async function beginManualSelection(): Promise<void> {
   if (!capture || !windows) return;
+  windows.closeLesson(false);
   wakeWord?.suspend();
   try {
     const payload = await capture.begin();
@@ -207,37 +225,70 @@ async function beginManualSelection(): Promise<void> {
   }
 }
 
-function createTray(iconPath: string): void {
+function applySettings(settings: AppSettings): void {
+  registerShortcuts(settings);
+  windows?.applyTheme(settings.theme);
+  windows?.applyReducedMotion(settings.reducedMotion);
+  wakeWord?.configure(settings.wakeEnabled, settings.assistantName, settings.wakeSensitivity);
+  refreshTrayMenu(settings);
+}
+
+function setWakeMicrophoneEnabled(enabled: boolean): void {
+  if (!store) return;
+  const current = store.getSettings();
+  if (current.wakeEnabled === enabled) {
+    refreshTrayMenu(current);
+    return;
+  }
+  try {
+    const saved = store.saveSettings({ ...current, wakeEnabled: enabled });
+    applySettings(saved);
+    windows?.broadcastSettings(saved);
+  } catch (error) {
+    console.error(
+      "Could not change microphone listening:",
+      redactSecrets(error instanceof Error ? error.message : String(error)),
+    );
+    refreshTrayMenu(current);
+  }
+}
+
+function createTray(iconPath: string, settings: AppSettings): void {
   const image = nativeImage.createFromPath(iconPath).resize({ width: 20, height: 20 });
   tray = new Tray(image);
-  tray.setToolTip("ShowME — turn anything visible into a lesson");
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      {
-        label: "Show me this",
-        click: () => {
-          void beginManualSelection().catch((error: unknown) => {
-            console.error(redactSecrets(error instanceof Error ? error.message : String(error)));
-            windows?.setLauncherMode("revealed");
-            windows?.showLauncher(false);
-          });
-        },
-      },
-      { label: "Open ShowME", click: () => windows?.openMain("home") },
-      { type: "separator" },
-      {
-        label: "Quit",
-        click: () => {
-          windows?.setQuitting(true);
-          app.quit();
-        },
-      },
-    ]),
-  );
+  refreshTrayMenu(settings);
   tray.on("click", () => {
     windows?.setLauncherMode("revealed");
     windows?.showLauncher(false);
   });
+}
+
+function refreshTrayMenu(settings: AppSettings): void {
+  if (!tray || tray.isDestroyed()) return;
+  tray.setToolTip(trayToolTip(settings.wakeEnabled, process.platform));
+  tray.setContextMenu(
+    Menu.buildFromTemplate(
+      buildTrayMenuTemplate({
+        wakeEnabled: settings.wakeEnabled,
+        platform: process.platform,
+        actions: {
+          beginSelection: () => {
+            void beginManualSelection().catch((error: unknown) => {
+              console.error(redactSecrets(error instanceof Error ? error.message : String(error)));
+              windows?.setLauncherMode("revealed");
+              windows?.showLauncher(false);
+            });
+          },
+          openApp: () => windows?.openMain("home"),
+          setWakeMicrophoneEnabled,
+          quit: () => {
+            windows?.setQuitting(true);
+            app.quit();
+          },
+        },
+      }),
+    ),
+  );
 }
 
 app.on("window-all-closed", () => {

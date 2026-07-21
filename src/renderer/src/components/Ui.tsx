@@ -1,5 +1,6 @@
 import { AlertCircle, Check, X } from "lucide-react";
 import type { ReactNode } from "react";
+import { formatCommandError } from "../../../shared/errors";
 
 export function Spinner({ small = false }: { small?: boolean }) {
   return <span className={small ? "spinner spinner-small" : "spinner"} aria-hidden="true" />;
@@ -81,5 +82,8 @@ export function EmptyState({
 export function errorMessage(error: unknown): string {
   if (!(error instanceof Error)) return String(error);
   const remediation = (error as Error & { remediation?: string }).remediation;
-  return error.message + (remediation ? " " + remediation : "");
+  return formatCommandError({
+    message: error.message,
+    ...(remediation ? { remediation } : {}),
+  });
 }

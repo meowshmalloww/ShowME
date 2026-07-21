@@ -1,11 +1,13 @@
 import { z } from "zod";
-import { CREDENTIAL_IDS, PROVIDER_IDS } from "./types";
+import { isAllowedQwenCloudBaseUrl } from "./providers";
+import { AUDIO_PROVIDER_IDS, CREDENTIAL_IDS, LEARNER_GRADE_IDS, PROVIDER_IDS } from "./types";
 
 const coordinate = z.number().finite().min(0).max(1000);
 const positiveFinite = z.number().finite().positive();
 const id = z.string().min(1).max(100);
 
 export const providerIdSchema = z.enum(PROVIDER_IDS);
+export const audioProviderIdSchema = z.enum(AUDIO_PROVIDER_IDS);
 export const credentialIdSchema = z.enum(CREDENTIAL_IDS);
 export const pointSchema = z.object({ x: coordinate, y: coordinate }).strict();
 
@@ -73,8 +75,15 @@ export const appSettingsSchema = z
   .object({
     onboardingComplete: z.boolean(),
     assistantName: z.literal("ShowME"),
+    learnerAge: z.number().int().min(5).max(100).nullable(),
+    learnerGrade: z.enum(LEARNER_GRADE_IDS).nullable(),
     wakeEnabled: z.boolean(),
     provider: providerIdSchema,
+    qwenBaseUrl: z
+      .string()
+      .min(1)
+      .max(500)
+      .refine(isAllowedQwenCloudBaseUrl, "Enter a valid Qwen Cloud OpenAI-compatible API Host."),
     models: providerModelsSchema.strict(),
     textModels: providerModelsSchema.strict(),
     teachingStyle: z.enum([
@@ -88,16 +97,21 @@ export const appSettingsSchema = z
     lessonSurface: z.enum(["inline", "side", "focus"]),
     voiceEnabled: z.boolean(),
     captionsEnabled: z.boolean(),
-    voiceInputProvider: z.enum(["openai", "groq", "deepgram", "elevenlabs"]),
-    voiceOutputProvider: z.enum(["system", "openai", "elevenlabs"]),
+    voiceInputProvider: z.enum(["groq", "deepgram", "elevenlabs"]),
+    voiceOutputProvider: z.enum(["system", "deepgram", "elevenlabs"]),
     microphoneDeviceId: z.string().min(1).max(500),
     speakerDeviceId: z.string().min(1).max(500),
     echoCancellation: z.boolean(),
     noiseSuppression: z.boolean(),
     autoGainControl: z.boolean(),
     wakeSensitivity: z.number().finite().min(0.55).max(0.9),
-    voiceSilenceMs: z.number().int().min(3000).max(4000),
+    voiceSilenceMs: z.number().int().min(800).max(2500),
     voiceMaxSeconds: z.number().int().min(10).max(90),
+    systemVoice: z.string().min(1).max(500),
+    deepgramVoice: z
+      .string()
+      .regex(/^aura-[a-z0-9-]+$/i)
+      .max(120),
     voice: z.string().min(1).max(80),
     elevenLabsVoice: z.string().min(1).max(120),
     language: z.string().min(2).max(20),
@@ -114,6 +128,18 @@ export const appSettingsSchema = z
     providerCapabilityOverrides: capabilityOverridesSchema,
   })
   .strict();
+
+const textPrimitiveKinds = new Set(["label", "equation", "callout"]);
+const focusPrimitiveKinds = new Set(["circle", "rect", "highlight", "spotlight", "point"]);
+const relationshipPrimitiveKinds = new Set([
+  "line",
+  "arrow",
+  "curved-arrow",
+  "path",
+  "vector",
+  "bracket",
+  "axis",
+]);
 
 export const primitiveSchema = z
   .object({
@@ -139,9 +165,9 @@ export const primitiveSchema = z
     y: coordinate,
     x2: coordinate.optional(),
     y2: coordinate.optional(),
-    width: z.number().finite().min(0).max(1000).optional(),
-    height: z.number().finite().min(0).max(1000).optional(),
-    radius: z.number().finite().min(0).max(500).optional(),
+    width: z.number().finite().min(1).max(1000).optional(),
+    height: z.number().finite().min(1).max(1000).optional(),
+    radius: z.number().finite().min(1).max(500).optional(),
     text: z.string().max(280).optional(),
     color: z.string().max(40).optional(),
     fill: z.string().max(40).optional(),
@@ -151,7 +177,36 @@ export const primitiveSchema = z
     stepId: id.optional(),
     sourceRegionId: id.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((primitive, context) => {
+    const visualIssue = (message: string): void => {
+      context.addIssue({ code: "custom", message: `Visual grounding: ${message}` });
+    };
+    if (textPrimitiveKinds.has(primitive.kind) && !primitive.text?.trim()) {
+      visualIssue(`${primitive.kind} ${primitive.id} must contain visible text`);
+    }
+    if (["circle", "spotlight"].includes(primitive.kind) && primitive.radius === undefined) {
+      visualIssue(`${primitive.kind} ${primitive.id} requires an explicit radius`);
+    }
+    if (["rect", "highlight"].includes(primitive.kind)) {
+      if (primitive.width === undefined || primitive.height === undefined) {
+        visualIssue(`${primitive.kind} ${primitive.id} requires width and height`);
+      }
+    }
+    if (["line", "arrow", "curved-arrow", "vector", "axis"].includes(primitive.kind)) {
+      if (primitive.x2 === undefined || primitive.y2 === undefined) {
+        visualIssue(`${primitive.kind} ${primitive.id} requires an exact x2 and y2 destination`);
+      } else if (Math.hypot(primitive.x2 - primitive.x, primitive.y2 - primitive.y) < 5) {
+        visualIssue(`${primitive.kind} ${primitive.id} has no visible length`);
+      }
+    }
+    if (primitive.kind === "path" && (primitive.points?.length ?? 0) < 2) {
+      visualIssue(`path ${primitive.id} requires at least two points`);
+    }
+    if (primitive.kind === "bracket" && primitive.height === undefined) {
+      visualIssue(`bracket ${primitive.id} requires an explicit height`);
+    }
+  });
 
 const orbitSchema = z
   .object({
@@ -423,6 +478,39 @@ export const lessonPlanSchema = z
             message: "Step " + step.id + " references unknown primitive " + primitiveId,
           });
         }
+      }
+    }
+    const spatialPrimitives = plan.primitives.filter(
+      (primitive) => !textPrimitiveKinds.has(primitive.kind),
+    );
+    const spatialIds = new Set(spatialPrimitives.map((primitive) => primitive.id));
+    const spatialStepCount = plan.steps.filter((step) =>
+      step.primitiveIds.some((primitiveId) => spatialIds.has(primitiveId)),
+    ).length;
+    const requiredSpatialSteps = Math.min(3, plan.steps.length);
+    if (spatialStepCount < requiredSpatialSteps) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "Visual grounding: at least " +
+          String(requiredSpatialSteps) +
+          " lesson step(s) must introduce a renderable shape, focus mark, or connector",
+      });
+    }
+    if (plan.steps.length >= 2) {
+      if (!spatialPrimitives.some((primitive) => focusPrimitiveKinds.has(primitive.kind))) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Visual grounding: a multi-step screen lesson needs a circle, highlight, spotlight, point, or rectangle on the observed target",
+        });
+      }
+      if (!spatialPrimitives.some((primitive) => relationshipPrimitiveKinds.has(primitive.kind))) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Visual grounding: a multi-step screen lesson needs a line, arrow, path, bracket, vector, or axis that explains a relationship",
+        });
       }
     }
     for (const primitive of plan.primitives) {

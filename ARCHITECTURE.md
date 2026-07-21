@@ -10,7 +10,7 @@ ShowME treats model output as an untrusted lesson plan and keeps every privilege
     | launcher              |                        | window lifecycle          |
     | selection overlay     |                        | explicit screen capture   |
     | main workspace        |                        | provider network requests |
-    | trusted lesson player |                        | encrypted credentials     |
+    | desktop whiteboard    |                        | encrypted credentials     |
     +-----------------------+                        | SQLite persistence        |
                                                      +------------+--------------+
                                                                   |
@@ -44,14 +44,17 @@ The request pipeline is:
     Prepared visual context + explicit question + allowed preferences
         → capability gate
         → provider request
-        → strict JSON lesson schema
+        → provider-appropriate structured JSON contract
+        → strict local lesson schema
         → semantic reference validation
         → citation reconciliation against observed provider annotations
         → independent deterministic verification
         → trusted React/SVG renderer
         → local lesson receipt and optional learning memory
 
-The schema validates global IDs, step-to-primitive references, claim-to-citation references, normalized coordinates, numerical bounds, simulation shape, and control bindings. A malformed plan is retried once with the validation summary, then rejected transparently.
+OpenAI and supported routed models receive a strict JSON schema. Groq Llama 4 and NVIDIA use best-effort schema mode, while Qwen Cloud and Cerebras use JSON-object mode because their current strict-schema contracts do not accept ShowME's full lesson schema. Qwen Cloud requests use the validated OpenAI-compatible API Host paired with the user's pay-as-you-go, Token Plan, or Coding Plan key. Every route then passes the same local schema. It validates global IDs, step-to-primitive references, claim-to-citation references, normalized coordinates, numerical bounds, simulation shape, and control bindings. A malformed plan is retried once with the validation summary, then rejected transparently.
+
+NVIDIA's `/v1/models` response is treated as a catalog only. ShowME annotates known image-input entries but never labels the catalog as a list of free or organization-enabled models. A model-specific completion test is the access check; HTTP 403 `Authorization failed` is surfaced as an NVIDIA Public API Endpoints entitlement problem rather than as a successful connection.
 
 OpenAI Responses output annotations are the authority for web citations. Model-authored citation URLs are removed if the provider response did not actually attach them. A source-grounded plan without observed sources is downgraded to exploratory.
 
@@ -80,13 +83,13 @@ On Windows, provider credentials are protected through a small Rust worker that 
 
 ## Wake and voice flow
 
-When wake listening is enabled on Windows, the launcher opens only the selected microphone. The renderer measures the local signal and groups it into a bounded utterance with a short lead-in and silence tail. A local Windows speech worker first screens the utterance as short dictation, then checks it against the fixed ShowME grammar. Ordinary audio is discarded locally. Only a recognized wake starts explicit screen capture and a separate recorded question, which uses the selected OpenAI, Groq, Deepgram, or ElevenLabs transcription route.
+When wake listening is enabled on Windows, the launcher opens only the selected microphone. The renderer measures the local signal and groups it into a bounded utterance with a short lead-in and silence tail. A local Windows speech worker first screens the utterance as short dictation, then checks it against the fixed ShowME grammar. Ordinary audio is discarded locally. Only a recognized wake starts explicit screen capture and a separate recorded question, which uses the selected Groq, Deepgram, or ElevenLabs transcription route. Narration stays local by default or uses the explicitly selected Deepgram Aura or ElevenLabs route; OpenAI is never called for audio.
 
 ## Window model
 
 - Launcher: tiny top-edge idle grip; one capture affordance when revealed; question and progress states only when actively used.
 - Selection: one short-lived full-display window on the selected monitor.
 - Main: onboarding, dashboard, library, and settings; closing hides it to the tray.
-- Lesson: reusable side/inline/focus player; it never renders model-supplied executable markup.
+- Lesson: full-display transparent, click-through whiteboard projected back onto the captured crop with DPI-aware coordinates. It renders only trusted primitives and declarative simulations, never model-supplied executable markup.
 
 All windows load the same renderer entry with a role query and share only the typed preload surface.

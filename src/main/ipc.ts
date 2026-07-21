@@ -18,7 +18,7 @@ import {
   type WakeInputState,
 } from "../shared/ipc";
 import { providerSummaries } from "../shared/providers";
-import { credentialIdSchema, providerIdSchema } from "../shared/schema";
+import { audioProviderIdSchema, credentialIdSchema, providerIdSchema } from "../shared/schema";
 import type {
   AppSettings,
   CredentialId,
@@ -107,6 +107,7 @@ export function registerIpc(dependencies: IpcDependencies): void {
   });
 
   handle(CHANNELS.captureBegin, async () => {
+    windows.closeLesson(false);
     dependencies.suspendWake();
     try {
       const payload = await capture.begin();
@@ -165,10 +166,14 @@ export function registerIpc(dependencies: IpcDependencies): void {
     secrets.delete(credentialIdSchema.parse(rawProvider));
   });
   handle(CHANNELS.providerTest, async (_event, rawProvider: ProviderId, model: string) =>
-    providers.test(providerIdSchema.parse(rawProvider), String(model).slice(0, 240)),
+    providers.test(
+      providerIdSchema.parse(rawProvider),
+      String(model).slice(0, 240),
+      store.getSettings(),
+    ),
   );
   handle(CHANNELS.providerModels, async (_event, rawProvider: ProviderId) =>
-    providers.listModels(providerIdSchema.parse(rawProvider)),
+    providers.listModels(providerIdSchema.parse(rawProvider), store.getSettings()),
   );
 
   handle(CHANNELS.lessonGenerate, async (_event, request) => {
@@ -181,7 +186,7 @@ export function registerIpc(dependencies: IpcDependencies): void {
       windows.showLesson(result.presentation);
       windows.setLauncherMode("idle");
       windows.showLauncher();
-      dependencies.resumeWake();
+      dependencies.onVoiceActivity("idle");
       return result;
     } catch (error) {
       windows.setLauncherMode("question");
@@ -191,9 +196,18 @@ export function registerIpc(dependencies: IpcDependencies): void {
     }
   });
   handle(CHANNELS.lessonAdapt, async (_event, input: AdaptLessonInput) => {
-    const result = await lessons.adapt(input.presentation, input.adaptation, input.question);
-    windows.showLesson(result.presentation);
-    return result;
+    windows.setLauncherMode("thinking");
+    dependencies.suspendWake();
+    try {
+      const result = await lessons.adapt(input.presentation, input.adaptation, input.question);
+      windows.showLesson(result.presentation);
+      dependencies.onVoiceActivity("idle");
+      windows.showLauncher();
+      return result;
+    } catch (error) {
+      dependencies.onVoiceActivity("idle");
+      throw error;
+    }
   });
   handle(CHANNELS.lessonCancel, async (_event, requestId: string) =>
     lessons.cancel(String(requestId)),
@@ -201,6 +215,7 @@ export function registerIpc(dependencies: IpcDependencies): void {
   handle(CHANNELS.lessonOpenSaved, async (_event, id: string) => {
     const stored = store.getLesson(String(id));
     windows.showLesson(stored.presentation);
+    dependencies.onVoiceActivity("idle");
     return stored;
   });
   handle(CHANNELS.lessonSetSurface, async (_event, surface: LessonSurface) => {
@@ -230,11 +245,14 @@ export function registerIpc(dependencies: IpcDependencies): void {
     return providers.synthesize(
       settings.voiceOutputProvider,
       String(text),
-      settings.voice,
+      settings.deepgramVoice,
       settings.elevenLabsVoice,
       settings.speechRate,
     );
   });
+  handle(CHANNELS.voiceTestProvider, async (_event, rawProvider) =>
+    providers.testSpeechService(audioProviderIdSchema.parse(rawProvider)),
+  );
   handle(CHANNELS.voiceActivity, async (_event, state: VoiceActivityState) => {
     if (!["idle", "listening", "transcribing", "speaking"].includes(state)) {
       throw new CommandError("INVALID_VOICE_STATE", "Unknown voice activity state.");

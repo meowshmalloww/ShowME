@@ -21,10 +21,20 @@ describe("local SQLite product state", () => {
     const directory = mkdtempSync(join(tmpdir(), "showme-store-"));
     temporaryDirectories.push(directory);
     const store = new AppStore(join(directory, "showme.sqlite3"));
-    const settings = { ...DEFAULT_SETTINGS, onboardingComplete: true, assistantName: "Ada" };
+    const settings = {
+      ...DEFAULT_SETTINGS,
+      onboardingComplete: true,
+      assistantName: "Ada",
+      learnerAge: 14,
+      learnerGrade: "grade-9" as const,
+      systemVoice: "voice-id",
+    };
     store.saveSettings(settings);
     store.upsertMemory("preference", "teaching-style", "step-by-step");
     expect(store.getSettings().assistantName).toBe("ShowME");
+    expect(store.getSettings().learnerAge).toBe(14);
+    expect(store.getSettings().learnerGrade).toBe("grade-9");
+    expect(store.getSettings().systemVoice).toBe("voice-id");
     expect(store.memorySummary().memoryCount).toBe(1);
     expect(store.listMemories()[0]?.value).toBe("step-by-step");
     store.close();
@@ -43,7 +53,9 @@ describe("local SQLite product state", () => {
       ...DEFAULT_SETTINGS,
       accent: "coral",
       wakeEnabled: true,
-      voiceSilenceMs: 2200,
+      voiceSilenceMs: 3500,
+      voiceInputProvider: "openai",
+      voiceOutputProvider: "openai",
     };
     database.prepare("UPDATE settings SET value_json = ? WHERE id = 1").run(JSON.stringify(legacy));
     database.close();
@@ -52,7 +64,9 @@ describe("local SQLite product state", () => {
     expect(migrated.getSettings().assistantName).toBe("ShowME");
     expect(migrated.getSettings()).not.toHaveProperty("accent");
     expect(migrated.getSettings().wakeEnabled).toBe(true);
-    expect(migrated.getSettings().voiceSilenceMs).toBe(3500);
+    expect(migrated.getSettings().voiceSilenceMs).toBe(1200);
+    expect(migrated.getSettings().voiceInputProvider).toBe("deepgram");
+    expect(migrated.getSettings().voiceOutputProvider).toBe("system");
     migrated.close();
   });
 
@@ -141,12 +155,29 @@ describe("local SQLite product state", () => {
       surface: "side",
       contextPreviewDataUrl: "data:image/png;base64,privatepixels",
       contextPreviewExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+      contextGeometry: {
+        display: {
+          id: 1,
+          label: "Private display",
+          bounds: { x: 0, y: 0, width: 1920, height: 1080 },
+          workArea: { x: 0, y: 0, width: 1920, height: 1040 },
+          size: { width: 1920, height: 1080 },
+          scaleFactor: 1,
+        },
+        cropBounds: { x: 120, y: 80, width: 800, height: 600 },
+        pixelWidth: 800,
+        pixelHeight: 600,
+        capturePixelWidth: 1920,
+        capturePixelHeight: 1080,
+        scope: "selection",
+      },
     };
 
     store.saveLesson(presentation);
     const saved = store.getLesson(presentation.plan.id);
     expect(saved?.presentation.contextPreviewDataUrl).toBeUndefined();
     expect(saved?.presentation.contextPreviewExpiresAt).toBeUndefined();
+    expect(saved?.presentation.contextGeometry).toBeUndefined();
     store.close();
 
     const database = new DatabaseSync(databasePath);

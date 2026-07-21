@@ -13,6 +13,7 @@ import {
   downsampleToPcm16,
   floatRmsLevel,
   frequencySpectrumLevels,
+  VoiceEndpointDetector,
   WakeUtteranceCollector,
 } from "../../../shared/audio";
 import { launcherActivityVisual } from "../../../shared/launcher";
@@ -36,6 +37,7 @@ export function Launcher() {
   const [question, setQuestion] = useState("");
   const [progress, setProgress] = useState<LessonProgress | null>(null);
   const [error, setError] = useState("");
+  const [errorTitle, setErrorTitle] = useState("ShowME couldn't continue");
   const [, setRecording] = useState(false);
   const [, setTranscribing] = useState(false);
   const [voiceLevels, setVoiceLevels] = useState(EMPTY_LEVELS);
@@ -190,16 +192,20 @@ export function Launcher() {
     [stopWakeInput],
   );
 
-  const finishVoiceWithError = useCallback(async (message: string): Promise<void> => {
-    setError(message);
-    setQuestion("");
-    setContext(null);
-    contextRef.current = null;
-    await window.showme.capture.clear();
-    setMode("revealed");
-    await window.showme.launcher.setMode("revealed");
-    await window.showme.voice.activity("idle");
-  }, []);
+  const finishVoiceWithError = useCallback(
+    async (message: string, title = "Voice unavailable"): Promise<void> => {
+      setErrorTitle(title);
+      setError(message);
+      setQuestion("");
+      setContext(null);
+      contextRef.current = null;
+      await window.showme.capture.clear();
+      setMode("revealed");
+      await window.showme.launcher.setMode("revealed");
+      await window.showme.voice.activity("idle");
+    },
+    [],
+  );
 
   const submitText = useCallback(
     async (rawQuestion: string, replyWithVoice = false): Promise<void> => {
@@ -238,7 +244,7 @@ export function Launcher() {
         setContext(null);
       } catch (reason) {
         const message = errorMessage(reason);
-        if (replyWithVoice) await finishVoiceWithError(message);
+        if (replyWithVoice) await finishVoiceWithError(message, "Lesson unavailable");
         else {
           setError(message);
           setMode("question");
@@ -283,10 +289,10 @@ export function Launcher() {
       source.connect(analyser);
       audioContext.current = nextAudioContext;
       chunks.current = [];
-      let heardSpeech = false;
-      let lastSpeechAt = performance.now();
-      const startedAt = performance.now();
-      let noiseFloor = Number.POSITIVE_INFINITY;
+      const endpoint = new VoiceEndpointDetector(
+        settings.voiceSilenceMs,
+        settings.voiceMaxSeconds * 1000,
+      );
       const samples = new Uint8Array(analyser.fftSize);
       const frequencyBins = new Uint8Array(analyser.frequencyBinCount);
 
@@ -297,19 +303,14 @@ export function Launcher() {
         const rms = rmsLevel(samples);
         setVoiceLevels(frequencySpectrumLevels(frequencyBins, EMPTY_LEVELS.length));
 
-        const now = performance.now();
-        const elapsed = now - startedAt;
-        if (elapsed < 650) noiseFloor = Math.min(noiseFloor, rms);
-        const speechThreshold = calibratedSpeechThreshold(noiseFloor);
-        if (elapsed > 240 && rms > speechThreshold) {
-          heardSpeech = true;
-          lastSpeechAt = now;
-        }
-        const finishedBySilence = heardSpeech && now - lastSpeechAt > settings.voiceSilenceMs;
-        const finishedWithoutSpeech = !heardSpeech && now - startedAt > settings.voiceSilenceMs;
-        const reachedLimit = now - startedAt > settings.voiceMaxSeconds * 1000;
-        if (finishedBySilence || finishedWithoutSpeech || reachedLimit) next.stop();
-        else monitorTimer.current = window.setTimeout(monitor, 32);
+        const decision = endpoint.push(rms, performance.now());
+        if (decision !== "continue") {
+          if (endpoint.hasHeardSpeech()) {
+            setMode("transcribing");
+            void window.showme.voice.activity("transcribing");
+          }
+          next.stop();
+        } else monitorTimer.current = window.setTimeout(monitor, 32);
       };
 
       next.ondataavailable = (event) => {
@@ -321,7 +322,7 @@ export function Launcher() {
         stopAudioMonitoring();
         for (const track of recordingStream.getTracks()) track.stop();
         const blob = new Blob(chunks.current, { type: next.mimeType });
-        if (blob.size === 0 || !heardSpeech) {
+        if (blob.size === 0 || !endpoint.hasHeardSpeech()) {
           await finishVoiceWithError("ShowME did not hear a question. Please try again.");
           return;
         }
@@ -421,7 +422,7 @@ export function Launcher() {
       stopWakeInput(true);
       return;
     }
-    if (mode === "idle" || mode === "revealed") {
+    if (mode === "idle" || mode === "revealed" || mode === "speaking") {
       void startWakeInput(settings);
     } else {
       stopWakeInput(false);
@@ -454,6 +455,7 @@ export function Launcher() {
     try {
       await window.showme.capture.begin();
     } catch (reason) {
+      setErrorTitle("Capture unavailable");
       setError(errorMessage(reason));
       setMode("revealed");
     }
@@ -468,6 +470,7 @@ export function Launcher() {
         className={
           "island-stage idle" + (bootstrap?.settings.reducedMotion ? " reduced-motion" : "")
         }
+        onPointerEnter={reveal}
       >
         <button
           className="island-grip"
@@ -480,6 +483,7 @@ export function Launcher() {
           }
           title={wakeStatus?.message ?? bootstrap?.wakeListener.message}
           onClick={reveal}
+          onPointerEnter={reveal}
           type="button"
         >
           {wakeEnabled ? (
@@ -504,7 +508,7 @@ export function Launcher() {
             <div className="launcher-error-inline" role="status">
               <AlertCircle size={15} />
               <span>
-                <strong>Voice unavailable</strong>
+                <strong>{errorTitle}</strong>
                 <small>{error}</small>
               </span>
               <button aria-label="Dismiss" onClick={() => setError("")} type="button">
@@ -702,11 +706,11 @@ function voiceCopy(mode: "listening" | "transcribing" | "speaking") {
   if (mode === "listening") {
     return {
       title: "ShowME is listening",
-      detail: "Finish your thought, then pause for 2 seconds",
+      detail: "Finish your thought, then pause briefly",
     };
   }
   if (mode === "transcribing") {
-    return { title: "Understanding your request", detail: "Turning your voice into a question" };
+    return { title: "Heard you — working now", detail: "Transcribing before lesson planning" };
   }
   return { title: "ShowME is speaking", detail: "Following the lesson narration" };
 }

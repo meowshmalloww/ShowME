@@ -4393,8 +4393,10 @@ select:focus {
 
 .onboarding-redesign .onboarding-card {
   width: min(480px, 100%);
+  max-height: calc(100% - 20px);
   justify-self: end;
   padding: 21px;
+  overflow-y: auto;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--panel);
@@ -4447,6 +4449,40 @@ select:focus {
 .onboarding-redesign .field-label {
   margin: 14px 0 7px;
   font-size: 11px;
+}
+
+.onboarding-profile-fields {
+  margin-bottom: 6px;
+}
+
+.onboarding-profile-fields label {
+  display: grid;
+  gap: 5px;
+}
+
+.onboarding-profile-fields label > span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.onboarding-profile-fields input,
+.onboarding-profile-fields select {
+  width: 100%;
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--bg-soft);
+  font: inherit;
+  font-size: 11px;
+}
+
+.profile-note {
+  display: block;
+  color: var(--faint);
+  font-size: 9px;
+  line-height: 1.4;
 }
 
 .onboarding-redesign .provider-chooser.compact {
@@ -6236,4 +6272,353 @@ select:focus {
 .reduced-motion .thinking-progress > span.active:last-of-type,
 .reduced-motion .audio-wave-speaking > span {
   animation: none;
+}
+
+/* Desktop whiteboard: this window contributes ink, never another application surface. */
+html.whiteboard-document,
+html.whiteboard-document body,
+body.whiteboard-document,
+body.whiteboard-document #root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  color-scheme: dark;
+  background: transparent !important;
+}
+
+.whiteboard-overlay {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  background: transparent;
+  font-family: Inter, "Segoe UI Variable", "Segoe UI", sans-serif;
+  opacity: 1;
+  transition:
+    opacity 900ms ease,
+    filter 900ms ease;
+}
+
+.whiteboard-overlay.board-fading {
+  opacity: 0;
+  filter: blur(2px);
+}
+
+.whiteboard-overlay.board-fading.reduced-motion {
+  filter: none;
+  transition-duration: 120ms;
+}
+
+.whiteboard-geometry {
+  position: absolute;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.whiteboard-stroke {
+  paint-order: stroke fill;
+  filter: drop-shadow(0 0 3px rgba(31, 188, 255, 0.96))
+    drop-shadow(0 0 10px rgba(24, 143, 255, 0.48));
+  opacity: 0.96;
+}
+
+.whiteboard-stroke.current {
+  animation: whiteboard-draw 620ms cubic-bezier(0.16, 1, 0.3, 1) var(--whiteboard-delay, 0ms) both;
+}
+
+.whiteboard-spotlight.current {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: whiteboard-pop 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.whiteboard-text {
+  position: absolute;
+  z-index: 3;
+  display: block;
+  color: #f8fdff;
+  font-size: clamp(17px, 1.35vw, 27px);
+  font-weight: 720;
+  line-height: 1.22;
+  letter-spacing: -0.018em;
+  white-space: pre-wrap;
+  text-wrap: balance;
+  text-shadow:
+    0 2px 3px rgba(0, 0, 0, 0.98),
+    0 0 5px rgba(0, 0, 0, 0.95),
+    0 0 13px rgba(20, 178, 255, 0.84);
+  transform: translateY(-50%);
+}
+
+.whiteboard-text.current {
+  animation: whiteboard-write 460ms cubic-bezier(0.16, 1, 0.3, 1) var(--whiteboard-delay, 0ms) both;
+}
+
+.whiteboard-equation {
+  color: #ffffff;
+  font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: clamp(20px, 1.7vw, 34px);
+  font-weight: 760;
+  letter-spacing: -0.04em;
+}
+
+.whiteboard-callout {
+  width: max-content !important;
+  max-width: min(420px, 38vw);
+  padding: 9px 13px 10px;
+  border: 1px solid rgba(104, 222, 255, 0.7);
+  border-radius: 12px;
+  background: rgba(3, 10, 15, 0.82);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.38),
+    0 0 18px rgba(28, 173, 255, 0.25);
+  backdrop-filter: blur(6px);
+  font-size: clamp(15px, 1.05vw, 21px);
+}
+
+.whiteboard-simulation {
+  width: min(520px, 39vw);
+  min-width: 330px;
+  position: absolute;
+  z-index: 2;
+  top: 17%;
+  filter: drop-shadow(0 10px 22px rgba(0, 0, 0, 0.62));
+  animation: whiteboard-aid-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.whiteboard-simulation.aid-left,
+.whiteboard-media.aid-left {
+  left: 3vw;
+}
+
+.whiteboard-simulation.aid-right,
+.whiteboard-media.aid-right {
+  right: 3vw;
+}
+
+.whiteboard-simulation .simulation-graphic {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: min(55vh, 480px);
+  overflow: visible;
+}
+
+.whiteboard-simulation .sim-label,
+.whiteboard-simulation .sim-heading,
+.whiteboard-simulation .sim-caption,
+.whiteboard-simulation .sim-item {
+  fill: #f5fcff;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.92);
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+.whiteboard-media {
+  width: min(320px, 28vw);
+  position: absolute;
+  z-index: 2;
+  top: 18%;
+  margin: 0;
+  animation: whiteboard-aid-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.whiteboard-media img {
+  width: 100%;
+  max-height: 45vh;
+  display: block;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow:
+    0 16px 44px rgba(0, 0, 0, 0.56),
+    0 0 0 2px rgba(105, 220, 255, 0.75),
+    0 0 24px rgba(35, 177, 255, 0.36);
+}
+
+.whiteboard-media figcaption {
+  margin-top: 6px;
+  color: rgba(232, 249, 255, 0.78);
+  font-size: 9px;
+  text-align: right;
+  text-shadow: 0 1px 4px #000;
+}
+
+@keyframes whiteboard-draw {
+  from {
+    opacity: 0;
+    stroke-dasharray: 1800;
+    stroke-dashoffset: 1800;
+  }
+  to {
+    opacity: 0.96;
+    stroke-dasharray: 1800;
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes whiteboard-write {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+    transform: translateY(calc(-50% + 8px)) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: translateY(-50%) scale(1);
+  }
+}
+
+@keyframes whiteboard-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes whiteboard-aid-in {
+  from {
+    opacity: 0;
+    filter: blur(5px);
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.whiteboard-simulation,
+.whiteboard-media {
+  transform: none;
+}
+
+.whiteboard-simulation,
+.whiteboard-media,
+.whiteboard-simulation.current,
+.whiteboard-media.current {
+  transform-origin: center;
+}
+
+.whiteboard-overlay.reduced-motion *,
+.reduced-motion .whiteboard-stroke.current,
+.reduced-motion .whiteboard-text.current,
+.reduced-motion .whiteboard-spotlight.current {
+  animation: none !important;
+}
+
+/* A quieter top-edge signal that expands on hover, without the old center dot. */
+.island-grip {
+  height: 10px;
+  border-radius: 0 0 9px 9px;
+  background: linear-gradient(180deg, #050608 0%, #0b0e12 72%, #101821 100%);
+  box-shadow:
+    inset 0 -1px 0 rgba(88, 211, 255, 0.23),
+    0 2px 8px rgba(0, 0, 0, 0.46);
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.island-grip:hover,
+.island-grip:focus-visible {
+  background: linear-gradient(180deg, #07090d 0%, #101923 100%);
+  box-shadow:
+    inset 0 -1px 0 rgba(103, 224, 255, 0.64),
+    0 0 11px rgba(48, 180, 255, 0.24);
+}
+
+.island-grip-mark {
+  width: 36px;
+  height: 1px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #73dfff 24%,
+    #d9f8ff 50%,
+    #73dfff 76%,
+    transparent
+  );
+  box-shadow: 0 0 5px rgba(72, 199, 255, 0.55);
+}
+
+.standby-wave {
+  height: 8px;
+  gap: 1.5px;
+}
+
+.standby-wave > span {
+  width: 1.5px;
+  background: #8ee7ff;
+  box-shadow: 0 0 4px rgba(57, 195, 255, 0.55);
+}
+
+.standby-wave.listener-error > span {
+  background: #656a72;
+  box-shadow: none;
+}
+
+/* Stronger electric capture feedback, visible even against bright pages. */
+.screen-reading-overlay::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(139, 235, 255, 0.72);
+  box-shadow:
+    inset 0 0 14px rgba(31, 184, 255, 0.34),
+    inset 0 0 34px rgba(33, 112, 255, 0.16);
+}
+
+.screen-reading-edge {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #1db8ff 12%,
+    #8cecff 50%,
+    #2b7cff 88%,
+    transparent
+  );
+  filter: drop-shadow(0 0 3px #6de2ff) drop-shadow(0 0 10px rgba(30, 138, 255, 0.98));
+  opacity: 1;
+}
+
+.screen-reading-edge.edge-top,
+.screen-reading-edge.edge-bottom {
+  height: 3px;
+}
+
+.screen-reading-edge.edge-left,
+.screen-reading-edge.edge-right {
+  width: 3px;
+  background: linear-gradient(
+    180deg,
+    transparent,
+    #1db8ff 12%,
+    #8cecff 50%,
+    #2b7cff 88%,
+    transparent
+  );
+}
+
+.screen-reading-corner {
+  width: 28px;
+  height: 28px;
+  border-color: #a8f1ff;
+  filter: drop-shadow(0 0 4px #5edfff) drop-shadow(0 0 12px rgba(26, 119, 255, 0.95));
+}
+
+.corner-top-left,
+.corner-top-right,
+.corner-bottom-left,
+.corner-bottom-right {
+  border-width: 4px;
 }

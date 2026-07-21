@@ -1,4 +1,4 @@
-import { DEFAULT_MODELS, DEFAULT_TEXT_MODELS } from "./defaults";
+import { DEFAULT_MODELS, DEFAULT_TEXT_MODELS, QWEN_CLOUD_DEFAULT_BASE_URL } from "./defaults";
 import type { AppSettings, ProviderCapabilities, ProviderId, ProviderSummary } from "./types";
 
 export interface ProviderDefinition {
@@ -22,8 +22,8 @@ export const PROVIDER_DEFINITIONS: Record<ProviderId, ProviderDefinition> = {
       vision: true,
       structuredOutput: true,
       webSearch: true,
-      speechToText: true,
-      textToSpeech: true,
+      speechToText: false,
+      textToSpeech: false,
       streaming: true,
       tools: true,
     },
@@ -32,10 +32,10 @@ export const PROVIDER_DEFINITIONS: Record<ProviderId, ProviderDefinition> = {
   },
   alibaba: {
     id: "alibaba",
-    name: "Alibaba Cloud Qwen",
+    name: "Qwen Cloud",
     shortName: "QW",
-    baseUrl: "https://dashscope-us.aliyuncs.com/compatible-mode/v1/chat/completions",
-    modelsUrl: "https://dashscope-us.aliyuncs.com/compatible-mode/v1/models",
+    baseUrl: QWEN_CLOUD_DEFAULT_BASE_URL + "/chat/completions",
+    modelsUrl: QWEN_CLOUD_DEFAULT_BASE_URL + "/models",
     capabilities: {
       vision: true,
       structuredOutput: false,
@@ -46,7 +46,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderId, ProviderDefinition> = {
       tools: true,
     },
     capabilityNote:
-      "US Model Studio route. Vision and JSON support depend on the selected Qwen model.",
+      "Qwen Cloud uses the API Host paired with your pay-as-you-go, Token Plan, or Coding Plan key. Vision and JSON support are model-specific.",
   },
   nvidia: {
     id: "nvidia",
@@ -64,7 +64,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderId, ProviderDefinition> = {
       tools: true,
     },
     capabilityNote:
-      "OpenAI-compatible NIM route; exact vision and schema support are model-specific.",
+      "OpenAI-compatible NIM route. Catalog results do not guarantee free or organization-level access; verify the exact model.",
   },
   groq: {
     id: "groq",
@@ -82,7 +82,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderId, ProviderDefinition> = {
       tools: true,
     },
     capabilityNote:
-      "Fast inference and transcription. Groq is not xAI's Grok; capabilities vary by model.",
+      "Fast inference and transcription. Strict schemas are limited to GPT-OSS; other models use validated JSON mode.",
   },
   cerebras: {
     id: "cerebras",
@@ -100,7 +100,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderId, ProviderDefinition> = {
       tools: true,
     },
     capabilityNote:
-      "Very fast strict structured planning; image-input support is preview and model-specific.",
+      "Very fast planning. ShowME uses JSON mode because Cerebras strict schemas have a smaller contract limit; image input is model-specific.",
   },
   openrouter: {
     id: "openrouter",
@@ -121,6 +121,61 @@ export const PROVIDER_DEFINITIONS: Record<ProviderId, ProviderDefinition> = {
       "A routed model must explicitly support image input and strict structured output.",
   },
 };
+
+export function normalizeQwenCloudBaseUrl(raw: string): string {
+  const value = raw.trim();
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("Enter the OpenAI-compatible API Host shown by Qwen Cloud.");
+  }
+  const hostname = url.hostname.toLowerCase();
+  const qwenHost =
+    /^dashscope(?:-[a-z0-9-]+)?\.aliyuncs\.com$/.test(hostname) ||
+    /^[a-z0-9-]+\.dashscope\.aliyuncs\.com$/.test(hostname) ||
+    /(^|\.)maas\.aliyuncs\.com$/.test(hostname);
+  if (
+    url.protocol !== "https:" ||
+    !qwenHost ||
+    url.username ||
+    url.password ||
+    url.search ||
+    url.hash
+  ) {
+    throw new Error("Use an HTTPS Qwen Cloud API Host on aliyuncs.com.");
+  }
+  let pathname = url.pathname.replace(/\/+$/, "");
+  pathname = pathname.replace(/\/(?:chat\/completions|models)$/, "");
+  if (!pathname.endsWith("/compatible-mode/v1") && !pathname.endsWith("/v1")) {
+    throw new Error("The Qwen Cloud API Host must end in /compatible-mode/v1 or /v1.");
+  }
+  return url.origin + pathname;
+}
+
+export function isAllowedQwenCloudBaseUrl(raw: string): boolean {
+  try {
+    normalizeQwenCloudBaseUrl(raw);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function providerEndpoints(
+  provider: ProviderId,
+  settings?: Pick<AppSettings, "qwenBaseUrl">,
+): { baseUrl: string; modelsUrl: string } {
+  if (provider !== "alibaba") {
+    const definition = PROVIDER_DEFINITIONS[provider];
+    return { baseUrl: definition.baseUrl, modelsUrl: definition.modelsUrl };
+  }
+  const baseUrl = normalizeQwenCloudBaseUrl(settings?.qwenBaseUrl ?? QWEN_CLOUD_DEFAULT_BASE_URL);
+  return {
+    baseUrl: baseUrl + "/chat/completions",
+    modelsUrl: baseUrl + "/models",
+  };
+}
 
 export function effectiveCapabilities(
   provider: ProviderId,

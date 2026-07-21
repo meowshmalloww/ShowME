@@ -12,6 +12,14 @@ export class CommandError extends Error implements CommandErrorShape {
   }
 }
 
+export function formatCommandError(
+  error: Pick<CommandErrorShape, "message" | "remediation">,
+): string {
+  const message = error.message.trim();
+  const remediation = error.remediation?.trim();
+  return remediation && !message.includes(remediation) ? `${message} ${remediation}` : message;
+}
+
 export function toCommandError(error: unknown): CommandErrorShape {
   if (error instanceof CommandError) {
     return {
@@ -19,6 +27,21 @@ export function toCommandError(error: unknown): CommandErrorShape {
       message: redactSecrets(error.message),
       ...(error.remediation ? { remediation: redactSecrets(error.remediation) } : {}),
     };
+  }
+  // Main-process bundling can put the producer and IPC boundary on different copies of this
+  // class. Preserve the safe, explicit error shape even when `instanceof` cannot cross that
+  // boundary, otherwise useful provider remediation is silently discarded.
+  if (typeof error === "object" && error !== null) {
+    const candidate = error as Record<string, unknown>;
+    if (typeof candidate.code === "string" && typeof candidate.message === "string") {
+      return {
+        code: candidate.code,
+        message: redactSecrets(candidate.message),
+        ...(typeof candidate.remediation === "string"
+          ? { remediation: redactSecrets(candidate.remediation) }
+          : {}),
+      };
+    }
   }
   if (error instanceof Error) {
     return { code: "INTERNAL_ERROR", message: redactSecrets(error.message) };

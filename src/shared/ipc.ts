@@ -2,6 +2,7 @@ import type {
   AdaptationKind,
   AppBootstrap,
   AppSettings,
+  AudioProviderId,
   CapturePayload,
   CredentialId,
   GenerateLessonRequest,
@@ -18,6 +19,7 @@ import type {
   ProviderId,
   ProviderModel,
   SelectionRegion,
+  SpokenLessonCommandEvent,
   StoredLesson,
   VoiceActivityState,
   WakeListenerStatus,
@@ -50,6 +52,7 @@ export const CHANNELS = {
   lessonClose: "lesson:close",
   voiceTranscribe: "voice:transcribe",
   voiceSynthesize: "voice:synthesize",
+  voiceTestProvider: "voice:test-provider",
   voiceActivity: "voice:activity",
   wakeAudio: "wake:audio",
   wakeInputState: "wake:input-state",
@@ -74,6 +77,7 @@ export const CHANNELS = {
   eventWakeDetected: "event:wake-detected",
   eventWakeStatus: "event:wake-status",
   eventSettingsChanged: "event:settings-changed",
+  eventVoiceCommand: "event:voice-command",
 } as const;
 
 export type IpcChannel = (typeof CHANNELS)[keyof typeof CHANNELS];
@@ -157,6 +161,7 @@ export interface ShowMEApi {
   voice: {
     transcribe(input: AudioInput): Promise<string>;
     synthesize(text: string): Promise<{ bytes: Uint8Array; mimeType: string }>;
+    testProvider(provider: AudioProviderId): Promise<string>;
     activity(state: VoiceActivityState): Promise<void>;
   };
   wake: {
@@ -191,5 +196,6 @@ export interface ShowMEApi {
     onWakeDetected(callback: (context: PreparedContext) => void): () => void;
     onWakeStatus(callback: (status: WakeListenerStatus) => void): () => void;
     onSettingsChanged(callback: (settings: AppSettings) => void): () => void;
+    onVoiceCommand(callback: (event: SpokenLessonCommandEvent) => void): () => void;
   };
 }

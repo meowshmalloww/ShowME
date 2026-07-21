@@ -15,6 +15,7 @@ import type {
   PreparedContext,
   SelectionRegion,
 } from "../shared/types";
+import { createGroundingImageDataUrl } from "./grounding";
 import type { WorkerService } from "./workers";
 
 interface CaptureRecord {
@@ -117,12 +118,24 @@ export class CaptureService {
       ),
     };
     const cropped = record.image.crop(safeBounds);
+    const croppedSize = cropped.getSize();
+    let analysisDataUrl: string | undefined;
+    try {
+      analysisDataUrl = await createGroundingImageDataUrl(cropped.toPNG());
+    } catch (error) {
+      // Grounding marks improve localization, but a capture must remain usable if
+      // native image processing is unavailable on an unusual platform.
+      console.warn("Could not add the private vision coordinate scaffold.", error);
+    }
     const prepared: PreparedContext = {
       captureId,
       previewDataUrl: cropped.toDataURL(),
+      ...(analysisDataUrl ? { analysisDataUrl } : {}),
       regions: validated,
-      pixelWidth: cropped.getSize().width,
-      pixelHeight: cropped.getSize().height,
+      pixelWidth: croppedSize.width,
+      pixelHeight: croppedSize.height,
+      capturePixelWidth: size.width,
+      capturePixelHeight: size.height,
       display: record.payload.display,
       cropBounds: safeBounds,
       containsAnnotations: validated.some((region) =>

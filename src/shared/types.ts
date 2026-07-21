@@ -30,8 +30,28 @@ export type TeachingMode =
   | "simplified"
   | "advanced";
 export type Confidence = "verified-module" | "source-grounded" | "exploratory";
-export type VoiceInputProvider = "openai" | "groq" | "deepgram" | "elevenlabs";
-export type VoiceOutputProvider = "system" | "openai" | "elevenlabs";
+export type VoiceInputProvider = "groq" | AudioProviderId;
+export type VoiceOutputProvider = "system" | AudioProviderId;
+export const LEARNER_GRADE_IDS = [
+  "kindergarten",
+  "grade-1",
+  "grade-2",
+  "grade-3",
+  "grade-4",
+  "grade-5",
+  "grade-6",
+  "grade-7",
+  "grade-8",
+  "grade-9",
+  "grade-10",
+  "grade-11",
+  "grade-12",
+  "undergraduate",
+  "graduate",
+  "professional",
+  "self-directed",
+] as const;
+export type LearnerGrade = (typeof LEARNER_GRADE_IDS)[number];
 export type WindowRole = "main" | "launcher" | "selection" | "lesson" | "screen-reading";
 export type LauncherMode =
   | "idle"
@@ -98,13 +118,32 @@ export interface CapturePayload {
 export interface PreparedContext {
   captureId: string;
   previewDataUrl: string;
+  /** A coordinate-scaffolded copy used only by the vision model. */
+  analysisDataUrl?: string;
   regions: SelectionRegion[];
   pixelWidth: number;
   pixelHeight: number;
+  /** Exact dimensions returned by Electron for the uncropped capture. */
+  capturePixelWidth: number;
+  capturePixelHeight: number;
   display: DisplayDescriptor;
   cropBounds: { x: number; y: number; width: number; height: number };
   containsAnnotations: boolean;
   scope: "selection" | "display" | "window";
+}
+
+/**
+ * Ephemeral geometry used to project normalized lesson coordinates back onto
+ * the exact desktop pixels the model saw. It is deliberately not persisted.
+ */
+export interface LessonContextGeometry {
+  display: DisplayDescriptor;
+  cropBounds: { x: number; y: number; width: number; height: number };
+  pixelWidth: number;
+  pixelHeight: number;
+  capturePixelWidth: number;
+  capturePixelHeight: number;
+  scope: PreparedContext["scope"];
 }
 
 export interface ProviderCapabilities {
@@ -142,14 +181,17 @@ export interface ProviderModel {
   name: string;
   ownedBy?: string;
   capabilities?: Partial<ProviderCapabilities>;
-  availability?: "provider" | "free" | "deprecating";
+  availability?: "provider" | "catalog" | "deprecating";
 }
 
 export interface AppSettings {
   onboardingComplete: boolean;
   assistantName: string;
+  learnerAge: number | null;
+  learnerGrade: LearnerGrade | null;
   wakeEnabled: boolean;
   provider: ProviderId;
+  qwenBaseUrl: string;
   models: Record<ProviderId, string>;
   textModels: Record<ProviderId, string>;
   teachingStyle: TeachingStyle;
@@ -167,6 +209,8 @@ export interface AppSettings {
   wakeSensitivity: number;
   voiceSilenceMs: number;
   voiceMaxSeconds: number;
+  systemVoice: string;
+  deepgramVoice: string;
   voice: string;
   elevenLabsVoice: string;
   language: string;
@@ -427,6 +471,13 @@ export interface LessonPresentation {
   /** In-memory visual context for the active lesson. AppStore removes this before persistence. */
   contextPreviewDataUrl?: string;
   contextPreviewExpiresAt?: string;
+  /** In-memory desktop projection data. AppStore removes this before persistence. */
+  contextGeometry?: LessonContextGeometry;
+}
+
+export interface SpokenLessonCommandEvent {
+  phrase: string;
+  confidence: number;
 }
 
 export interface ImageAsset {

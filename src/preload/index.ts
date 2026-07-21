@@ -1,11 +1,15 @@
 import { contextBridge, type IpcRendererEvent, ipcRenderer } from "electron";
+import { formatCommandError } from "../shared/errors";
 import { CHANNELS, type IpcResult, type ShowMEApi } from "../shared/ipc";
 
 async function invoke<T>(channel: string, ...args: unknown[]): Promise<T> {
   const result = (await ipcRenderer.invoke(channel, ...args)) as IpcResult<T>;
   if (result.ok) return result.data;
-  const error = new Error(result.error.message);
+  // Electron's context bridge reliably carries Error.message but may omit custom fields.
+  // Include remediation in that message before crossing into the sandboxed renderer.
+  const error = new Error(formatCommandError(result.error));
   Object.assign(error, result.error);
+  error.message = formatCommandError(result.error);
   throw error;
 }
 
@@ -51,6 +55,7 @@ const api: ShowMEApi = {
   voice: {
     transcribe: (input) => invoke(CHANNELS.voiceTranscribe, input),
     synthesize: (text) => invoke(CHANNELS.voiceSynthesize, text),
+    testProvider: (provider) => invoke(CHANNELS.voiceTestProvider, provider),
     activity: (state) => invoke(CHANNELS.voiceActivity, state),
   },
   wake: {
@@ -83,6 +88,7 @@ const api: ShowMEApi = {
     onWakeDetected: (callback) => subscribe(CHANNELS.eventWakeDetected, callback),
     onWakeStatus: (callback) => subscribe(CHANNELS.eventWakeStatus, callback),
     onSettingsChanged: (callback) => subscribe(CHANNELS.eventSettingsChanged, callback),
+    onVoiceCommand: (callback) => subscribe(CHANNELS.eventVoiceCommand, callback),
   },
 };
 

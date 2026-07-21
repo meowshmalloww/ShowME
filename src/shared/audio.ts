@@ -10,6 +10,78 @@ export function calibratedSpeechThreshold(noiseFloor: number): number {
   return Math.max(0.0055, boundedFloor * 1.35);
 }
 
+export type VoiceEndpointDecision =
+  | "continue"
+  | "finish-silence"
+  | "finish-no-speech"
+  | "finish-limit";
+
+/**
+ * Lightweight voice endpointing for the recorded question. It uses a short speech-onset
+ * confirmation, an adaptive room-noise estimate, and a decaying peak envelope so steady fan or
+ * microphone noise cannot keep the recorder open indefinitely.
+ */
+export class VoiceEndpointDetector {
+  private readonly noSpeechMs: number;
+  private startedAt: number | null = null;
+  private lastSpeechAt = 0;
+  private noiseFloor = 0.004;
+  private peakEnvelope = 0;
+  private speechFrames = 0;
+  private heardSpeech = false;
+
+  constructor(
+    private readonly silenceMs: number,
+    private readonly maxDurationMs: number,
+    noSpeechMs = Math.max(4_000, silenceMs * 2),
+  ) {
+    this.noSpeechMs = noSpeechMs;
+  }
+
+  hasHeardSpeech(): boolean {
+    return this.heardSpeech;
+  }
+
+  push(rawLevel: number, nowMs: number): VoiceEndpointDecision {
+    if (this.startedAt === null) this.startedAt = nowMs;
+    const elapsed = nowMs - this.startedAt;
+    const level = Number.isFinite(rawLevel) ? Math.max(0, rawLevel) : 0;
+    this.peakEnvelope = Math.max(level, this.peakEnvelope * 0.985);
+
+    // Learn low, steady energy without treating normal speech as the noise floor. Once speech is
+    // active, the peak-relative ceiling lets the estimate catch up quickly when the user pauses.
+    const learningCeiling = Math.max(0.028, Math.min(0.05, this.peakEnvelope * 0.45));
+    if (level < learningCeiling) {
+      this.noiseFloor = this.noiseFloor * 0.82 + level * 0.18;
+    }
+
+    const startThreshold = Math.max(0.01, this.noiseFloor * 1.8);
+    const continuationThreshold = Math.max(
+      0.009,
+      this.noiseFloor * 1.75,
+      Math.min(0.026, this.peakEnvelope * 0.22),
+    );
+    const speaking = level > (this.heardSpeech ? continuationThreshold : startThreshold);
+
+    if (!this.heardSpeech) {
+      this.speechFrames = speaking ? this.speechFrames + 1 : 0;
+      if (this.speechFrames >= 3) {
+        this.heardSpeech = true;
+        this.lastSpeechAt = nowMs;
+      }
+    } else if (speaking) {
+      this.lastSpeechAt = nowMs;
+    }
+
+    if (elapsed >= this.maxDurationMs) return "finish-limit";
+    if (this.heardSpeech && nowMs - this.lastSpeechAt >= this.silenceMs) {
+      return "finish-silence";
+    }
+    if (!this.heardSpeech && elapsed >= this.noSpeechMs) return "finish-no-speech";
+    return "continue";
+  }
+}
+
 export function frequencySpectrumLevels(bins: Uint8Array, barCount = 12): number[] {
   if (barCount <= 0) return [];
   if (bins.length < 2) return Array.from({ length: barCount }, () => 0.05);
@@ -38,6 +110,23 @@ export function frequencySpectrumLevels(bins: Uint8Array, barCount = 12): number
     const energy = count > 0 ? peak * 0.62 + (total / count) * 0.38 : 0;
     return Math.max(0.05, Math.min(1, (energy / 255) ** 0.72));
   });
+}
+
+export interface SystemVoiceDescriptor {
+  voiceURI: string;
+  name: string;
+  lang: string;
+  localService: boolean;
+}
+
+export function findSystemVoice<T extends SystemVoiceDescriptor>(
+  voices: readonly T[],
+  selectedVoice: string,
+): T | undefined {
+  if (!selectedVoice || selectedVoice === "default") {
+    return voices.find((voice) => /\b(natural|neural|online)\b/i.test(voice.name));
+  }
+  return voices.find((voice) => voice.voiceURI === selectedVoice || voice.name === selectedVoice);
 }
 
 export function downsampleToPcm16(

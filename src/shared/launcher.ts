@@ -1,7 +1,7 @@
 import type { LauncherMode } from "./types";
 
 export function launcherSize(mode: LauncherMode): { width: number; height: number } {
-  if (mode === "idle") return { width: 56, height: 8 };
+  if (mode === "idle") return { width: 72, height: 10 };
   if (mode === "revealed") return { width: 236, height: 40 };
   if (mode === "thinking") return { width: 252, height: 44 };
   if (mode === "transcribing") return { width: 258, height: 44 };

@@ -10,7 +10,7 @@ Run the full local gate with npm run check.
 | Lesson trust | Closed Zod schema, JSON schema export, reference validation, simulation/control binding checks |
 | Coordinates | Logical-to-normalized conversion, physical crop conversion, multi-region padding, arrow snapping |
 | Simulations | Orbit classification, projectile path, event-loop ordering, circuit derivation |
-| Persistence | SQLite settings and explicit-memory round trip |
+| Persistence | SQLite learner profile, settings, voice selection, and explicit-memory round trip |
 | Wake phrase | Synthesized positive phrase, ordinary-speech rejection, browser PCM conversion, utterance segmentation, and level normalization |
 | Rust worker | Physical crop conversion and full-screen fallback |
 | Python worker | Orbit, projectile, and invalid custom-motion checks |
@@ -40,16 +40,18 @@ Before a release, test these on physical Windows and macOS systems.
 
 ### Providers
 
-For each provider: invalid key, expired key, rate limit, nonexistent model, model discovery, connection test, cancellation/network loss, and a valid Quick lesson. Confirm non-vision providers reject screenshot-only requests before submission.
+For each provider: invalid key, expired key, rate limit, nonexistent model, model discovery, model-capability metadata, connection test, cancellation/network loss, provider-specific structured-output fallback, and a valid Quick lesson. Confirm non-vision providers reject screenshot-only requests before submission.
 
-For OpenAI: valid GPT-5.6 Sol Quick lesson, Deep lesson with clickable citations, no-citation downgrade, transcription, OpenAI speech, and local system speech. Also verify Deepgram and ElevenLabs transcription plus ElevenLabs narration with provider test credentials. Verify API keys never appear in logs or UI after save.
+For OpenAI: verify a valid GPT-5.6 Sol Quick lesson, Deep lesson with clickable citations, and no-citation downgrade. Verify local system narration, Deepgram Nova-3/Aura, ElevenLabs Scribe/Flash, and Groq transcription with provider test credentials. Confirm that no audio request uses OpenAI and that API keys never appear in logs or UI after save.
 
 ### Lesson renderer
 
 - Every primitive at extreme valid coordinates and with long safe text.
 - Every deterministic module with control minimum, maximum, and rapid updates.
-- Side, inline, and focus surfaces on small and large work areas.
-- Step navigation, story playback, reduced motion, captions, local narration, cloud narration disclosure, follow-up question, each adaptation, citations, and helpful/not-helpful feedback.
+- Direct whiteboard annotations align with full-display and cropped captures at 100%, 125%, 150%, and 200% display scaling.
+- The whiteboard remains click-through, never steals focus, and closes globally with Escape.
+- Spoken step narration autoplays and reveals matching annotations without playback controls.
+- Step navigation, story playback, reduced motion, captions, every selectable local system voice, cloud narration disclosure, follow-up question, each adaptation, citations, and helpful/not-helpful feedback.
 - Licensed-image aids enabled and disabled, Wikimedia attribution/source opening, no-result state, and offline media-search recovery.
 - Pause and reduced-motion state preserves the current simulation frame instead of jumping back to the beginning.
 - Malformed plans, unknown IDs, bad URLs, invalid bindings, NaN/infinite values, and excessive arrays are rejected instead of partially rendered.
