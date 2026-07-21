@@ -250,14 +250,19 @@ export function registerIpc(dependencies: IpcDependencies): void {
       settings.speechRate,
     );
   });
-  handle(CHANNELS.voiceTestProvider, async (_event, rawProvider) =>
-    providers.testSpeechService(audioProviderIdSchema.parse(rawProvider)),
-  );
+  handle(CHANNELS.voiceTestProvider, async (_event, rawProvider) => {
+    const settings = store.getSettings();
+    return providers.testSpeechService(audioProviderIdSchema.parse(rawProvider), settings);
+  });
   handle(CHANNELS.voiceActivity, async (_event, state: VoiceActivityState) => {
     if (!["idle", "listening", "transcribing", "speaking"].includes(state)) {
       throw new CommandError("INVALID_VOICE_STATE", "Unknown voice activity state.");
     }
     dependencies.onVoiceActivity(state);
+  });
+  handle(CHANNELS.voicePlaybackError, async (_event, rawMessage: unknown) => {
+    const message = String(rawMessage).replace(/\s+/g, " ").trim().slice(0, 400);
+    if (message) windows.broadcastVoicePlaybackError(message);
   });
 
   listen(CHANNELS.wakeAudio, (event, rawBytes: unknown) => {

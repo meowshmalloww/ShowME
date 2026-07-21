@@ -6319,8 +6319,8 @@ body.whiteboard-document #root {
 
 .whiteboard-stroke {
   paint-order: stroke fill;
-  filter: drop-shadow(0 0 3px rgba(31, 188, 255, 0.96))
-    drop-shadow(0 0 10px rgba(24, 143, 255, 0.48));
+  filter: drop-shadow(0 0 3px var(--whiteboard-color, rgba(31, 188, 255, 0.96)))
+    drop-shadow(0 0 9px color-mix(in srgb, var(--whiteboard-color, #65dcff) 46%, transparent));
   opacity: 0.96;
 }
 
@@ -6338,6 +6338,16 @@ body.whiteboard-document #root {
   position: absolute;
   z-index: 3;
   display: block;
+  box-sizing: border-box;
+  padding: 7px 10px 8px;
+  border: 1px solid color-mix(in srgb, var(--whiteboard-accent, #65dcff) 46%, transparent);
+  border-radius: 10px;
+  background: linear-gradient(135deg, rgba(2, 8, 14, 0.88), rgba(4, 17, 27, 0.82));
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.42),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 16px color-mix(in srgb, var(--whiteboard-accent, #65dcff) 18%, transparent);
+  backdrop-filter: blur(10px) saturate(0.86) brightness(0.72);
   color: #f8fdff;
   font-size: clamp(17px, 1.35vw, 27px);
   font-weight: 720;
@@ -6348,8 +6358,37 @@ body.whiteboard-document #root {
   text-shadow:
     0 2px 3px rgba(0, 0, 0, 0.98),
     0 0 5px rgba(0, 0, 0, 0.95),
-    0 0 13px rgba(20, 178, 255, 0.84);
+    0 0 12px color-mix(in srgb, var(--whiteboard-accent, #65dcff) 65%, transparent);
   transform: translateY(-50%);
+}
+
+.whiteboard-text.surface-halo {
+  width: max-content !important;
+  max-width: min(360px, calc(100vw - 24px));
+  padding: 2px 4px 3px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-text-stroke: 0.65px rgba(0, 0, 0, 0.96);
+  text-shadow:
+    0 1px 2px #000,
+    0 0 4px #000,
+    0 0 10px var(--whiteboard-accent, #65dcff);
+}
+
+.whiteboard-text.surface-soft {
+  padding: 5px 8px 6px;
+  border-color: color-mix(in srgb, var(--whiteboard-accent, #65dcff) 36%, transparent);
+  background: rgba(3, 10, 16, 0.68);
+  box-shadow:
+    0 5px 18px rgba(0, 0, 0, 0.34),
+    0 0 12px color-mix(in srgb, var(--whiteboard-accent, #65dcff) 12%, transparent);
+  backdrop-filter: blur(7px) saturate(0.82) brightness(0.74);
+}
+
+.whiteboard-text.surface-plate {
+  border-color: color-mix(in srgb, var(--whiteboard-accent, #65dcff) 58%, transparent);
 }
 
 .whiteboard-text.current {
@@ -6357,6 +6396,8 @@ body.whiteboard-document #root {
 }
 
 .whiteboard-equation {
+  border-color: color-mix(in srgb, var(--whiteboard-accent, #b79cff) 62%, transparent);
+  background: linear-gradient(135deg, rgba(1, 6, 11, 0.94), rgba(3, 15, 24, 0.88));
   color: #ffffff;
   font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
   font-size: clamp(20px, 1.7vw, 34px);
@@ -6365,22 +6406,59 @@ body.whiteboard-document #root {
 }
 
 .whiteboard-callout {
-  width: max-content !important;
   max-width: min(420px, 38vw);
   padding: 9px 13px 10px;
-  border: 1px solid rgba(104, 222, 255, 0.7);
+  border: 1px solid color-mix(in srgb, var(--whiteboard-accent, #65dcff) 72%, transparent);
   border-radius: 12px;
-  background: rgba(3, 10, 15, 0.82);
+  background: linear-gradient(135deg, rgba(2, 9, 15, 0.96), rgba(4, 20, 30, 0.91));
   box-shadow:
     0 10px 30px rgba(0, 0, 0, 0.38),
-    0 0 18px rgba(28, 173, 255, 0.25);
-  backdrop-filter: blur(6px);
+    0 0 18px color-mix(in srgb, var(--whiteboard-accent, #65dcff) 26%, transparent);
+  backdrop-filter: blur(12px) saturate(0.9) brightness(0.68);
   font-size: clamp(15px, 1.05vw, 21px);
 }
 
+.teaching-cursor {
+  position: absolute;
+  z-index: 8;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+  animation: teaching-cursor-arrive 660ms cubic-bezier(0.2, 0.86, 0.28, 1.12) both;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.9));
+}
+
+.teaching-cursor-pointer {
+  position: absolute;
+  left: -2px;
+  top: -3px;
+  width: 22px;
+  height: 29px;
+  clip-path: polygon(0 0, 82% 68%, 52% 71%, 67% 100%, 51% 100%, 37% 73%, 16% 92%);
+  background: linear-gradient(145deg, #ffffff 0%, #f4fbff 55%, #86e6ff 100%);
+  box-shadow: inset 0 0 0 1px rgba(0, 20, 30, 0.74);
+  transform: rotate(-7deg);
+  transform-origin: 2px 2px;
+}
+
+.teaching-cursor-ring {
+  position: absolute;
+  left: -9px;
+  top: -9px;
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgba(101, 220, 255, 0.92);
+  border-radius: 50%;
+  background: rgba(101, 220, 255, 0.12);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.72),
+    0 0 12px rgba(101, 220, 255, 0.86);
+  animation: teaching-cursor-pulse 1.35s ease-in-out 620ms infinite;
+}
+
 .whiteboard-simulation {
-  width: min(520px, 39vw);
-  min-width: 330px;
+  width: min(520px, 39vw, calc(100vw - 24px));
+  min-width: min(330px, calc(100vw - 24px));
   position: absolute;
   z-index: 2;
   top: 17%;
@@ -6496,6 +6574,33 @@ body.whiteboard-document #root {
   }
 }
 
+@keyframes teaching-cursor-arrive {
+  from {
+    opacity: 0;
+    transform: translate(var(--cursor-from-x, -72px), var(--cursor-from-y, 48px)) scale(0.82);
+  }
+  72% {
+    opacity: 1;
+    transform: translate(-4px, -3px) scale(1.04);
+  }
+  to {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+}
+
+@keyframes teaching-cursor-pulse {
+  0%,
+  100% {
+    opacity: 0.54;
+    transform: scale(0.78);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.18);
+  }
+}
+
 .whiteboard-simulation,
 .whiteboard-media {
   transform: none;
@@ -6511,7 +6616,9 @@ body.whiteboard-document #root {
 .whiteboard-overlay.reduced-motion *,
 .reduced-motion .whiteboard-stroke.current,
 .reduced-motion .whiteboard-text.current,
-.reduced-motion .whiteboard-spotlight.current {
+.reduced-motion .whiteboard-spotlight.current,
+.teaching-cursor.reduced-motion,
+.teaching-cursor.reduced-motion .teaching-cursor-ring {
   animation: none !important;
 }
 

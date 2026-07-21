@@ -1,12 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   compatibleOutputMode,
+  createGroundedFallbackPlan,
   extractCompatibleResponse,
   extractCompatibleText,
+  extractGeminiResponse,
   extractOpenAiResponse,
   normalizeModelLessonDraft,
+  openAiReasoningEffort,
   ProviderService,
+  requestedSimulationKind,
+  simulationRequestHint,
   supportsNvidiaThinkingMode,
+  supportsQwenHybridThinking,
   supportsReasoningControl,
 } from "../src/main/providers";
 import type { SecretStore } from "../src/main/secrets";
@@ -77,6 +83,24 @@ describe("provider capability overrides", () => {
     const cerebras = providerSummaries(settings, {}).find((item) => item.id === "cerebras");
     expect(cerebras?.defaultCapabilities.vision).toBe(false);
     expect(cerebras?.capabilities.vision).toBe(true);
+  });
+
+  it("recognizes the current Groq and Cerebras screenshot models", () => {
+    const groq = mergeProviderModels("groq", [
+      { id: "qwen/qwen3.6-27b", name: "Qwen 3.6 27B" },
+      { id: "openai/gpt-oss-120b", name: "GPT OSS 120B" },
+    ]);
+    const cerebras = mergeProviderModels("cerebras", [
+      { id: "gemma-4-31b", name: "Gemma 4 31B" },
+      { id: "gpt-oss-120b", name: "GPT OSS 120B" },
+    ]);
+
+    expect(groq.find((model) => model.id === "qwen/qwen3.6-27b")?.capabilities?.vision).toBe(true);
+    expect(groq.find((model) => model.id === "openai/gpt-oss-120b")?.capabilities?.vision).toBe(
+      false,
+    );
+    expect(cerebras.find((model) => model.id === "gemma-4-31b")?.capabilities?.vision).toBe(true);
+    expect(cerebras.find((model) => model.id === "gpt-oss-120b")?.capabilities?.vision).toBe(false);
   });
 });
 
@@ -149,12 +173,210 @@ describe("provider response contracts", () => {
     ).toMatchObject({ text: "partial", finishReason: "length" });
   });
 
+  it("extracts Gemini candidate text without exposing thought parts", () => {
+    expect(
+      extractGeminiResponse({
+        candidates: [
+          {
+            finishReason: "STOP",
+            content: {
+              parts: [{ thought: true, text: "private reasoning" }, { text: '{"version":1}' }],
+            },
+          },
+        ],
+      }),
+    ).toMatchObject({ text: '{"version":1}', finishReason: "STOP", citations: [] });
+  });
+
   it("only sends reasoning controls to matching model families", () => {
     expect(supportsReasoningControl("gpt-5.6-sol")).toBe(true);
     expect(supportsReasoningControl("o3-mini")).toBe(true);
     expect(supportsReasoningControl("gpt-4.1-mini")).toBe(false);
+    expect(openAiReasoningEffort("gpt-5.4-mini", false)).toBe("none");
+    expect(openAiReasoningEffort("gpt-5.6-sol", false)).toBe("minimal");
+    expect(openAiReasoningEffort("gpt-5.4-mini", true)).toBe("high");
     expect(supportsNvidiaThinkingMode("nvidia/nemotron-nano-12b-v2-vl")).toBe(true);
     expect(supportsNvidiaThinkingMode("meta/llama-4-maverick-17b-128e-instruct")).toBe(false);
+    expect(supportsQwenHybridThinking("qwen3.7-plus")).toBe(true);
+    expect(supportsQwenHybridThinking("qwen3.7-max-preview")).toBe(false);
+  });
+
+  it("requires a trusted simulation when the learner explicitly asks for one", () => {
+    expect(
+      requestedSimulationKind(
+        "Animate the Promise microtask and setTimeout with an interactive event loop simulation.",
+      ),
+    ).toBe("event-loop");
+    expect(
+      simulationRequestHint(
+        "Show an interactive projectile simulation with launch angle controls.",
+      ),
+    ).toContain('simulation={"kind":"projectile"');
+    expect(requestedSimulationKind("Draw an arrow along this trajectory.")).toBeUndefined();
+  });
+
+  it("returns an honest grounded lesson after two truncated OpenAI responses", async () => {
+    const truncated = {
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output: [
+        {
+          type: "message",
+          content: [{ type: "output_text", text: '{"version":1,"title":"Partial"' }],
+        },
+      ],
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(truncated), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(truncated), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new ProviderService({ get: () => "sk-test" } as unknown as SecretStore);
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    settings.models.openai = "gpt-5.4-mini";
+    settings.textModels.openai = "gpt-5.4-mini";
+    const request = {
+      captureId: "capture-truncated",
+      question: "Show me this selected relationship.",
+      includeNearbyContext: false,
+      includeActiveWindow: false,
+      researchMode: "quick" as const,
+      allowWebResearch: false,
+      allowImageAids: false,
+      language: "en",
+      teachingStyle: "visual-fast" as const,
+      complexity: "standard" as const,
+      provider: "openai" as const,
+      model: "gpt-5.4-mini",
+    };
+    const context = {
+      captureId: "capture-truncated",
+      previewDataUrl: "data:image/png;base64,AA==",
+      regions: [],
+      pixelWidth: 800,
+      pixelHeight: 600,
+      capturePixelWidth: 800,
+      capturePixelHeight: 600,
+      display: {
+        id: 1,
+        label: "Test display",
+        bounds: { x: 0, y: 0, width: 800, height: 600 },
+        workArea: { x: 0, y: 0, width: 800, height: 560 },
+        size: { width: 800, height: 600 },
+        scaleFactor: 1,
+      },
+      cropBounds: { x: 0, y: 0, width: 800, height: 600 },
+      containsAnnotations: false,
+      scope: "display" as const,
+    };
+
+    const plan = await service.generate({
+      request,
+      context,
+      settings,
+      memoryContext: "",
+      signal: new AbortController().signal,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(plan.title).toContain("Keep the selected idea in view");
+    expect(plan.uncertainty).toContain("max_output_tokens");
+    expect(plan.primitives.map((primitive) => primitive.kind)).toEqual([
+      "highlight",
+      "arrow",
+      "callout",
+    ]);
+    const firstRequest = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(firstRequest).toMatchObject({
+      max_output_tokens: 24_000,
+      reasoning: { effort: "none" },
+      text: { verbosity: "low" },
+    });
+  });
+
+  it("builds a validated local fallback that keeps requested simulations usable", () => {
+    const plan = createGroundedFallbackPlan(
+      {
+        captureId: "capture-fallback",
+        question: "Show an interactive projectile simulation.",
+        includeNearbyContext: false,
+        includeActiveWindow: false,
+        researchMode: "quick",
+        allowWebResearch: false,
+        allowImageAids: false,
+        language: "en",
+        teachingStyle: "visual-fast",
+        complexity: "standard",
+        provider: "openai",
+        model: "gpt-5.4-mini",
+      },
+      {
+        captureId: "capture-fallback",
+        previewDataUrl: "data:image/png;base64,AA==",
+        regions: [],
+        pixelWidth: 800,
+        pixelHeight: 600,
+        capturePixelWidth: 800,
+        capturePixelHeight: 600,
+        display: {
+          id: 1,
+          label: "Test display",
+          bounds: { x: 0, y: 0, width: 800, height: 600 },
+          workArea: { x: 0, y: 0, width: 800, height: 560 },
+          size: { width: 800, height: 600 },
+          scaleFactor: 1,
+        },
+        cropBounds: { x: 0, y: 0, width: 800, height: 600 },
+        containsAnnotations: false,
+        scope: "display",
+      },
+    );
+
+    expect(plan.simulation?.kind).toBe("projectile");
+    expect(validateLessonPlan(plan).steps).toHaveLength(2);
+  });
+
+  it("disables hybrid Qwen thinking for a fast connection check", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ choices: [{ message: { content: "connected" } }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new ProviderService({
+      get: () => "qwen-test-key",
+    } as unknown as SecretStore);
+
+    await expect(service.test("alibaba", "qwen3.7-plus", DEFAULT_SETTINGS)).resolves.toContain(
+      "Connected to Qwen Cloud",
+    );
+    const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<
+      string,
+      unknown
+    >;
+    expect(request).toMatchObject({ model: "qwen3.7-plus", enable_thinking: false, stream: false });
+    expect(request).toMatchObject({
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text" },
+            { type: "image_url", image_url: { url: expect.stringMatching(/^data:image\/png/) } },
+          ],
+        },
+      ],
+    });
   });
 
   it("removes untrusted model keys and dangling visual references before validation", () => {
@@ -237,7 +459,13 @@ describe("provider response contracts", () => {
     });
     expect(plan.title).toHaveLength(120);
     expect(plan.primitives).toHaveLength(2);
-    expect(plan.primitives[0]).toMatchObject({ id: "focus", kind: "rect", x: 0, y: 1000 });
+    expect(plan.primitives[0]).toMatchObject({
+      id: "focus",
+      kind: "rect",
+      x: 0,
+      y: 999,
+      height: 1,
+    });
     expect(plan.primitives[1]?.id).not.toBe("focus");
     expect(plan.steps[0]).toMatchObject({ durationMs: 30_000, primitiveIds: ["focus"] });
     expect(
@@ -505,8 +733,8 @@ describe("provider response contracts", () => {
     const cases = [
       {
         provider: "groq",
-        model: "meta-llama/llama-4-scout-17b-16e-instruct",
-        expectedType: "json_schema",
+        model: "qwen/qwen3.6-27b",
+        expectedType: "json_object",
         copiedText: undefined,
       },
       {
@@ -517,20 +745,36 @@ describe("provider response contracts", () => {
       },
       {
         provider: "cerebras",
-        model: "gpt-oss-120b",
+        model: "gemma-4-31b",
         expectedType: "json_object",
-        copiedText: "A visible group of related controls.",
+        copiedText: undefined,
       },
     ] as const;
 
     for (const testCase of cases) {
+      const lessonJson = JSON.stringify(compatiblePlan);
+      const split = Math.floor(lessonJson.length / 2);
+      const qwenStream = [
+        { choices: [{ delta: { reasoning_content: "locating the selected objects" } }] },
+        { choices: [{ delta: { content: lessonJson.slice(0, split) } }] },
+        {
+          choices: [{ finish_reason: "stop", delta: { content: lessonJson.slice(split) } }],
+        },
+      ]
+        .map((item) => `data: ${JSON.stringify(item)}\n\n`)
+        .join("");
       const fetchMock = vi.fn().mockResolvedValue(
-        new Response(
-          JSON.stringify({
-            choices: [{ message: { content: JSON.stringify(compatiblePlan) } }],
-          }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        ),
+        testCase.provider === "alibaba"
+          ? new Response(qwenStream + "data: [DONE]\n\n", {
+              status: 200,
+              headers: { "Content-Type": "text/event-stream" },
+            })
+          : new Response(
+              JSON.stringify({
+                choices: [{ message: { content: lessonJson } }],
+              }),
+              { status: 200, headers: { "Content-Type": "application/json" } },
+            ),
       );
       vi.stubGlobal("fetch", fetchMock);
       const service = new ProviderService({
@@ -582,11 +826,15 @@ describe("provider response contracts", () => {
 
       const request = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)) as Record<string, any>;
       expect(request.response_format.type).toBe(testCase.expectedType);
-      if (testCase.provider === "groq") {
-        expect(request.response_format.json_schema.strict).toBe(false);
-      }
+      if (testCase.provider === "groq")
+        expect(request.response_format).toEqual({ type: "json_object" });
       if (testCase.provider === "alibaba") {
-        expect(request).not.toHaveProperty("max_tokens");
+        expect(request).toMatchObject({
+          stream: true,
+          stream_options: { include_usage: true },
+          max_tokens: 8_192,
+          enable_thinking: false,
+        });
       }
       if (testCase.provider === "cerebras") {
         expect(request.max_completion_tokens).toBe(16_000);
@@ -652,6 +900,171 @@ describe("provider model catalogs", () => {
       tools: true,
     });
   });
+
+  it("loads every Gemini model page with Google authentication and keeps lesson-capable models", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            models: [
+              {
+                name: "models/gemini-3.5-flash",
+                displayName: "Gemini 3.5 Flash",
+                supportedGenerationMethods: ["generateContent"],
+              },
+              {
+                name: "models/gemini-3.1-flash-tts-preview",
+                displayName: "Gemini TTS",
+                supportedGenerationMethods: ["generateContent"],
+              },
+              {
+                name: "models/gemini-embedding-001",
+                supportedGenerationMethods: ["embedContent"],
+              },
+            ],
+            nextPageToken: "page-2",
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            models: [
+              {
+                name: "models/gemini-2.5-flash",
+                displayName: "Gemini 2.5 Flash",
+                supportedGenerationMethods: ["generateContent"],
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new ProviderService({
+      get: () => "AIza-test-google-key",
+    } as unknown as SecretStore);
+
+    const models = await service.listModels("google");
+
+    expect(models.map((model) => model.id)).toEqual(["gemini-2.5-flash", "gemini-3.5-flash"]);
+    expect(models.every((model) => model.capabilities?.vision)).toBe(true);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("pageToken=page-2");
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+      "x-goog-api-key": "AIza-test-google-key",
+    });
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).not.toHaveProperty("Authorization");
+  });
+
+  it("falls back from a complex Gemini schema rejection and still streams the vision lesson", async () => {
+    const json = JSON.stringify(compatiblePlan);
+    const split = Math.floor(json.length / 2);
+    const stream = [
+      {
+        candidates: [{ content: { parts: [{ text: json.slice(0, split) }] } }],
+      },
+      {
+        candidates: [
+          {
+            finishReason: "STOP",
+            content: { parts: [{ text: json.slice(split) }] },
+          },
+        ],
+      },
+    ]
+      .map((item) => `data: ${JSON.stringify(item)}\n\n`)
+      .join("");
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: "Response schema is too complex" } }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const progress: string[] = [];
+    const service = new ProviderService({
+      get: () => "AIza-test-google-key",
+    } as unknown as SecretStore);
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    settings.provider = "google";
+
+    const plan = await service.generate({
+      request: {
+        captureId: "capture-gemini",
+        question: "Show me the visible relationship.",
+        includeNearbyContext: false,
+        includeActiveWindow: false,
+        researchMode: "quick",
+        allowWebResearch: false,
+        allowImageAids: false,
+        language: "en",
+        teachingStyle: "visual-fast",
+        complexity: "standard",
+        provider: "google",
+        model: "gemini-3.5-flash",
+      },
+      context: {
+        captureId: "capture-gemini",
+        previewDataUrl: "data:image/png;base64,AA==",
+        analysisDataUrl: "data:image/png;base64,AA==",
+        regions: [],
+        pixelWidth: 800,
+        pixelHeight: 600,
+        capturePixelWidth: 800,
+        capturePixelHeight: 600,
+        display: {
+          id: 1,
+          label: "Test display",
+          bounds: { x: 0, y: 0, width: 800, height: 600 },
+          workArea: { x: 0, y: 0, width: 800, height: 560 },
+          size: { width: 800, height: 600 },
+          scaleFactor: 1,
+        },
+        cropBounds: { x: 0, y: 0, width: 800, height: 600 },
+        containsAnnotations: false,
+        scope: "display",
+      },
+      settings,
+      memoryContext: "",
+      signal: new AbortController().signal,
+      progress: (message) => progress.push(message),
+    });
+
+    expect(plan.provider).toEqual({ id: "google", model: "gemini-3.5-flash" });
+    const [firstUrl, firstInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [secondUrl, secondInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(firstUrl).toContain("gemini-3.5-flash:streamGenerateContent?alt=sse");
+    expect(secondUrl).toBe(firstUrl);
+    expect(firstInit.headers).toMatchObject({ "x-goog-api-key": "AIza-test-google-key" });
+    const structuredRequest = JSON.parse(String(firstInit.body)) as Record<string, any>;
+    expect(structuredRequest.generationConfig).toMatchObject({
+      responseMimeType: "application/json",
+      maxOutputTokens: 12_000,
+      thinkingConfig: { thinkingLevel: "LOW" },
+    });
+    expect(structuredRequest.generationConfig.responseJsonSchema).toMatchObject({ type: "object" });
+    expect(structuredRequest.contents[0].parts).toEqual(
+      expect.arrayContaining([{ inlineData: { mimeType: "image/png", data: "AA==" } }]),
+    );
+    const fallbackRequest = JSON.parse(String(secondInit.body)) as Record<string, any>;
+    expect(fallbackRequest.generationConfig.responseJsonSchema).toBeUndefined();
+    expect(fallbackRequest.generationConfig.responseMimeType).toBe("application/json");
+    expect(fallbackRequest.systemInstruction.parts[0].text).toContain(
+      "This endpoint cannot enforce a JSON response schema",
+    );
+    expect(progress).toContain("Gemini is simplifying the lesson format and continuing");
+    expect(progress).toContain("Gemini is drawing the visual lesson");
+  });
 });
 
 describe("speech provider routes", () => {
@@ -707,7 +1120,7 @@ describe("speech provider routes", () => {
 
   it("uses ElevenLabs Flash for narrated lesson audio", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(new Uint8Array([4, 5, 6]), {
+      new Response(new Uint8Array(128).fill(4), {
         status: 200,
         headers: { "Content-Type": "audio/mpeg" },
       }),
@@ -735,7 +1148,7 @@ describe("speech provider routes", () => {
 
   it("uses Deepgram Aura narration without any OpenAI audio route", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
-      new Response(new Uint8Array([7, 8, 9]), {
+      new Response(new Uint8Array(128).fill(7), {
         status: 200,
         headers: { "Content-Type": "audio/mpeg" },
       }),
@@ -757,9 +1170,11 @@ describe("speech provider routes", () => {
     expect(url.origin + url.pathname).toBe("https://api.deepgram.com/v1/speak");
     expect(url.searchParams.get("model")).toBe("aura-2-orion-en");
     expect(url.searchParams.get("speed")).toBe("1.5");
+    expect(url.searchParams.get("encoding")).toBe("mp3");
     expect(init.headers).toMatchObject({
       Authorization: "Token deepgram-test-key",
       "Content-Type": "application/json",
+      Accept: "audio/mpeg",
     });
     expect(JSON.parse(String(init.body))).toEqual({
       text: "Now compare the two highlighted angles.",
@@ -785,6 +1200,56 @@ describe("speech provider routes", () => {
     );
   });
 
+  it("rejects a successful speech response that is not playable audio", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify({ message: "queued" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      ),
+    );
+    const service = new ProviderService({
+      get: () => "deepgram-test-key",
+    } as unknown as SecretStore);
+
+    await expect(
+      service.synthesize(
+        "deepgram",
+        "Explain the visible equation.",
+        "aura-2-orion-en",
+        "unused",
+        1,
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_SPEECH_AUDIO" });
+  });
+
+  it("rejects truncated narration audio before it reaches the player", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(new Uint8Array([1, 2, 3]), {
+          status: 200,
+          headers: { "Content-Type": "audio/mpeg" },
+        }),
+      ),
+    );
+    const service = new ProviderService({
+      get: () => "elevenlabs-test-key",
+    } as unknown as SecretStore);
+
+    await expect(
+      service.synthesize(
+        "elevenlabs",
+        "Explain the visible equation.",
+        "unused",
+        "JBFqnCBsd6RMkjVDRZzb",
+        1,
+      ),
+    ).rejects.toMatchObject({ code: "EMPTY_SPEECH_AUDIO" });
+  });
+
   it("validates ElevenLabs without generating billable narration", async () => {
     const fetchMock = vi.fn().mockResolvedValue(
       new Response(JSON.stringify([{ model_id: "scribe_v2" }, { model_id: "eleven_flash_v2_5" }]), {
@@ -803,6 +1268,37 @@ describe("speech provider routes", () => {
     expect(fetchMock).toHaveBeenCalledWith(
       "https://api.elevenlabs.io/v1/models",
       expect.objectContaining({ headers: { "xi-api-key": "elevenlabs-test-key" } }),
+    );
+  });
+
+  it("verifies the selected ElevenLabs voice as well as the TTS model", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            { model_id: "scribe_v2" },
+            { model_id: "eleven_flash_v2_5", can_do_text_to_speech: true },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ voice_id: DEFAULT_SETTINGS.elevenLabsVoice }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new ProviderService({
+      get: () => "elevenlabs-test-key",
+    } as unknown as SecretStore);
+
+    await expect(service.testSpeechService("elevenlabs", DEFAULT_SETTINGS)).resolves.toContain(
+      "ElevenLabs key verified",
+    );
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(
+      "https://api.elevenlabs.io/v1/voices/" + DEFAULT_SETTINGS.elevenLabsVoice,
     );
   });
 });

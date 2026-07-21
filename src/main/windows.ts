@@ -358,6 +358,11 @@ export class WindowManager {
     });
   }
 
+  broadcastVoicePlaybackError(message: string): void {
+    const launcher = this.getLauncher();
+    if (launcher) launcher.webContents.send(CHANNELS.eventVoicePlaybackError, message);
+  }
+
   windowAction(sender: Electron.WebContents, action: "minimize" | "maximize" | "close"): void {
     const window = BrowserWindow.fromWebContents(sender);
     if (!window) return;

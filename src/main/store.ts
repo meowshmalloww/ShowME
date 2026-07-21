@@ -82,6 +82,12 @@ export class AppStore {
       delete saved.accent;
       const models = { ...DEFAULT_SETTINGS.models, ...saved.models };
       const textModels = { ...DEFAULT_SETTINGS.textModels, ...saved.textModels };
+      if (models.groq === "meta-llama/llama-4-scout-17b-16e-instruct") {
+        models.groq = DEFAULT_SETTINGS.models.groq;
+      }
+      if (textModels.groq === "meta-llama/llama-4-scout-17b-16e-instruct") {
+        textModels.groq = DEFAULT_SETTINGS.textModels.groq;
+      }
       if (
         models.nvidia === "meta/llama-4-maverick-17b-128e-instruct" ||
         models.nvidia === "qwen/qwen3.5-122b-a10b" ||

@@ -21,8 +21,10 @@
     "electron.vite.config.ts",
     "src/main/**/*.ts",
     "src/preload/**/*.ts",
+    "src/renderer/src/audio.ts",
     "src/renderer/src/components/LessonCanvas.tsx",
     "src/renderer/src/components/WhiteboardCanvas.tsx",
+    "src/renderer/src/speech-playback.ts",
     "src/shared/**/*.ts",
     "tests/**/*.ts"
   ]

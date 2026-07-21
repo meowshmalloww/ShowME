@@ -1,5 +1,6 @@
 export const PROVIDER_IDS = [
   "openai",
+  "google",
   "alibaba",
   "nvidia",
   "groq",
@@ -181,7 +182,7 @@ export interface ProviderModel {
   name: string;
   ownedBy?: string;
   capabilities?: Partial<ProviderCapabilities>;
-  availability?: "provider" | "catalog" | "deprecating";
+  availability?: "provider" | "catalog" | "deprecating" | "unavailable";
 }
 
 export interface AppSettings {

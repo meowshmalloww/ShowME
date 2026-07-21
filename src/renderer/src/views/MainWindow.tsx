@@ -33,6 +33,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { credentialPlaceholder } from "../../../shared/credential-display";
 import {
   DEEPGRAM_VOICES,
   ELEVENLABS_VOICES,
@@ -481,14 +482,14 @@ function Onboarding({
           <div className="secret-input">
             <KeyRound size={15} />
             <input
+              aria-label={`${selectedProvider?.name ?? "Provider"} API key${configured ? ", saved securely" : ""}`}
               id="first-key-redesign"
               type="password"
-              autoComplete="off"
+              autoComplete="new-password"
+              spellCheck={false}
               value={key}
               onChange={(event) => setKey(event.target.value)}
-              placeholder={
-                configured ? "Connected — enter a new key to replace it" : "Paste API key"
-              }
+              placeholder={credentialPlaceholder(configured)}
             />
           </div>
           <div className="setup-note">
@@ -1166,18 +1167,25 @@ function ModelsSettings({
             </button>
           </label>
         ) : null}
+        {selected === "google" ? (
+          <button
+            className="link-button"
+            onClick={() => window.showme.app.openExternal("https://aistudio.google.com/app/apikey")}
+            type="button"
+          >
+            Get a Google AI Studio key <ExternalLink size={13} />
+          </button>
+        ) : null}
         <label>
           <span>API key</span>
           <div className="secret-input">
             <KeyRound size={16} />
             <input
+              aria-label={`${provider.name} API key${provider.configured ? ", saved securely" : ""}`}
               type="password"
-              autoComplete="off"
-              placeholder={
-                provider.configured
-                  ? "Encrypted key saved — paste to replace"
-                  : "Paste provider key"
-              }
+              autoComplete="new-password"
+              spellCheck={false}
+              placeholder={credentialPlaceholder(provider.configured, "Paste provider key")}
               value={key}
               onChange={(event) => setKey(event.target.value)}
             />
@@ -1808,8 +1816,10 @@ function VoiceSettings({
                 <div className="secret-input compact">
                   <KeyRound size={15} />
                   <input
-                    autoComplete="off"
-                    placeholder={service.configured ? "Encrypted key saved" : "Paste API key"}
+                    aria-label={`${service.name} API key${service.configured ? ", saved securely" : ""}`}
+                    autoComplete="new-password"
+                    spellCheck={false}
+                    placeholder={credentialPlaceholder(service.configured)}
                     type="password"
                     value={serviceKeys[service.id] ?? ""}
                     onChange={(event) =>
@@ -2485,7 +2495,7 @@ function humanCapability(value: string): string {
 
 function withSavedModel(models: ProviderModel[], savedId: string): ProviderModel[] {
   if (!savedId || models.some((model) => model.id === savedId)) return models;
-  return [{ id: savedId, name: savedId, availability: "provider" }, ...models];
+  return [{ id: savedId, name: savedId, availability: "unavailable" }, ...models];
 }
 
 function modelOptionLabel(model: ProviderModel, visionSelector: boolean): string {
@@ -2493,6 +2503,7 @@ function modelOptionLabel(model: ProviderModel, visionSelector: boolean): string
     visionSelector && model.capabilities?.vision ? "Vision" : "",
     model.availability === "catalog" ? "Access varies" : "",
     model.availability === "deprecating" ? "Deprecating" : "",
+    model.availability === "unavailable" ? "Not in current catalog" : "",
   ].filter(Boolean);
   return model.name + (badges.length ? " - " + badges.join(" / ") : "");
 }

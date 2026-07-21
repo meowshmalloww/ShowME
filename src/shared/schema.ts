@@ -53,6 +53,7 @@ export const selectionRegionSchema = z
 
 const providerModelsSchema = z.object({
   openai: z.string().min(1).max(240),
+  google: z.string().min(1).max(240),
   alibaba: z.string().min(1).max(240),
   nvidia: z.string().min(1).max(240),
   groq: z.string().min(1).max(240),
@@ -63,6 +64,7 @@ const providerModelsSchema = z.object({
 const capabilityOverridesSchema = z
   .object({
     openai: providerCapabilitiesSchema.partial().optional(),
+    google: providerCapabilitiesSchema.partial().optional(),
     alibaba: providerCapabilitiesSchema.partial().optional(),
     nvidia: providerCapabilitiesSchema.partial().optional(),
     groq: providerCapabilitiesSchema.partial().optional(),
@@ -191,6 +193,8 @@ export const primitiveSchema = z
     if (["rect", "highlight"].includes(primitive.kind)) {
       if (primitive.width === undefined || primitive.height === undefined) {
         visualIssue(`${primitive.kind} ${primitive.id} requires width and height`);
+      } else if (primitive.x + primitive.width > 1000 || primitive.y + primitive.height > 1000) {
+        visualIssue(`${primitive.kind} ${primitive.id} must stay inside the 0-1000 source canvas`);
       }
     }
     if (["line", "arrow", "curved-arrow", "vector", "axis"].includes(primitive.kind)) {
@@ -487,7 +491,7 @@ export const lessonPlanSchema = z
     const spatialStepCount = plan.steps.filter((step) =>
       step.primitiveIds.some((primitiveId) => spatialIds.has(primitiveId)),
     ).length;
-    const requiredSpatialSteps = Math.min(3, plan.steps.length);
+    const requiredSpatialSteps = plan.simulation ? 0 : Math.min(3, plan.steps.length);
     if (spatialStepCount < requiredSpatialSteps) {
       context.addIssue({
         code: "custom",
@@ -497,7 +501,7 @@ export const lessonPlanSchema = z
           " lesson step(s) must introduce a renderable shape, focus mark, or connector",
       });
     }
-    if (plan.steps.length >= 2) {
+    if (plan.steps.length >= 2 && !plan.simulation) {
       if (!spatialPrimitives.some((primitive) => focusPrimitiveKinds.has(primitive.kind))) {
         context.addIssue({
           code: "custom",
@@ -622,6 +626,96 @@ export function lessonJsonSchema(): Record<string, unknown> {
   delete schema.$schema;
   strictifyJsonSchema(schema);
   return schema;
+}
+
+/**
+ * The persisted plan accepts richer lessons, while the model-facing contract is deliberately
+ * bounded. Smaller array limits keep strict structured output from spending most of its token
+ * budget emitting optional/null fields and sharply reduce truncated Responses API payloads.
+ */
+export function lessonGenerationJsonSchema(
+  mode: "standard" | "repair" = "standard",
+): Record<string, unknown> {
+  const schema = lessonJsonSchema();
+  const limits =
+    mode === "repair"
+      ? { primitives: 8, steps: 3, controls: 4, claims: 6, citations: 6, followUps: 3 }
+      : { primitives: 14, steps: 6, controls: 6, claims: 10, citations: 8, followUps: 4 };
+  applyGenerationArrayLimits(schema, limits);
+  stripGenerationNumericConstraints(schema);
+  return schema;
+}
+
+function stripGenerationNumericConstraints(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const item of value) stripGenerationNumericConstraints(item);
+    return;
+  }
+  if (typeof value !== "object" || value === null) return;
+  const object = value as Record<string, unknown>;
+  // OpenAI Structured Outputs supports number/integer types but rejects very large numeric
+  // bounds (for example the physically valid 1e20 cap on gravitational parameters). The same
+  // Zod schema is always enforced locally after generation, so removing only provider-facing
+  // range keywords does not weaken ShowME's trust boundary.
+  delete object.minimum;
+  delete object.maximum;
+  delete object.exclusiveMinimum;
+  delete object.exclusiveMaximum;
+  delete object.multipleOf;
+  // Zod emits discriminated unions (the simulation variants) as `oneOf`. OpenAI
+  // Structured Outputs accepts the equivalent `anyOf` form but rejects `oneOf`
+  // anywhere in the response schema. The variants are already disjoint because
+  // every object has a required literal `kind`, so this conversion preserves the
+  // contract while keeping the richer simulation vocabulary available.
+  if (Array.isArray(object.oneOf)) {
+    object.anyOf = object.oneOf;
+    delete object.oneOf;
+  }
+  const allOf = Array.isArray(object.allOf) ? object.allOf : undefined;
+  if (allOf?.length === 1 && typeof allOf[0] === "object" && allOf[0] !== null) {
+    delete object.allOf;
+    Object.assign(object, allOf[0]);
+  }
+  for (const child of Object.values(object)) stripGenerationNumericConstraints(child);
+}
+
+function applyGenerationArrayLimits(
+  schema: Record<string, unknown>,
+  limits: Record<"primitives" | "steps" | "controls" | "claims" | "citations" | "followUps", number>,
+): void {
+  const properties =
+    typeof schema.properties === "object" && schema.properties !== null
+      ? (schema.properties as Record<string, unknown>)
+      : undefined;
+  if (!properties) return;
+  for (const [name, limit] of Object.entries(limits)) {
+    const property = properties[name];
+    if (typeof property !== "object" || property === null) continue;
+    const propertySchema = property as Record<string, unknown>;
+    const referenced = resolveLocalSchemaRef(schema, propertySchema.$ref);
+    // OpenAI rejects JSON Schema siblings beside `$ref`, so inline these six top-level
+    // array definitions before applying their tighter generation-only limits.
+    properties[name] = {
+      ...(referenced ? structuredClone(referenced) : propertySchema),
+      maxItems: limit,
+    };
+  }
+}
+
+function resolveLocalSchemaRef(
+  schema: Record<string, unknown>,
+  ref: unknown,
+): Record<string, unknown> | undefined {
+  if (typeof ref !== "string" || !ref.startsWith("#/")) return undefined;
+  let current: unknown = schema;
+  for (const rawSegment of ref.slice(2).split("/")) {
+    const segment = rawSegment.replaceAll("~1", "/").replaceAll("~0", "~");
+    if (typeof current !== "object" || current === null || Array.isArray(current)) return undefined;
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return typeof current === "object" && current !== null && !Array.isArray(current)
+    ? (current as Record<string, unknown>)
+    : undefined;
 }
 
 function strictifyJsonSchema(value: unknown): void {

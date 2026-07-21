@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { lessonJsonSchema, validateLessonPlan } from "../src/shared/schema";
+import {
+  lessonGenerationJsonSchema,
+  lessonJsonSchema,
+  validateLessonPlan,
+} from "../src/shared/schema";
 
 const lesson = {
   version: 1,
@@ -84,10 +88,25 @@ describe("trusted lesson schema", () => {
     ).toThrow(/Visual grounding.*path/i);
   });
 
+  it("rejects focus frames that extend beyond the source canvas", () => {
+    expect(() =>
+      validateLessonPlan({
+        ...lesson,
+        primitives: [
+          { id: "overflow", kind: "highlight", x: 720, y: 120, width: 500, height: 300 },
+        ],
+        steps: [{ ...lesson.steps[0], primitiveIds: ["overflow"] }],
+      }),
+    ).toThrow(/stay inside.*source canvas/i);
+  });
+
   it("rejects multi-step text-only output as an incomplete visual lesson", () => {
     expect(() =>
       validateLessonPlan({
         ...lesson,
+        confidence: "exploratory",
+        controls: [],
+        simulation: undefined,
         primitives: [
           { id: "formula-a", kind: "equation", x: 100, y: 100, text: "a = b" },
           { id: "formula-b", kind: "equation", x: 100, y: 200, text: "b = c" },
@@ -100,9 +119,53 @@ describe("trusted lesson schema", () => {
     ).toThrow(/Visual grounding/i);
   });
 
+  it("treats a trusted simulation as the spatial visual across narrated steps", () => {
+    expect(
+      validateLessonPlan({
+        ...lesson,
+        primitives: [{ id: "formula", kind: "equation", x: 100, y: 100, text: "v = rω" }],
+        steps: [
+          { ...lesson.steps[0], id: "simulation-step-1", primitiveIds: [] },
+          { ...lesson.steps[0], id: "simulation-step-2", primitiveIds: ["formula"] },
+          { ...lesson.steps[0], id: "simulation-step-3", primitiveIds: [] },
+        ],
+      }).simulation?.kind,
+    ).toBe("orbit");
+  });
+
   it("exports a closed JSON schema for strict provider output", () => {
     const schema = lessonJsonSchema();
     expect(schema.additionalProperties).toBe(false);
     expect(schema.required).toContain("title");
+  });
+
+  it("bounds model-facing arrays more tightly than persisted lesson data", () => {
+    const standard = lessonGenerationJsonSchema("standard") as {
+      properties: Record<string, { maxItems?: number }>;
+    };
+    const repair = lessonGenerationJsonSchema("repair") as {
+      properties: Record<string, { maxItems?: number }>;
+    };
+    expect(standard.properties.primitives?.maxItems).toBe(14);
+    expect(standard.properties.steps?.maxItems).toBe(6);
+    expect(repair.properties.primitives?.maxItems).toBe(8);
+    expect(repair.properties.steps?.maxItems).toBe(3);
+    expect(JSON.stringify(standard)).not.toMatch(/"(?:minimum|maximum|multipleOf)":/);
+    expect(JSON.stringify(standard)).not.toContain('"allOf"');
+    expect(JSON.stringify(standard)).not.toContain('"oneOf"');
+    expect(JSON.stringify(standard)).toContain('"anyOf"');
+    const refSiblings: string[] = [];
+    const visit = (value: unknown, path = "$"): void => {
+      if (Array.isArray(value)) {
+        value.forEach((child, index) => visit(child, `${path}[${index}]`));
+        return;
+      }
+      if (typeof value !== "object" || value === null) return;
+      const object = value as Record<string, unknown>;
+      if ("$ref" in object && Object.keys(object).length > 1) refSiblings.push(path);
+      Object.entries(object).forEach(([key, child]) => visit(child, `${path}.${key}`));
+    };
+    visit(standard);
+    expect(refSiblings).toEqual([]);
   });
 });

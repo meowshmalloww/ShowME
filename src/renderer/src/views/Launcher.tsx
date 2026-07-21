@@ -401,6 +401,10 @@ export function Launcher() {
       window.showme.events.onSettingsChanged((settings) => {
         setBootstrap((current) => (current ? { ...current, settings } : current));
       }),
+      window.showme.events.onVoicePlaybackError((message) => {
+        setErrorTitle("Voice unavailable");
+        setError(message);
+      }),
     ];
     const onKey = (event: KeyboardEvent): void => {
       if (event.key === "Escape") void closeQuestion();

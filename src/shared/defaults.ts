@@ -23,10 +23,11 @@ export const QWEN_CLOUD_API_HOSTS: readonly { label: string; url: string }[] = [
 
 export const DEFAULT_MODELS: Record<ProviderId, string> = {
   openai: "gpt-5.6-sol",
+  google: "gemini-3.5-flash",
   alibaba: "qwen3.7-plus",
   nvidia: "nvidia/nemotron-nano-12b-v2-vl",
-  groq: "meta-llama/llama-4-scout-17b-16e-instruct",
-  cerebras: "gpt-oss-120b",
+  groq: "qwen/qwen3.6-27b",
+  cerebras: "gemma-4-31b",
   openrouter: "openai/gpt-5.6-sol",
 };
 

@@ -99,6 +99,35 @@ describe("local SQLite product state", () => {
     migrated.close();
   });
 
+  it("moves the retired Groq vision default to its current multimodal model", () => {
+    const directory = mkdtempSync(join(tmpdir(), "showme-store-"));
+    temporaryDirectories.push(directory);
+    const databasePath = join(directory, "showme.sqlite3");
+    const store = new AppStore(databasePath);
+    store.saveSettings(DEFAULT_SETTINGS);
+    store.close();
+
+    const database = new DatabaseSync(databasePath);
+    const legacy = {
+      ...DEFAULT_SETTINGS,
+      models: {
+        ...DEFAULT_SETTINGS.models,
+        groq: "meta-llama/llama-4-scout-17b-16e-instruct",
+      },
+      textModels: {
+        ...DEFAULT_SETTINGS.textModels,
+        groq: "meta-llama/llama-4-scout-17b-16e-instruct",
+      },
+    };
+    database.prepare("UPDATE settings SET value_json = ? WHERE id = 1").run(JSON.stringify(legacy));
+    database.close();
+
+    const migrated = new AppStore(databasePath);
+    expect(migrated.getSettings().models.groq).toBe("qwen/qwen3.6-27b");
+    expect(migrated.getSettings().textModels.groq).toBe("qwen/qwen3.6-27b");
+    migrated.close();
+  });
+
   it("never persists the private in-memory screen preview", () => {
     const directory = mkdtempSync(join(tmpdir(), "showme-store-"));
     temporaryDirectories.push(directory);

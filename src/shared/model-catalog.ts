@@ -115,6 +115,8 @@ export function inferModelMetadata(
       if (/^(gpt-(?:4o|4\.1|5(?:\.|-|$))|o[3-9](?:-|$))/i.test(id)) {
         inferredCapabilities.vision = true;
       }
+    } else if (provider === "google") {
+      inferredCapabilities.vision = /^gemini-/i.test(id);
     } else if (provider === "alibaba") {
       inferredCapabilities.vision = /(qwen(?:3[.-](?:5|6|7))|[-_/](?:vl|omni)(?:[-_/]|$))/i.test(
         id,
@@ -125,12 +127,12 @@ export function inferModelMetadata(
           id,
         );
     } else if (provider === "groq") {
-      inferredCapabilities.vision = /llama-4-scout/i.test(id);
+      inferredCapabilities.vision = /qwen\/qwen3\.6-27b|llama-4-scout/i.test(id);
     } else if (provider === "openrouter") {
       inferredCapabilities.vision =
         /^(openai\/gpt-(?:4o|4\.1|5(?:\.|-|$))|.*\/(?:.*vision|.*\bvl\b|.*omni))/i.test(id);
     } else if (provider === "cerebras") {
-      inferredCapabilities.vision = false;
+      inferredCapabilities.vision = /^gemma-4-31b$/i.test(id);
     }
   }
 
@@ -139,6 +141,8 @@ export function inferModelMetadata(
       if (/^(gpt-(?:4o|4\.1|5(?:\.|-|$))|o[3-9](?:-|$))/i.test(id)) {
         inferredCapabilities.structuredOutput = true;
       }
+    } else if (provider === "google") {
+      inferredCapabilities.structuredOutput = /^gemini-/i.test(id);
     } else if (provider === "groq") {
       inferredCapabilities.structuredOutput =
         /(?:openai\/)?gpt-oss-(?:20b|120b)|llama-4-scout/i.test(id);
@@ -171,7 +175,7 @@ export function effectiveModelCapabilities(
 }
 
 export function isLessonPlanningModel(model: ProviderModel): boolean {
-  return !/(^|[-_/])(embed|embedding|rerank|whisper|transcri|speech|tts|guard|moderation|safety|reward|classifier|detector|dall-e|gpt-image|stable-diffusion|flux|realtime|audio)([-_/]|$)/i.test(
+  return !/(^|[-_/])(embed|embedding|rerank|whisper|transcri|speech|tts|guard|moderation|safety|reward|classifier|detector|dall-e|gpt-image|stable-diffusion|flux|realtime|live|native-audio|imagen|veo|image-generation)([-_/]|$)/i.test(
     model.id,
   );
 }

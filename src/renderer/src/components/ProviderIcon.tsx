@@ -1,4 +1,4 @@
-import { siAlibabacloud, siNvidia, siOpenrouter } from "simple-icons";
+import { siAlibabacloud, siGooglegemini, siNvidia, siOpenrouter } from "simple-icons";
 import type { ProviderId } from "../../../shared/types";
 
 const OPENAI_PATH =
@@ -6,6 +6,7 @@ const OPENAI_PATH =
 
 export function ProviderIcon({ provider, size = 22 }: { provider: ProviderId; size?: number }) {
   if (provider === "openai") return <PathIcon path={OPENAI_PATH} size={size} />;
+  if (provider === "google") return <PathIcon path={siGooglegemini.path} size={size} />;
   if (provider === "alibaba") return <PathIcon path={siAlibabacloud.path} size={size} />;
   if (provider === "nvidia") return <PathIcon path={siNvidia.path} size={size} />;
   if (provider === "openrouter") return <PathIcon path={siOpenrouter.path} size={size} />;

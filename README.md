@@ -11,7 +11,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/media/showme-devpost-thumbnail-v2.png" width="780" alt="ShowME visual lesson compiler">
+  <img src="docs/media/showme-devpost-thumbnail-v3.png" width="780" alt="ShowME visual lesson compiler">
 </p>
 
 ShowME lives in a small island at the top of the screen. Say **ShowME** or choose an area, point, lasso, arrow, or full display. Ask a question by voice or text and ShowME builds a visual lesson around exactly what you selected.
@@ -49,7 +49,7 @@ The renderer is sandboxed with context isolation and no Node access. Capture, pr
 
 I used Codex with GPT-5.6 throughout the Electron redesign to inspect the earlier Rust/Tauri prototype and five product specifications, trace behavior across renderer, IPC, native workers, providers, and packaging, and repeatedly test the Windows app. Codex accelerated the repository-wide debugging, provider adapters, schema work, coordinate handling, and verification gate. I made the product and safety decisions, including removing the pet, fixing the wake name to ShowME, requiring deliberate capture, keeping screenshots out of history, and rendering declarative lessons instead of model-generated interface code.
 
-`gpt-5.6-sol` is also the default OpenAI lesson model. Its response must still pass ShowME's local validation before anything appears. This repository is the July 2026 Electron/TypeScript replacement; the dated history distinguishes it from the earlier prototype.
+`gpt-5.6-sol` is also the default OpenAI lesson model. Its response must still pass ShowME's local validation before anything appears. The same validated pipeline can use another vision-capable model returned by the live catalog; the cost-controlled submission capture uses `gpt-5.4-mini` without a mocked lesson path. This repository is the July 2026 Electron/TypeScript replacement; the dated history distinguishes it from the earlier prototype.
 
 ## Verify and package
 

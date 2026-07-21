@@ -54,6 +54,7 @@ export const CHANNELS = {
   voiceSynthesize: "voice:synthesize",
   voiceTestProvider: "voice:test-provider",
   voiceActivity: "voice:activity",
+  voicePlaybackError: "voice:playback-error",
   wakeAudio: "wake:audio",
   wakeInputState: "wake:input-state",
   memoryListLessons: "memory:list-lessons",
@@ -78,6 +79,7 @@ export const CHANNELS = {
   eventWakeStatus: "event:wake-status",
   eventSettingsChanged: "event:settings-changed",
   eventVoiceCommand: "event:voice-command",
+  eventVoicePlaybackError: "event:voice-playback-error",
 } as const;
 
 export type IpcChannel = (typeof CHANNELS)[keyof typeof CHANNELS];
@@ -163,6 +165,7 @@ export interface ShowMEApi {
     synthesize(text: string): Promise<{ bytes: Uint8Array; mimeType: string }>;
     testProvider(provider: AudioProviderId): Promise<string>;
     activity(state: VoiceActivityState): Promise<void>;
+    reportPlaybackError(message: string): Promise<void>;
   };
   wake: {
     pushAudio(bytes: Uint8Array): void;
@@ -197,5 +200,6 @@ export interface ShowMEApi {
     onWakeStatus(callback: (status: WakeListenerStatus) => void): () => void;
     onSettingsChanged(callback: (settings: AppSettings) => void): () => void;
     onVoiceCommand(callback: (event: SpokenLessonCommandEvent) => void): () => void;
+    onVoicePlaybackError(callback: (message: string) => void): () => void;
   };
 }

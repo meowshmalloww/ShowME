@@ -43,6 +43,7 @@ export class LessonService {
         settings,
         memoryContext: buildMemoryContext(settings, this.store),
         signal: controller.signal,
+        progress: (message) => this.emit(requestId, "understanding", message),
       });
       this.emit(requestId, "verifying", "Running deterministic checks");
       const verification = await this.workers.verify(plan.simulation);

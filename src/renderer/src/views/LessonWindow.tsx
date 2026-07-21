@@ -15,6 +15,19 @@ import type {
 import { isLikelyNarrationEcho, parseVoiceLessonCommand } from "../../../shared/voice-command";
 import { routeAudioOutput } from "../audio";
 import { WhiteboardCanvas } from "../components/WhiteboardCanvas";
+import {
+  cloudPlaybackTimeoutMs,
+  delayWithSignal,
+  isAbortError,
+  isPlayableAudioPayload,
+  playAudioElement,
+  playSystemUtterance,
+  splitSpokenText,
+  systemSpeechTimeoutMs,
+} from "../speech-playback";
+
+type CloudSpeech = { bytes: Uint8Array; mimeType: string };
+type PreparedCloudSpeech = { ok: true; audio: CloudSpeech } | { ok: false; error: unknown };
 
 export function LessonWindow() {
   const [presentation, setPresentation] = useState<LessonPresentation | null>(null);
@@ -26,9 +39,10 @@ export function LessonWindow() {
   const bootstrapRef = useRef<AppBootstrap | null>(null);
   const pendingAutoplay = useRef<string | null>(null);
   const narrationVersion = useRef(0);
+  const narrationController = useRef<AbortController | null>(null);
   const activeAudio = useRef<HTMLAudioElement | null>(null);
   const activeAudioUrl = useRef<string | null>(null);
-  const completeActiveSpeech = useRef<(() => void) | null>(null);
+  const activeUtterance = useRef<SpeechSynthesisUtterance | null>(null);
   const currentNarration = useRef("");
   const adapting = useRef(false);
   const boardTimers = useRef<number[]>([]);
@@ -38,13 +52,18 @@ export function LessonWindow() {
 
   const stopPlayback = useCallback((announceIdle = true): void => {
     narrationVersion.current += 1;
+    narrationController.current?.abort();
+    narrationController.current = null;
     window.speechSynthesis?.cancel();
-    activeAudio.current?.pause();
+    if (activeAudio.current) {
+      activeAudio.current.pause();
+      activeAudio.current.removeAttribute("src");
+      activeAudio.current.load();
+    }
     activeAudio.current = null;
     if (activeAudioUrl.current) URL.revokeObjectURL(activeAudioUrl.current);
     activeAudioUrl.current = null;
-    completeActiveSpeech.current?.();
-    completeActiveSpeech.current = null;
+    activeUtterance.current = null;
     currentNarration.current = "";
     if (announceIdle) void window.showme.voice.activity("idle");
   }, []);
@@ -88,76 +107,101 @@ export function LessonWindow() {
   );
 
   const speakWithSystemVoice = useCallback(
-    (text: string, settings: AppSettings, version: number): Promise<void> =>
-      new Promise((resolve, reject) => {
-        if (version !== narrationVersion.current) {
-          resolve();
-          return;
-        }
-        const utterance = new SpeechSynthesisUtterance(text);
-        utterance.lang = settings.language;
-        utterance.rate = Math.max(0.7, Math.min(1.3, settings.speechRate * 0.96));
-        utterance.pitch = 1.02;
-        const selectedVoice = findSystemVoice(
-          window.speechSynthesis.getVoices(),
-          settings.systemVoice,
-        );
-        if (selectedVoice) utterance.voice = selectedVoice;
-        let complete = false;
-        const finish = (): void => {
-          if (complete) return;
-          complete = true;
-          if (completeActiveSpeech.current === finish) completeActiveSpeech.current = null;
-          resolve();
-        };
-        completeActiveSpeech.current = finish;
-        utterance.onend = finish;
-        utterance.onerror = (event) => {
-          if (event.error === "canceled" || event.error === "interrupted") finish();
-          else {
-            if (complete) return;
-            complete = true;
-            if (completeActiveSpeech.current === finish) completeActiveSpeech.current = null;
-            reject(new Error(`Local speech failed: ${event.error}`));
+    async (
+      text: string,
+      settings: AppSettings,
+      version: number,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const synthesis = window.speechSynthesis;
+      if (!synthesis) throw new Error("Local speech is unavailable on this system.");
+      const rate = Math.max(0.7, Math.min(1.3, settings.speechRate * 0.96));
+      const selectedVoice = findSystemVoice(synthesis.getVoices(), settings.systemVoice);
+      for (const chunk of splitSpokenText(text)) {
+        let lastError: unknown;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          if (signal.aborted || version !== narrationVersion.current) return;
+          synthesis.cancel();
+          await delayWithSignal(attempt === 0 ? 45 : 140, signal);
+          const utterance = new SpeechSynthesisUtterance(chunk);
+          utterance.lang = settings.language;
+          utterance.rate = rate;
+          utterance.pitch = 1.02;
+          if (selectedVoice) utterance.voice = selectedVoice;
+          activeUtterance.current = utterance;
+          try {
+            await playSystemUtterance({
+              synthesis,
+              utterance,
+              signal,
+              completionTimeoutMs: systemSpeechTimeoutMs(chunk, rate),
+            });
+            lastError = undefined;
+            break;
+          } catch (error) {
+            if (isAbortError(error) || signal.aborted) throw error;
+            lastError = error;
+            synthesis.cancel();
+          } finally {
+            if (activeUtterance.current === utterance) activeUtterance.current = null;
           }
-        };
-        window.speechSynthesis.speak(utterance);
-      }),
+        }
+        if (lastError) throw lastError;
+      }
+    },
     [],
   );
 
   const speakWithCloudVoice = useCallback(
-    async (text: string, settings: AppSettings, version: number): Promise<void> => {
-      const generated = await window.showme.voice.synthesize(text);
-      if (version !== narrationVersion.current) return;
+    async (
+      text: string,
+      settings: AppSettings,
+      version: number,
+      signal: AbortSignal,
+      prepared?: CloudSpeech,
+    ): Promise<void> => {
+      const generated = prepared ?? (await window.showme.voice.synthesize(text));
+      if (signal.aborted || version !== narrationVersion.current) return;
       const bytes = new Uint8Array(generated.bytes);
+      if (!isPlayableAudioPayload(generated.mimeType, bytes.byteLength)) {
+        throw new Error("The speech provider returned an empty or unsupported audio response.");
+      }
       const url = URL.createObjectURL(new Blob([bytes.buffer], { type: generated.mimeType }));
-      const audio = new Audio(url);
-      activeAudio.current = audio;
       activeAudioUrl.current = url;
       try {
-        await routeAudioOutput(audio, settings.speakerDeviceId);
-        await new Promise<void>((resolve, reject) => {
-          let complete = false;
-          const finish = (): void => {
-            if (complete) return;
-            complete = true;
-            if (completeActiveSpeech.current === finish) completeActiveSpeech.current = null;
-            resolve();
-          };
-          const fail = (): void => {
-            if (complete) return;
-            complete = true;
-            if (completeActiveSpeech.current === finish) completeActiveSpeech.current = null;
-            reject(new Error("The selected speech provider returned unusable audio."));
-          };
-          completeActiveSpeech.current = finish;
-          audio.onended = finish;
-          audio.onerror = fail;
-          void audio.play().catch(fail);
-        });
+        let lastError: unknown;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          if (signal.aborted || version !== narrationVersion.current) return;
+          const audio = new Audio();
+          audio.preload = "auto";
+          audio.src = url;
+          activeAudio.current = audio;
+          try {
+            const exactSpeaker = await routeAudioOutput(audio, settings.speakerDeviceId);
+            if (!exactSpeaker) {
+              console.warn("Saved speaker is unavailable; narration is using the system default.");
+            }
+            audio.load();
+            await playAudioElement({
+              audio,
+              signal,
+              completionTimeoutMs: cloudPlaybackTimeoutMs(text, settings.speechRate),
+            });
+            lastError = undefined;
+            break;
+          } catch (error) {
+            if (isAbortError(error) || signal.aborted) throw error;
+            lastError = error;
+            audio.pause();
+            audio.removeAttribute("src");
+            audio.load();
+            if (attempt === 0) await delayWithSignal(120, signal);
+          } finally {
+            if (activeAudio.current === audio) activeAudio.current = null;
+          }
+        }
+        if (lastError) throw lastError;
       } finally {
-        if (activeAudio.current === audio) activeAudio.current = null;
         if (activeAudioUrl.current === url) activeAudioUrl.current = null;
         URL.revokeObjectURL(url);
       }
@@ -166,17 +210,34 @@ export function LessonWindow() {
   );
 
   const speakSegment = useCallback(
-    async (text: string, settings: AppSettings, version: number): Promise<void> => {
+    async (
+      text: string,
+      settings: AppSettings,
+      version: number,
+      signal: AbortSignal,
+      prepared?: PreparedCloudSpeech,
+    ): Promise<boolean> => {
       if (settings.voiceOutputProvider === "system") {
-        await speakWithSystemVoice(text, settings, version);
-        return;
+        await speakWithSystemVoice(text, settings, version, signal);
+        return false;
       }
       try {
-        await speakWithCloudVoice(text, settings, version);
+        if (prepared && !prepared.ok) throw prepared.error;
+        await speakWithCloudVoice(
+          text,
+          settings,
+          version,
+          signal,
+          prepared?.ok ? prepared.audio : undefined,
+        );
+        return true;
       } catch (error) {
-        if (version !== narrationVersion.current) return;
+        if (isAbortError(error) || signal.aborted || version !== narrationVersion.current) {
+          return false;
+        }
         console.error("Cloud narration failed; using the local system voice.", error);
-        await speakWithSystemVoice(text, settings, version);
+        await speakWithSystemVoice(text, settings, version, signal);
+        return false;
       }
     },
     [speakWithCloudVoice, speakWithSystemVoice],
@@ -186,25 +247,56 @@ export function LessonWindow() {
     async (value: LessonPresentation, settings: AppSettings): Promise<void> => {
       stopPlayback(false);
       const version = ++narrationVersion.current;
+      const controller = new AbortController();
+      narrationController.current = controller;
       const segments = value.plan.steps.length
         ? value.plan.steps.map((lessonStep) => lessonStep.narration)
         : [value.plan.narration];
+      let cloudAvailable = settings.voiceOutputProvider !== "system";
+      let preparedCloud = cloudAvailable
+        ? prepareCloudSpeech(segments[0] ?? value.plan.narration)
+        : undefined;
       await window.showme.voice.activity("speaking");
       try {
         for (let index = 0; index < segments.length; index += 1) {
           if (version !== narrationVersion.current) return;
+          const prepared = preparedCloud ? await preparedCloud : undefined;
+          preparedCloud =
+            cloudAvailable && index + 1 < segments.length
+              ? prepareCloudSpeech(segments[index + 1] ?? value.plan.narration)
+              : undefined;
           setStep(index);
           currentNarration.current = segments[index] || value.plan.narration;
           await waitForWhiteboardPaint(settings.reducedMotion);
-          await speakSegment(currentNarration.current, settings, version);
+          const usedCloud = await speakSegment(
+            currentNarration.current,
+            settings,
+            version,
+            controller.signal,
+            prepared,
+          );
+          if (cloudAvailable && !usedCloud) {
+            cloudAvailable = false;
+            preparedCloud = undefined;
+          }
           if (version !== narrationVersion.current) return;
         }
       } catch (error) {
-        console.error("Lesson narration stopped unexpectedly.", error);
+        if (!isAbortError(error)) {
+          console.error("Lesson narration stopped unexpectedly.", error);
+          await window.showme.voice
+            .reportPlaybackError(
+              "Narration could not continue after an automatic retry. The visual lesson is still available; check the selected voice and Windows speaker, then try again.",
+            )
+            .catch((reportError) =>
+              console.error("Could not report narration failure.", reportError),
+            );
+        }
       } finally {
         if (version === narrationVersion.current) {
           currentNarration.current = "";
-          completeActiveSpeech.current = null;
+          if (narrationController.current === controller) narrationController.current = null;
+          activeUtterance.current = null;
           await window.showme.voice.activity("idle");
           if (!adapting.current) scheduleBoardRetirement(value, settings);
         }
@@ -358,6 +450,14 @@ export function LessonWindow() {
       {...(imageAsset ? { imageAsset } : {})}
     />
   );
+}
+
+async function prepareCloudSpeech(text: string): Promise<PreparedCloudSpeech> {
+  try {
+    return { ok: true, audio: await window.showme.voice.synthesize(text) };
+  } catch (error) {
+    return { ok: false, error };
+  }
 }
 
 function waitForWhiteboardPaint(reducedMotion: boolean): Promise<void> {

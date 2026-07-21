@@ -83,15 +83,26 @@ export async function enumerateAudioDevices(
   }
 }
 
-export async function routeAudioOutput(element: HTMLMediaElement, deviceId: string): Promise<void> {
-  if (deviceId === "default") return;
+export async function routeAudioOutput(
+  element: HTMLMediaElement,
+  deviceId: string,
+): Promise<boolean> {
+  if (deviceId === "default") return true;
   const routed = element as HTMLMediaElement & {
     setSinkId?: (id: string) => Promise<void>;
   };
-  if (!routed.setSinkId) {
-    throw new Error("This system cannot route app audio to a selected speaker.");
+  if (!routed.setSinkId) return false;
+  try {
+    await routed.setSinkId(deviceId);
+    return true;
+  } catch {
+    try {
+      await routed.setSinkId("default");
+    } catch {
+      // The media element already uses the system default when explicit routing is unavailable.
+    }
+    return false;
   }
-  await routed.setSinkId(deviceId);
 }
 
 export function rmsLevel(samples: Uint8Array): number {

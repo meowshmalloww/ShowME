@@ -30,6 +30,24 @@ export const PROVIDER_DEFINITIONS: Record<ProviderId, ProviderDefinition> = {
     capabilityNote:
       "Reference path with GPT-5.6 vision, strict lesson plans, and optional web research.",
   },
+  google: {
+    id: "google",
+    name: "Google AI Studio",
+    shortName: "GM",
+    baseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    modelsUrl: "https://generativelanguage.googleapis.com/v1beta/models",
+    capabilities: {
+      vision: true,
+      structuredOutput: true,
+      webSearch: false,
+      speechToText: false,
+      textToSpeech: false,
+      streaming: true,
+      tools: false,
+    },
+    capabilityNote:
+      "Native Gemini multimodal route with streamed structured lesson plans and low-thinking Flash defaults for fast screen explanations.",
+  },
   alibaba: {
     id: "alibaba",
     name: "Qwen Cloud",
@@ -100,7 +118,7 @@ export const PROVIDER_DEFINITIONS: Record<ProviderId, ProviderDefinition> = {
       tools: true,
     },
     capabilityNote:
-      "Very fast planning. ShowME uses JSON mode because Cerebras strict schemas have a smaller contract limit; image input is model-specific.",
+      "Very fast planning. Gemma 4 31B supports screenshot input; other Cerebras models remain text-only unless their catalog metadata says otherwise.",
   },
   openrouter: {
     id: "openrouter",
