@@ -171,7 +171,16 @@ export class AppStore {
     const persistedPresentation = { ...presentation };
     delete persistedPresentation.contextPreviewDataUrl;
     delete persistedPresentation.contextPreviewExpiresAt;
-    delete persistedPresentation.contextGeometry;
+    if (persistedPresentation.contextGeometry) {
+      persistedPresentation.contextGeometry = structuredClone(
+        persistedPresentation.contextGeometry,
+      );
+      // Crop projection is required to put a saved lesson back on the pixels it
+      // was authored against. Keep only geometry; never persist sampled screen
+      // luminance or the user's monitor label alongside the lesson.
+      delete persistedPresentation.contextGeometry.contrastMap;
+      persistedPresentation.contextGeometry.display.label = "Saved display";
+    }
     const existing = this.db
       .prepare("SELECT created_at, helpful FROM lessons WHERE id = ?")
       .get(plan.id) as Row | undefined;

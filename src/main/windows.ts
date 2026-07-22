@@ -220,6 +220,7 @@ export class WindowManager {
   showLesson(presentation: LessonPresentation): BrowserWindow {
     const display = this.lessonDisplay(presentation);
     this.lessonDisplayId = display.id;
+    this.main?.hide();
     if (!this.lesson || this.lesson.isDestroyed()) {
       this.lesson = this.createWindow("lesson", {
         ...display.bounds,

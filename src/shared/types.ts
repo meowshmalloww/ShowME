@@ -116,11 +116,20 @@ export interface CapturePayload {
   capturedAt: string;
 }
 
+export interface ScreenContrastMap {
+  columns: number;
+  rows: number;
+  /** Row-major relative luminance samples in the inclusive 0-1 range. */
+  luminance: number[];
+}
+
 export interface PreparedContext {
   captureId: string;
   previewDataUrl: string;
   /** A coordinate-scaffolded copy used only by the vision model. */
   analysisDataUrl?: string;
+  /** A tiny clean-capture luminance grid used only for adaptive overlay contrast. */
+  contrastMap?: ScreenContrastMap;
   regions: SelectionRegion[];
   pixelWidth: number;
   pixelHeight: number;
@@ -134,8 +143,9 @@ export interface PreparedContext {
 }
 
 /**
- * Ephemeral geometry used to project normalized lesson coordinates back onto
- * the exact desktop pixels the model saw. It is deliberately not persisted.
+ * Geometry used to project normalized lesson coordinates back onto the exact
+ * desktop pixels the model saw. Saved lessons may retain the non-pixel bounds
+ * and scale data, while private previews and contrast samples are discarded.
  */
 export interface LessonContextGeometry {
   display: DisplayDescriptor;
@@ -145,6 +155,7 @@ export interface LessonContextGeometry {
   capturePixelWidth: number;
   capturePixelHeight: number;
   scope: PreparedContext["scope"];
+  contrastMap?: ScreenContrastMap;
 }
 
 export interface ProviderCapabilities {

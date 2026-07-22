@@ -5,7 +5,6 @@ import sharp from 'sharp'
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const gallery = path.join(root, 'artifacts', 'submission', 'gallery')
 const output = path.join(root, 'artifacts', 'submission', 'ShowME-Devpost-Thumbnail.png')
-const docsOutput = path.join(root, 'docs', 'media', 'showme-devpost-thumbnail-v3.png')
 
 const width = 1920
 const height = 1080
@@ -125,7 +124,4 @@ await sharp({
   .png({ compressionLevel: 9 })
   .toFile(output)
 
-await sharp(output).toFile(docsOutput)
-
 console.log(output)
-console.log(docsOutput)

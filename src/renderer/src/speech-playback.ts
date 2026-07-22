@@ -230,7 +230,6 @@ export function playAudioElement({
       audio.removeEventListener("stalled", waitForRecovery);
       audio.removeEventListener("ended", succeed);
       audio.removeEventListener("error", mediaFailed);
-      audio.removeEventListener("abort", mediaAborted);
       signal.removeEventListener("abort", abort);
     }
     function succeed(): void {
@@ -267,9 +266,6 @@ export function playAudioElement({
         new Error(`Narration audio could not be decoded${code ? ` (media error ${code})` : ""}.`),
       );
     }
-    function mediaAborted(): void {
-      fail(signal.aborted ? createAbortError() : new Error("Narration audio was interrupted."));
-    }
     function abort(): void {
       audio.pause();
       fail(createAbortError());
@@ -282,7 +278,6 @@ export function playAudioElement({
     audio.addEventListener("stalled", waitForRecovery);
     audio.addEventListener("ended", succeed);
     audio.addEventListener("error", mediaFailed);
-    audio.addEventListener("abort", mediaAborted);
     signal.addEventListener("abort", abort, { once: true });
 
     try {

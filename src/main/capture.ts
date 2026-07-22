@@ -15,7 +15,7 @@ import type {
   PreparedContext,
   SelectionRegion,
 } from "../shared/types";
-import { createGroundingImageDataUrl } from "./grounding";
+import { createGroundingImageDataUrl, createScreenContrastMap } from "./grounding";
 import type { WorkerService } from "./workers";
 
 interface CaptureRecord {
@@ -119,18 +119,27 @@ export class CaptureService {
     };
     const cropped = record.image.crop(safeBounds);
     const croppedSize = cropped.getSize();
+    const croppedPng = cropped.toPNG();
     let analysisDataUrl: string | undefined;
-    try {
-      analysisDataUrl = await createGroundingImageDataUrl(cropped.toPNG());
-    } catch (error) {
+    let contrastMap: Awaited<ReturnType<typeof createScreenContrastMap>> | undefined;
+    const [groundingResult, contrastResult] = await Promise.allSettled([
+      createGroundingImageDataUrl(croppedPng),
+      createScreenContrastMap(croppedPng),
+    ]);
+    if (groundingResult.status === "fulfilled") analysisDataUrl = groundingResult.value;
+    else {
       // Grounding marks improve localization, but a capture must remain usable if
       // native image processing is unavailable on an unusual platform.
-      console.warn("Could not add the private vision coordinate scaffold.", error);
+      console.warn("Could not add the private vision coordinate scaffold.", groundingResult.reason);
     }
+    if (contrastResult.status === "fulfilled") contrastMap = contrastResult.value;
+    else
+      console.warn("Could not sample screen contrast for whiteboard text.", contrastResult.reason);
     const prepared: PreparedContext = {
       captureId,
       previewDataUrl: cropped.toDataURL(),
       ...(analysisDataUrl ? { analysisDataUrl } : {}),
+      ...(contrastMap ? { contrastMap } : {}),
       regions: validated,
       pixelWidth: croppedSize.width,
       pixelHeight: croppedSize.height,

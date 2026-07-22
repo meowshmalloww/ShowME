@@ -491,7 +491,11 @@ export const lessonPlanSchema = z
     const spatialStepCount = plan.steps.filter((step) =>
       step.primitiveIds.some((primitiveId) => spatialIds.has(primitiveId)),
     ).length;
-    const requiredSpatialSteps = plan.simulation ? 0 : Math.min(3, plan.steps.length);
+    // A good visual explanation may deliberately keep the same target visible while
+    // narration advances. Requiring three different spatially-backed steps rejected
+    // otherwise complete provider output. Two visual beats plus the focus/relationship
+    // checks below distinguish a lesson from text-only output without redundant marks.
+    const requiredSpatialSteps = plan.simulation ? 0 : Math.min(2, plan.steps.length);
     if (spatialStepCount < requiredSpatialSteps) {
       context.addIssue({
         code: "custom",
@@ -681,7 +685,10 @@ function stripGenerationNumericConstraints(value: unknown): void {
 
 function applyGenerationArrayLimits(
   schema: Record<string, unknown>,
-  limits: Record<"primitives" | "steps" | "controls" | "claims" | "citations" | "followUps", number>,
+  limits: Record<
+    "primitives" | "steps" | "controls" | "claims" | "citations" | "followUps",
+    number
+  >,
 ): void {
   const properties =
     typeof schema.properties === "object" && schema.properties !== null

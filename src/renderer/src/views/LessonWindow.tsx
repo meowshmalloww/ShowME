@@ -181,7 +181,6 @@ export function LessonWindow() {
             if (!exactSpeaker) {
               console.warn("Saved speaker is unavailable; narration is using the system default.");
             }
-            audio.load();
             await playAudioElement({
               audio,
               signal,

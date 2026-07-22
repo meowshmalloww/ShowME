@@ -6,11 +6,7 @@ import {
   mergeProviderModels,
 } from "../shared/model-catalog";
 import { PROVIDER_DEFINITIONS, providerEndpoints } from "../shared/providers";
-import {
-  lessonGenerationJsonSchema,
-  simulationSchema,
-  validateLessonPlan,
-} from "../shared/schema";
+import { lessonGenerationJsonSchema, simulationSchema, validateLessonPlan } from "../shared/schema";
 import type {
   AppSettings,
   AudioProviderId,
@@ -75,14 +71,26 @@ export class ProviderService {
     try {
       return finalizePlan(response, request);
     } catch (firstError) {
-      response = await this.requestModel(
-        options,
-        key,
-        true,
-        firstError,
-        response.text,
-        response.finishReason,
-      );
+      try {
+        response = await this.requestModel(
+          options,
+          key,
+          true,
+          firstError,
+          response.text,
+          response.finishReason,
+        );
+      } catch (repairError) {
+        options.progress?.("The model repair was interrupted; preserving the selection locally");
+        return createGroundedFallbackPlan(
+          request,
+          options.context,
+          [
+            formatValidationFeedback(firstError, response.finishReason),
+            "Repair request: " + formatValidationFeedback(repairError),
+          ].join("\n"),
+        );
+      }
       try {
         return finalizePlan(response, request);
       } catch (secondError) {
@@ -697,7 +705,8 @@ export class ProviderService {
     const systemPrompt =
       (request.provider === "nvidia" && supportsNvidiaThinkingMode(model) ? "/no_think\n\n" : "") +
       SYSTEM_PROMPT +
-      (outputMode === "strict-schema" ? "" : "\n\n" + COMPATIBLE_OUTPUT_GUIDE);
+      (outputMode === "strict-schema" ? "" : "\n\n" + COMPATIBLE_OUTPUT_GUIDE) +
+      (request.provider === "alibaba" ? "\n\n" + QWEN_JSON_COMPLETION_GUIDE : "");
     const userContent: unknown =
       (!correction || visualCorrection) && visionDataUrl && capabilities.vision
         ? [
@@ -738,10 +747,7 @@ export class ProviderService {
       ...(qwenStreaming ? { stream_options: { include_usage: true } } : {}),
       temperature: 0.1,
       ...(request.provider === "alibaba"
-        ? {
-            max_tokens: correction ? 6_144 : 8_192,
-            ...qwenThinkingConfig(model, request.researchMode),
-          }
+        ? qwenStructuredOutputConfig(model)
         : request.provider === "cerebras"
           ? { max_completion_tokens: 16_000 }
           : { max_tokens: request.provider === "nvidia" ? 4_096 : 16_000 }),
@@ -753,7 +759,7 @@ export class ProviderService {
     if (request.provider === "alibaba") {
       options.progress?.(
         request.researchMode === "deep"
-          ? "Qwen is reasoning through the selected screen"
+          ? "Qwen is mapping the selected screen in detail"
           : "Qwen is locating the useful screen details",
       );
     }
@@ -1036,6 +1042,13 @@ function qwenThinkingConfig(model: string, mode: GenerateLessonRequest["research
     : { enable_thinking: false };
 }
 
+function qwenStructuredOutputConfig(model: string): object {
+  // Qwen warns against an explicit token ceiling for structured output because it can truncate
+  // the JSON object. Hybrid thinking is also disabled for this one structured generation call;
+  // ShowME validates the result and owns one compact repair attempt instead.
+  return supportsQwenHybridThinking(model) ? { enable_thinking: false } : {};
+}
+
 function geminiThinkingConfig(
   model: string,
   mode: GenerateLessonRequest["researchMode"],
@@ -1298,9 +1311,9 @@ Teaching rules:
 - Explain the exact selected thing, not the surrounding application.
 - The learner's original screen is the whiteboard. Place arrows, paths, highlights, labels, and equations directly on observed objects; never design an app page, card layout, toolbar, evidence panel, or playback controls.
 - The vision image may contain ShowME's faint cyan x/y coordinate scaffold. It is private calibration, not source content: never mention it. Coordinates are normalized 0-1000 across the crop and its x100/y100 ticks are exact anchors.
-- Target observed geometry precisely. A multi-step lesson needs both a focus mark (circle/highlight/spotlight/rectangle) and a relationship mark (line/arrow/path/bracket/vector/axis). At least three steps, or every step when shorter, must introduce a spatial primitive; text alone is not a visual lesson.
+- Target observed geometry precisely. A multi-step lesson needs both a focus mark (circle/highlight/spotlight/point/rectangle) and a relationship mark (line/arrow/path/bracket/vector/axis). At least two narrated steps must reference spatial primitives; later steps may intentionally reuse the same marks while the explanation advances. Text alone is not a visual lesson.
 - Shapes must be drawable: line/arrow/vector/axis require x2 and y2; path requires at least two points; rect/highlight require width and height; circle/spotlight require radius; label/equation/callout require text. Put explanatory text in nearby empty space and tether it to the source with a spatial mark.
-- Keep every rectangle/highlight inside the source: x + width and y + height must be at most 1000. Use tight bounds around the observed object, never a near-full-screen frame unless the learner selected the entire screen.
+- Keep every rectangle/highlight inside the source: x + width and y + height must be at most 1000. Use tight bounds around one observed object. Never draw a near-full-screen frame, even when the learner selected the entire screen; it obscures the source and teaches nothing.
 - The renderer automatically moves a small teaching cursor to each step's final spatial target. Order each step's primitiveIds so its last arrow, path, focus mark, or label points at the object named by the narration.
 - Use a restrained semantic palette instead of one repeated color: color may be cyan, amber, violet, mint, or coral. Cyan traces relationships, amber focuses attention, violet supports formulas/structure, mint marks results, and coral marks a change or exception.
 - Keep short labels short so they can render as halo text without a panel. Equations, callouts, or text over busy content receive compact contrast plates automatically; never simulate contrast with a giant filled rectangle.
@@ -1321,7 +1334,7 @@ Required top-level fields: version, title, concept, summary, teachingMode, confi
 - confidence: verified-module | source-grounded | exploratory.
 - primitives may use only: id, kind, x, y, x2, y2, width, height, radius, text, color, fill, strokeWidth, dashed, points, stepId, sourceRegionId. Coordinates are 0-1000. color/fill should be cyan | amber | violet | mint | coral. kind must be circle | rect | line | arrow | curved-arrow | label | equation | path | highlight | spotlight | point | vector | bracket | axis | callout.
 - line/arrow/curved-arrow/vector/axis need x2,y2; path needs points; rect/highlight need width,height; circle/spotlight need radius; text kinds need text.
-- rect/highlight must satisfy x+width<=1000 and y+height<=1000.
+- rect/highlight must satisfy x+width<=1000 and y+height<=1000, and must tightly mark one source object rather than frame most of the screen.
 - every step requires id, title, narration, primitiveIds, durationMs. durationMs is 250-30000. Every primitiveIds value must name a real primitive.
 - Unless a supported deterministic simulation is genuinely useful, return controls as [] and omit simulation.
 - every claim requires id, text, evidence, citationIds. evidence: selected-source | calculation | web-source | model-inference.
@@ -1330,6 +1343,8 @@ Required top-level fields: version, title, concept, summary, teachingMode, confi
 
 Structural example only—replace every string and coordinate with image evidence:
 {"version":1,"title":"Exact selected concept","concept":"Core idea","summary":"One concise visual explanation.","teachingMode":"diagram-annotation","confidence":"exploratory","sourceDescription":"The learner's selected screen region","narration":"A compact explanation grounded in the selection.","primitives":[{"id":"target","kind":"highlight","x":220,"y":260,"width":360,"height":240},{"id":"detail","kind":"circle","x":520,"y":410,"radius":55},{"id":"relation","kind":"arrow","x":740,"y":190,"x2":545,"y2":380},{"id":"note","kind":"label","x":690,"y":150,"width":250,"text":"Why this part matters"}],"steps":[{"id":"step-1","title":"Locate it","narration":"Start with the exact visible target.","primitiveIds":["target"],"durationMs":1400},{"id":"step-2","title":"Trace it","narration":"Follow the relationship to the important detail.","primitiveIds":["relation","detail"],"durationMs":1800},{"id":"step-3","title":"Connect the idea","narration":"Connect the visible detail to the explanation.","primitiveIds":["detail","relation","note"],"durationMs":1500}],"controls":[],"claims":[{"id":"claim-1","text":"A claim directly supported by the selected image.","evidence":"selected-source","citationIds":[]}],"citations":[],"followUps":["Which visible part should we examine more closely?"]}`;
+
+const QWEN_JSON_COMPLETION_GUIDE = `Qwen response requirement: return exactly one complete JSON object and nothing else. Do not emit a thinking block, Markdown fence, preface, suffix, ellipsis, placeholder, or trailing commentary. Finish every required array and closing brace. Prefer fewer complete primitives and steps over a longer response that risks ending early.`;
 
 type RequestedSimulationKind =
   | "orbit"
@@ -1450,9 +1465,19 @@ function finalizePlan(response: ModelResponse, request: GenerateLessonRequest): 
   const draft = normalizeModelLessonDraft(unwrapLessonDraft(parsed));
   draft.provider = { id: request.provider, model: request.model };
   if (!draft.id || typeof draft.id !== "string") draft.id = crypto.randomUUID();
-  const plan = validateLessonPlan(draft) as LessonPlan;
+  let plan = validateLessonPlan(draft) as LessonPlan;
   const requestedSimulation = requestedSimulationKind(request.question);
   if (requestedSimulation && plan.simulation?.kind !== requestedSimulation) {
+    if (requestedSimulation === "custom") {
+      plan = validateLessonPlan({
+        ...plan,
+        teachingMode: "interactive-experiment",
+        confidence: "verified-module",
+        controls: [],
+        simulation: customSimulationFromGeneratedPlan(plan),
+      }) as LessonPlan;
+      return reconcileCitations(plan, response.citations, request.allowWebResearch);
+    }
     throw new Error(
       "The learner explicitly requested a " +
         requestedSimulation +
@@ -1460,6 +1485,83 @@ function finalizePlan(response: ModelResponse, request: GenerateLessonRequest): 
     );
   }
   return reconcileCitations(plan, response.citations, request.allowWebResearch);
+}
+
+function customSimulationFromGeneratedPlan(
+  plan: LessonPlan,
+): NonNullable<LessonPlan["simulation"]> {
+  const textPrimitives = plan.primitives.filter(
+    (primitive) =>
+      ["label", "equation", "callout"].includes(primitive.kind) && Boolean(primitive.text?.trim()),
+  );
+  const spatial = plan.primitives
+    .filter((primitive) =>
+      ["circle", "point", "rect", "highlight", "arrow", "curved-arrow", "vector", "line"].includes(
+        primitive.kind,
+      ),
+    )
+    .slice(0, 6);
+  const colors = ["#65dcff", "#ffc857", "#b79cff", "#67e8b5", "#ff8b7b"];
+  const entities = spatial.map((primitive, index) => {
+    const x2 = primitive.x2 ?? primitive.x;
+    const y2 = primitive.y2 ?? primitive.y;
+    const arrowLike = ["arrow", "curved-arrow", "vector", "line"].includes(primitive.kind);
+    const circular = ["circle", "point"].includes(primitive.kind);
+    const radius = primitive.radius ?? (primitive.kind === "point" ? 16 : 48);
+    const centerX = arrowLike ? (primitive.x + x2) / 2 : primitive.x + (primitive.width ?? 0) / 2;
+    const centerY = arrowLike ? (primitive.y + y2) / 2 : primitive.y + (primitive.height ?? 0) / 2;
+    const nearestText = textPrimitives
+      .map((candidate) => ({
+        candidate,
+        distance: Math.hypot(candidate.x - centerX, candidate.y - centerY),
+      }))
+      .sort((left, right) => left.distance - right.distance)[0];
+    return {
+      id: `generated-motion-${String(index + 1)}`,
+      shape: circular ? ("circle" as const) : arrowLike ? ("arrow" as const) : ("rect" as const),
+      x: clampNumber(centerX, 50, 950),
+      y: clampNumber(centerY, 50, 950),
+      width: circular
+        ? clampNumber(radius * 2, 24, 180)
+        : arrowLike
+          ? clampNumber(Math.hypot(x2 - primitive.x, y2 - primitive.y), 90, 320)
+          : clampNumber(primitive.width ?? 180, 70, 300),
+      height: circular
+        ? clampNumber(radius * 2, 24, 180)
+        : arrowLike
+          ? 8
+          : clampNumber(primitive.height ?? 90, 35, 180),
+      color: colors[index % colors.length] ?? "#65dcff",
+      ...(nearestText?.candidate.text
+        ? { label: nearestText.candidate.text.trim().slice(0, 54) }
+        : {}),
+    };
+  });
+  const derivedEntities =
+    entities.length > 0
+      ? entities
+      : plan.steps.slice(0, 4).map((step, index, steps) => ({
+          id: `generated-step-${String(index + 1)}`,
+          shape: "rect" as const,
+          x: ((index + 1) / (steps.length + 1)) * 800 + 100,
+          y: 500,
+          width: 190,
+          height: 105,
+          color: colors[index % colors.length] ?? "#65dcff",
+          label: step.title.slice(0, 54),
+        }));
+  return {
+    kind: "custom",
+    durationSeconds: 6,
+    entities: derivedEntities,
+    motions: derivedEntities.map((entity, index) => ({
+      entityId: entity.id,
+      kind: entity.shape === "circle" ? ("pulse" as const) : ("oscillate-x" as const),
+      amplitude: entity.shape === "circle" ? 14 : 18 + index * 3,
+      frequency: 0.45 + index * 0.08,
+      phase: index * 0.7,
+    })),
+  };
 }
 
 /**
@@ -1481,11 +1583,9 @@ export function createGroundedFallbackPlan(
   const noteX = noteOnRight ? 690 : 55;
   const noteY = focusCenter.y > 360 ? 110 : 760;
   const arrowStartX = noteOnRight ? noteX : noteX + 230;
-  const compactQuestion = request.question.replace(/\s+/g, " ").trim().slice(0, 150);
+  const compactQuestion = request.question.replace(/\s+/g, " ").trim().slice(0, 90);
   const requestedSimulation = requestedSimulationKind(request.question);
-  const simulation = requestedSimulation
-    ? fallbackSimulation(requestedSimulation)
-    : undefined;
+  const simulation = requestedSimulation ? fallbackSimulation(requestedSimulation) : undefined;
   const title = compactQuestion
     ? `Keep the selected idea in view: ${compactQuestion}`.slice(0, 120)
     : "Keep the selected idea in view";
@@ -1495,13 +1595,13 @@ export function createGroundedFallbackPlan(
     title,
     concept: (compactQuestion || "Selected screen evidence").slice(0, 120),
     summary:
-      "The provider response ended early, so ShowME preserved the exact selected region and a clear retry point instead of discarding the lesson.",
+      "The provider could not finish a drawable lesson, so ShowME kept a compact retry marker on the selected screen.",
     teachingMode: simulation ? "interactive-experiment" : "diagram-annotation",
     confidence: simulation ? "verified-module" : "exploratory",
     uncertainty: failureDetail.replace(/\s+/g, " ").slice(0, 500),
     sourceDescription: "The learner's selected screen region",
     narration:
-      "I kept the selected evidence on screen because the model response ended early. Start with the highlighted area, then follow the pointer back to the exact question. You can ask again without losing your place.",
+      "I could not place a complete visual lesson accurately. Use this small marker to select the exact part and try again.",
     primitives: [
       {
         id: "fallback-focus",
@@ -1527,7 +1627,7 @@ export function createGroundedFallbackPlan(
         x: noteX,
         y: noteY,
         width: 250,
-        text: compactQuestion || "This is the selected area to explain.",
+        text: "Select the exact part and try again",
         color: "violet",
       },
     ],
@@ -1535,15 +1635,14 @@ export function createGroundedFallbackPlan(
       {
         id: "fallback-step-focus",
         title: "Keep the evidence",
-        narration: "I kept the exact selected region highlighted so the source stays visible.",
+        narration: "This small marker keeps your place without covering the source.",
         primitiveIds: ["fallback-focus"],
         durationMs: 1_100,
       },
       {
         id: "fallback-step-retry",
         title: "Retry from the same place",
-        narration:
-          "Follow the pointer to the question. Ask again or select a smaller area for a fuller explanation.",
+        narration: "Select the exact part you want explained, then ask ShowME again.",
         primitiveIds: ["fallback-pointer", "fallback-note"],
         durationMs: 1_300,
       },
@@ -1565,7 +1664,7 @@ function fallbackFocusBounds(context: PreparedContext): {
   height: number;
 } {
   const points = context.regions.flatMap((region) => region.points);
-  if (points.length === 0) return { x: 70, y: 100, width: 860, height: 780 };
+  if (points.length === 0) return { x: 430, y: 420, width: 140, height: 120 };
   const cropLeft = (context.cropBounds.x / Math.max(1, context.capturePixelWidth)) * 1000;
   const cropTop = (context.cropBounds.y / Math.max(1, context.capturePixelHeight)) * 1000;
   const cropWidth = (context.cropBounds.width / Math.max(1, context.capturePixelWidth)) * 1000;
@@ -1578,16 +1677,27 @@ function fallbackFocusBounds(context: PreparedContext): {
   const maximumX = Math.max(...projected.map((point) => point.x));
   const minimumY = Math.min(...projected.map((point) => point.y));
   const maximumY = Math.max(...projected.map((point) => point.y));
-  const x = Math.round(clampNumber(minimumX - 24, 8, 940));
-  const y = Math.round(clampNumber(minimumY - 24, 8, 940));
-  const width = Math.round(clampNumber(maximumX - minimumX + 48, 52, 1000 - x));
-  const height = Math.round(clampNumber(maximumY - minimumY + 48, 52, 1000 - y));
+  const rawWidth = clampNumber(maximumX - minimumX + 48, 52, 420);
+  const rawHeight = clampNumber(maximumY - minimumY + 48, 52, 300);
+  const centerX = clampNumber((minimumX + maximumX) / 2, rawWidth / 2 + 8, 992 - rawWidth / 2);
+  const centerY = clampNumber((minimumY + maximumY) / 2, rawHeight / 2 + 8, 992 - rawHeight / 2);
+  const x = Math.round(centerX - rawWidth / 2);
+  const y = Math.round(centerY - rawHeight / 2);
+  const width = Math.round(rawWidth);
+  const height = Math.round(rawHeight);
   return { x, y, width, height };
 }
 
 function fallbackSimulation(kind: RequestedSimulationKind): LessonPlan["simulation"] {
   if (kind === "projectile") {
-    return { kind, gravity: 9.81, speed: 24, angleDegrees: 48, initialHeight: 0, dragCoefficient: 0 };
+    return {
+      kind,
+      gravity: 9.81,
+      speed: 24,
+      angleDegrees: 48,
+      initialHeight: 0,
+      dragCoefficient: 0,
+    };
   }
   if (kind === "trigonometry") {
     return { kind, function: "sin", amplitude: 1, frequency: 1, phase: 0, angleDegrees: 45 };
@@ -1613,11 +1723,24 @@ function fallbackSimulation(kind: RequestedSimulationKind): LessonPlan["simulati
   if (kind === "event-loop") {
     return {
       kind,
-      source: "console.log('Start'); Promise.resolve().then(() => console.log('Micro')); setTimeout(() => console.log('Task'), 0);",
+      source:
+        "console.log('Start'); Promise.resolve().then(() => console.log('Micro')); setTimeout(() => console.log('Task'), 0);",
       trace: [
         { id: "fallback-script", phase: "script", action: "execute", label: "Run script", line: 1 },
-        { id: "fallback-micro", phase: "microtask", action: "dequeue", label: "Run Promise", value: "Micro" },
-        { id: "fallback-task", phase: "task", action: "dequeue", label: "Run timer", value: "Task" },
+        {
+          id: "fallback-micro",
+          phase: "microtask",
+          action: "dequeue",
+          label: "Run Promise",
+          value: "Micro",
+        },
+        {
+          id: "fallback-task",
+          phase: "task",
+          action: "dequeue",
+          label: "Run timer",
+          value: "Task",
+        },
       ],
     };
   }
@@ -1625,7 +1748,16 @@ function fallbackSimulation(kind: RequestedSimulationKind): LessonPlan["simulati
     kind: "custom",
     durationSeconds: 4,
     entities: [
-      { id: "fallback-entity", shape: "circle", x: 50, y: 50, width: 12, height: 12, color: "cyan", label: "Focus" },
+      {
+        id: "fallback-entity",
+        shape: "circle",
+        x: 50,
+        y: 50,
+        width: 12,
+        height: 12,
+        color: "cyan",
+        label: "Focus",
+      },
     ],
     motions: [
       { entityId: "fallback-entity", kind: "pulse", amplitude: 0.2, frequency: 1, phase: 0 },
@@ -1792,6 +1924,9 @@ export function formatValidationFeedback(error: unknown, finishReason?: string):
     const expected = typeof item.expected === "string" ? `; expected ${item.expected}` : "";
     return [`${String(index + 1)}. $.${path || "root"}: ${message}${expected}`];
   });
+  if (issues.length === 0 && error instanceof Error && error.message.trim()) {
+    lines.push(error.message.replace(/\s+/g, " ").slice(0, 1_200));
+  }
   if (finishReason) lines.unshift("Provider finish reason: " + finishReason);
   if (lines.length > 0) return lines.join("\n").slice(0, 1_600);
   if (error instanceof Error && error.message.trim()) {
@@ -1808,10 +1943,7 @@ export function supportsReasoningControl(model: string): boolean {
   return /^(gpt-5(?:\.|-|$)|o[1-9](?:-|$))/i.test(model.trim());
 }
 
-export function openAiReasoningEffort(
-  model: string,
-  deep: boolean,
-): "none" | "minimal" | "high" {
+export function openAiReasoningEffort(model: string, deep: boolean): "none" | "minimal" | "high" {
   if (deep) return "high";
   // GPT-5.4 rejects the older `minimal` enum. Its zero-reasoning fast path is named `none`.
   return /^gpt-5\.4(?:-|$)/i.test(model.trim()) ? "none" : "minimal";
@@ -1849,6 +1981,7 @@ const PRIMITIVE_KINDS = new Set([
   "axis",
   "callout",
 ]);
+const LINEAR_PRIMITIVE_KINDS = new Set(["line", "arrow", "curved-arrow", "vector", "axis"]);
 const SIMULATION_BINDINGS: Record<string, ReadonlySet<string>> = {
   orbit: new Set([
     "gravitationalParameter",
@@ -1930,6 +2063,9 @@ export function normalizeModelLessonDraft(value: Record<string, unknown>): Recor
     const clean: Record<string, unknown> = { id: assignedId, kind, x: boundedX, y: boundedY };
     assignBoundedNumber(clean, "x2", primitive.x2, 0, 1_000);
     assignBoundedNumber(clean, "y2", primitive.y2, 0, 1_000);
+    if (LINEAR_PRIMITIVE_KINDS.has(kind)) {
+      repairLinearPrimitiveEndpoint(clean, primitive, boundedX, boundedY, rawId);
+    }
     const width = boundedNumber(primitive.width, 1, 1_000);
     const height = boundedNumber(primitive.height, 1, 1_000);
     if (width !== undefined) clean.width = Math.min(width, Math.max(1, 1_000 - boundedX));
@@ -1995,12 +2131,27 @@ export function normalizeModelLessonDraft(value: Record<string, unknown>): Recor
   for (const primitive of primitives) {
     const rawStepId = primitiveStepRefs.get(primitive);
     const mapped = rawStepId ? stepIdMap.get(rawStepId) : undefined;
-    if (mapped) primitive.stepId = mapped;
+    if (mapped) {
+      primitive.stepId = mapped;
+      const owner = steps.find((step) => step.id === mapped);
+      const ownerPrimitiveIds = owner?.primitiveIds;
+      if (
+        owner &&
+        Array.isArray(ownerPrimitiveIds) &&
+        typeof primitive.id === "string" &&
+        !ownerPrimitiveIds.includes(primitive.id)
+      ) {
+        ownerPrimitiveIds.push(primitive.id);
+      }
+    }
   }
 
   const simulation = normalizeSimulation(draft.simulation);
   if (simulation) draft.simulation = simulation;
-  else delete draft.simulation;
+  else {
+    delete draft.simulation;
+    reconcileSpatialStepReferences(primitives, steps);
+  }
   if (!simulation && draft.confidence === "verified-module") draft.confidence = "exploratory";
 
   const bindings = simulation ? SIMULATION_BINDINGS[String(simulation.kind)] : undefined;
@@ -2066,6 +2217,65 @@ export function normalizeModelLessonDraft(value: Record<string, unknown>): Recor
         .slice(0, 8)
     : [];
   return draft;
+}
+
+const FOCUS_PRIMITIVE_KINDS = new Set(["circle", "highlight", "spotlight", "point", "rect"]);
+const RELATIONSHIP_PRIMITIVE_KINDS = new Set([
+  "line",
+  "arrow",
+  "curved-arrow",
+  "path",
+  "bracket",
+  "vector",
+  "axis",
+]);
+
+/**
+ * Qwen occasionally returns correct drawable geometry but lists all of it on one narrated beat,
+ * or assigns a primitive through stepId without repeating it in primitiveIds. Preserve the
+ * model-authored marks and geometry, then spread only their references across the first two beats.
+ * This is a structural repair: it never invents lesson content, coordinates, or claims.
+ */
+function reconcileSpatialStepReferences(
+  primitives: Record<string, unknown>[],
+  steps: Record<string, unknown>[],
+): void {
+  const spatialPrimitives = primitives.filter(
+    (primitive) =>
+      typeof primitive.id === "string" &&
+      typeof primitive.kind === "string" &&
+      (FOCUS_PRIMITIVE_KINDS.has(primitive.kind) ||
+        RELATIONSHIP_PRIMITIVE_KINDS.has(primitive.kind)),
+  );
+  const requiredSpatialSteps = Math.min(2, steps.length);
+  if (requiredSpatialSteps === 0 || spatialPrimitives.length === 0) return;
+
+  const spatialIds = new Set(spatialPrimitives.map((primitive) => String(primitive.id)));
+  const spatialStepCount = (): number =>
+    steps.filter(
+      (step) =>
+        Array.isArray(step.primitiveIds) &&
+        step.primitiveIds.some((primitiveId) => spatialIds.has(String(primitiveId))),
+    ).length;
+  if (spatialStepCount() >= requiredSpatialSteps) return;
+
+  const focusId = spatialPrimitives.find((primitive) =>
+    FOCUS_PRIMITIVE_KINDS.has(String(primitive.kind)),
+  )?.id;
+  const relationshipId = spatialPrimitives.find((primitive) =>
+    RELATIONSHIP_PRIMITIVE_KINDS.has(String(primitive.kind)),
+  )?.id;
+  const preferredIds = [focusId, relationshipId, ...spatialPrimitives.map((item) => item.id)].filter(
+    (id): id is string => typeof id === "string",
+  );
+
+  for (let index = 0; index < steps.length && spatialStepCount() < requiredSpatialSteps; index += 1) {
+    const step = steps[index];
+    if (!step || !Array.isArray(step.primitiveIds)) continue;
+    if (step.primitiveIds.some((primitiveId) => spatialIds.has(String(primitiveId)))) continue;
+    const preferred = preferredIds[Math.min(index, preferredIds.length - 1)];
+    if (preferred && !step.primitiveIds.includes(preferred)) step.primitiveIds.push(preferred);
+  }
 }
 
 function normalizeSimulation(value: unknown): Record<string, unknown> | undefined {
@@ -2196,6 +2406,59 @@ function assignBoundedNumber(
 ): void {
   const number = boundedNumber(value, min, max);
   if (number !== undefined) target[key] = number;
+}
+
+/**
+ * Model-generated diagrams occasionally contain a useful arrow whose end point
+ * is omitted or accidentally equals its start point. Preserve the model's
+ * location and direction when possible, but make that minor geometry valid so
+ * one bad mark cannot discard an otherwise complete lesson.
+ */
+function repairLinearPrimitiveEndpoint(
+  target: Record<string, unknown>,
+  source: Record<string, unknown>,
+  originX: number,
+  originY: number,
+  idHint?: string,
+): void {
+  let endX = finiteNumber(target.x2) ?? originX;
+  let endY = finiteNumber(target.y2) ?? originY;
+  let deltaX = endX - originX;
+  let deltaY = endY - originY;
+  const distance = Math.hypot(deltaX, deltaY);
+
+  if (distance < 5) {
+    const visibleLength = 72;
+    if (distance > 0.01) {
+      deltaX = (deltaX / distance) * visibleLength;
+      deltaY = (deltaY / distance) * visibleLength;
+    } else {
+      const semanticHint = `${idHint ?? ""} ${cleanText(source.text, 120) ?? ""}`.toLowerCase();
+      const verticalHint =
+        /(?:^|[\s_-])(?:vy|vertical|y-axis|y component|gravity)(?:$|[\s_-])/.test(semanticHint);
+      const horizontalHint = /(?:^|[\s_-])(?:vx|horizontal|x-axis|x component)(?:$|[\s_-])/.test(
+        semanticHint,
+      );
+      const horizontalRoom = Math.max(originX, 1_000 - originX);
+      const verticalRoom = Math.max(originY, 1_000 - originY);
+      const useVertical = verticalHint || (!horizontalHint && verticalRoom > horizontalRoom);
+      if (useVertical) {
+        deltaY = originY <= 1_000 - visibleLength ? visibleLength : -visibleLength;
+      } else {
+        deltaX = originX <= 1_000 - visibleLength ? visibleLength : -visibleLength;
+      }
+    }
+
+    endX = originX + deltaX;
+    endY = originY + deltaY;
+    if (endX < 0 || endX > 1_000 || endY < 0 || endY > 1_000) {
+      endX = originX - deltaX;
+      endY = originY - deltaY;
+    }
+  }
+
+  target.x2 = Math.min(1_000, Math.max(0, endX));
+  target.y2 = Math.min(1_000, Math.max(0, endY));
 }
 
 function reserveId(

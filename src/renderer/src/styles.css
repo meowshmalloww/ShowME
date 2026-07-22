@@ -6319,9 +6319,14 @@ body.whiteboard-document #root {
 
 .whiteboard-stroke {
   paint-order: stroke fill;
-  filter: drop-shadow(0 0 3px var(--whiteboard-color, rgba(31, 188, 255, 0.96)))
-    drop-shadow(0 0 9px color-mix(in srgb, var(--whiteboard-color, #65dcff) 46%, transparent));
-  opacity: 0.96;
+  filter: drop-shadow(0 1px 1.5px rgba(0, 0, 0, 0.78))
+    drop-shadow(0 0 2px color-mix(in srgb, var(--whiteboard-color, #65dcff) 32%, transparent));
+  opacity: 0.95;
+}
+
+.whiteboard-stroke.broad-highlight {
+  filter: none;
+  opacity: 0.5;
 }
 
 .whiteboard-stroke.current {
@@ -6339,26 +6344,24 @@ body.whiteboard-document #root {
   z-index: 3;
   display: block;
   box-sizing: border-box;
-  padding: 7px 10px 8px;
-  border: 1px solid color-mix(in srgb, var(--whiteboard-accent, #65dcff) 46%, transparent);
-  border-radius: 10px;
-  background: linear-gradient(135deg, rgba(2, 8, 14, 0.88), rgba(4, 17, 27, 0.82));
+  padding: 6px 9px 7px;
+  border: 1px solid color-mix(in srgb, var(--whiteboard-accent, #65dcff) 35%, transparent);
+  border-radius: 8px;
+  background: rgba(6, 9, 13, 0.88);
   box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.42),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 0 16px color-mix(in srgb, var(--whiteboard-accent, #65dcff) 18%, transparent);
-  backdrop-filter: blur(10px) saturate(0.86) brightness(0.72);
+    0 5px 16px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(7px) saturate(0.82) brightness(0.72);
   color: #f8fdff;
-  font-size: clamp(17px, 1.35vw, 27px);
+  font-size: clamp(15px, 1.15vw, 23px);
   font-weight: 720;
   line-height: 1.22;
   letter-spacing: -0.018em;
   white-space: pre-wrap;
   text-wrap: balance;
   text-shadow:
-    0 2px 3px rgba(0, 0, 0, 0.98),
-    0 0 5px rgba(0, 0, 0, 0.95),
-    0 0 12px color-mix(in srgb, var(--whiteboard-accent, #65dcff) 65%, transparent);
+    0 1px 2px rgba(0, 0, 0, 0.98),
+    0 0 4px rgba(0, 0, 0, 0.94);
   transform: translateY(-50%);
 }
 
@@ -6370,25 +6373,23 @@ body.whiteboard-document #root {
   background: transparent;
   box-shadow: none;
   backdrop-filter: none;
-  -webkit-text-stroke: 0.65px rgba(0, 0, 0, 0.96);
+  -webkit-text-stroke: 0.8px rgba(0, 0, 0, 0.98);
   text-shadow:
     0 1px 2px #000,
     0 0 4px #000,
-    0 0 10px var(--whiteboard-accent, #65dcff);
+    0 0 7px rgba(0, 0, 0, 0.92);
 }
 
 .whiteboard-text.surface-soft {
-  padding: 5px 8px 6px;
-  border-color: color-mix(in srgb, var(--whiteboard-accent, #65dcff) 36%, transparent);
-  background: rgba(3, 10, 16, 0.68);
-  box-shadow:
-    0 5px 18px rgba(0, 0, 0, 0.34),
-    0 0 12px color-mix(in srgb, var(--whiteboard-accent, #65dcff) 12%, transparent);
-  backdrop-filter: blur(7px) saturate(0.82) brightness(0.74);
+  padding: 4px 7px 5px;
+  border-color: color-mix(in srgb, var(--whiteboard-accent, #65dcff) 28%, transparent);
+  background: rgba(6, 9, 13, 0.76);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(5px) saturate(0.8) brightness(0.74);
 }
 
 .whiteboard-text.surface-plate {
-  border-color: color-mix(in srgb, var(--whiteboard-accent, #65dcff) 58%, transparent);
+  border-color: color-mix(in srgb, var(--whiteboard-accent, #65dcff) 42%, transparent);
 }
 
 .whiteboard-text.current {
@@ -6400,7 +6401,7 @@ body.whiteboard-document #root {
   background: linear-gradient(135deg, rgba(1, 6, 11, 0.94), rgba(3, 15, 24, 0.88));
   color: #ffffff;
   font-family: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
-  font-size: clamp(20px, 1.7vw, 34px);
+  font-size: clamp(18px, 1.45vw, 29px);
   font-weight: 760;
   letter-spacing: -0.04em;
 }
@@ -6408,14 +6409,12 @@ body.whiteboard-document #root {
 .whiteboard-callout {
   max-width: min(420px, 38vw);
   padding: 9px 13px 10px;
-  border: 1px solid color-mix(in srgb, var(--whiteboard-accent, #65dcff) 72%, transparent);
-  border-radius: 12px;
-  background: linear-gradient(135deg, rgba(2, 9, 15, 0.96), rgba(4, 20, 30, 0.91));
-  box-shadow:
-    0 10px 30px rgba(0, 0, 0, 0.38),
-    0 0 18px color-mix(in srgb, var(--whiteboard-accent, #65dcff) 26%, transparent);
-  backdrop-filter: blur(12px) saturate(0.9) brightness(0.68);
-  font-size: clamp(15px, 1.05vw, 21px);
+  border: 1px solid color-mix(in srgb, var(--whiteboard-accent, #65dcff) 44%, transparent);
+  border-radius: 9px;
+  background: rgba(5, 9, 13, 0.91);
+  box-shadow: 0 7px 20px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(8px) saturate(0.84) brightness(0.7);
+  font-size: clamp(14px, 0.98vw, 19px);
 }
 
 .teaching-cursor {
@@ -6425,35 +6424,20 @@ body.whiteboard-document #root {
   height: 1px;
   pointer-events: none;
   animation: teaching-cursor-arrive 660ms cubic-bezier(0.2, 0.86, 0.28, 1.12) both;
-  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.9));
+  filter: drop-shadow(0 1px 1px rgba(255, 255, 255, 0.8)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.92));
 }
 
 .teaching-cursor-pointer {
   position: absolute;
-  left: -2px;
-  top: -3px;
-  width: 22px;
-  height: 29px;
+  left: -1px;
+  top: -2px;
+  width: 17px;
+  height: 23px;
   clip-path: polygon(0 0, 82% 68%, 52% 71%, 67% 100%, 51% 100%, 37% 73%, 16% 92%);
-  background: linear-gradient(145deg, #ffffff 0%, #f4fbff 55%, #86e6ff 100%);
-  box-shadow: inset 0 0 0 1px rgba(0, 20, 30, 0.74);
-  transform: rotate(-7deg);
+  background: color-mix(in srgb, var(--teaching-cursor-color, #ffc857) 62%, white);
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.78);
+  transform: rotate(-5deg);
   transform-origin: 2px 2px;
-}
-
-.teaching-cursor-ring {
-  position: absolute;
-  left: -9px;
-  top: -9px;
-  width: 18px;
-  height: 18px;
-  border: 2px solid rgba(101, 220, 255, 0.92);
-  border-radius: 50%;
-  background: rgba(101, 220, 255, 0.12);
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.72),
-    0 0 12px rgba(101, 220, 255, 0.86);
-  animation: teaching-cursor-pulse 1.35s ease-in-out 620ms infinite;
 }
 
 .whiteboard-simulation {
@@ -6493,6 +6477,43 @@ body.whiteboard-document #root {
   stroke: rgba(0, 0, 0, 0.92);
   stroke-width: 3px;
   stroke-linejoin: round;
+}
+
+/* When the lesson plan reserves a visual region, animate inside that exact
+   screen-space area. This keeps simulations off page titles and makes them feel
+   like whiteboard ink over the learner's source instead of a floating panel. */
+.whiteboard-simulation.grounded {
+  min-width: 0;
+  max-width: none;
+  right: auto;
+  bottom: auto;
+  filter: drop-shadow(0 4px 9px rgba(0, 0, 0, 0.34));
+}
+
+.whiteboard-simulation.grounded .simulation-graphic {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+}
+
+/* Generic motion art is synthesized from the model's grounded ink. Keep it a
+   small transparent animation in unused space instead of duplicating the lesson
+   as a large panel over the learner's source. The primary labels remain in the
+   whiteboard layer, so entity labels here would only repeat and obscure them. */
+.whiteboard-simulation.sim-custom {
+  width: min(320px, 24vw, calc(100vw - 24px));
+  min-width: min(220px, calc(100vw - 24px));
+  top: auto;
+  bottom: 3vh;
+  filter: drop-shadow(0 5px 10px rgba(0, 0, 0, 0.34));
+}
+
+.whiteboard-simulation.sim-custom .simulation-graphic {
+  max-height: min(32vh, 320px);
+}
+
+.whiteboard-simulation.sim-custom .sim-heading {
+  display: none;
 }
 
 .whiteboard-media {
@@ -6589,18 +6610,6 @@ body.whiteboard-document #root {
   }
 }
 
-@keyframes teaching-cursor-pulse {
-  0%,
-  100% {
-    opacity: 0.54;
-    transform: scale(0.78);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.18);
-  }
-}
-
 .whiteboard-simulation,
 .whiteboard-media {
   transform: none;
@@ -6617,8 +6626,7 @@ body.whiteboard-document #root {
 .reduced-motion .whiteboard-stroke.current,
 .reduced-motion .whiteboard-text.current,
 .reduced-motion .whiteboard-spotlight.current,
-.teaching-cursor.reduced-motion,
-.teaching-cursor.reduced-motion .teaching-cursor-ring {
+.teaching-cursor.reduced-motion {
   animation: none !important;
 }
 

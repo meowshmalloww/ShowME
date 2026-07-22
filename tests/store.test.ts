@@ -199,6 +199,11 @@ describe("local SQLite product state", () => {
         capturePixelWidth: 1920,
         capturePixelHeight: 1080,
         scope: "selection",
+        contrastMap: {
+          columns: 2,
+          rows: 2,
+          luminance: [0.1, 0.2, 0.3, 0.4],
+        },
       },
     };
 
@@ -206,7 +211,14 @@ describe("local SQLite product state", () => {
     const saved = store.getLesson(presentation.plan.id);
     expect(saved?.presentation.contextPreviewDataUrl).toBeUndefined();
     expect(saved?.presentation.contextPreviewExpiresAt).toBeUndefined();
-    expect(saved?.presentation.contextGeometry).toBeUndefined();
+    expect(saved?.presentation.contextGeometry?.cropBounds).toEqual({
+      x: 120,
+      y: 80,
+      width: 800,
+      height: 600,
+    });
+    expect(saved?.presentation.contextGeometry?.display.label).toBe("Saved display");
+    expect(saved?.presentation.contextGeometry?.contrastMap).toBeUndefined();
     store.close();
 
     const database = new DatabaseSync(databasePath);
@@ -214,6 +226,8 @@ describe("local SQLite product state", () => {
       .prepare("SELECT presentation_json FROM lessons WHERE id = ?")
       .get(presentation.plan.id) as { presentation_json: string };
     expect(row.presentation_json).not.toContain("privatepixels");
+    expect(row.presentation_json).not.toContain("Private display");
+    expect(row.presentation_json).not.toContain("luminance");
     database.close();
   });
 });

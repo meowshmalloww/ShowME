@@ -5,7 +5,7 @@ import sharp from "sharp";
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const root = join(scriptDirectory, "..");
 const source = join(root, "docs", "media", "source", "showme-workspace-clean.png");
-const output = join(root, "docs", "media", "showme-devpost-thumbnail.png");
+const output = join(root, "artifacts", "submission", "ShowME-Devpost-Thumbnail.png");
 
 const width = 1536;
 const height = 1024;

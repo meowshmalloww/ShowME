@@ -104,6 +104,24 @@ describe("narration playback resilience", () => {
     await expect(playback).resolves.toBeUndefined();
   });
 
+  it("does not mistake a browser resource abort event for stopped narration", async () => {
+    const audio = document.createElement("audio");
+    vi.spyOn(audio, "play").mockResolvedValue(undefined);
+    const playback = playAudioElement({
+      audio,
+      signal: new AbortController().signal,
+      completionTimeoutMs: 25_000,
+    });
+
+    // Chromium can emit this when its media loader is replaced or rerouted. Actual lesson
+    // cancellation is carried by the AbortSignal, while decode/stall watchdogs cover failures.
+    audio.dispatchEvent(new Event("abort"));
+    audio.dispatchEvent(new Event("playing"));
+    audio.dispatchEvent(new Event("ended"));
+
+    await expect(playback).resolves.toBeUndefined();
+  });
+
   it("rejects cloud audio that remains stalled", async () => {
     vi.useFakeTimers();
     const audio = document.createElement("audio");

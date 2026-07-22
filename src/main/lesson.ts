@@ -72,6 +72,7 @@ export class LessonService {
           capturePixelWidth: context.capturePixelWidth,
           capturePixelHeight: context.capturePixelHeight,
           scope: context.scope,
+          ...(context.contrastMap ? { contrastMap: context.contrastMap } : {}),
         },
       };
       this.store.saveLesson(presentation);
@@ -148,6 +149,19 @@ export function buildMemoryContext(settings: AppSettings, store: AppStore): stri
     );
   }
   return context.join("\n");
+}
+
+export function prepareSavedLessonReplay(
+  presentation: LessonPresentation,
+  settings: Pick<AppSettings, "voiceEnabled">,
+): LessonPresentation {
+  return {
+    ...presentation,
+    request: {
+      ...presentation.request,
+      replyWithVoice: settings.voiceEnabled,
+    },
+  };
 }
 
 function adaptationPrompt(

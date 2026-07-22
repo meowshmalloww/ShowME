@@ -111,7 +111,14 @@ export function MainWindow() {
     void refresh().catch((reason) => setToast({ message: errorMessage(reason), tone: "error" }));
     const cleanups = [
       window.showme.events.onNavigate((value) => {
-        if (["home", "library", "settings"].includes(value)) setSection(value as Section);
+        if (["home", "library", "settings"].includes(value)) {
+          setSection(value as Section);
+          // The main window can stay hidden while a lesson is generated. Refresh whenever
+          // the OS/tray opens it again so Home never displays stale lesson counts or cards.
+          void refresh().catch((reason) =>
+            setToast({ message: errorMessage(reason), tone: "error" }),
+          );
+        }
       }),
       window.showme.events.onSettingsChanged((settings) => {
         setBootstrap((current) =>
@@ -244,7 +251,12 @@ export function MainWindow() {
             active={section === "home"}
             icon={<Home />}
             label="Home"
-            onClick={() => setSection("home")}
+            onClick={() => {
+              setSection("home");
+              void refresh().catch((reason) =>
+                setToast({ message: errorMessage(reason), tone: "error" }),
+              );
+            }}
           />
           <NavButton
             active={section === "library"}

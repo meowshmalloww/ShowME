@@ -119,6 +119,37 @@ describe("trusted lesson schema", () => {
     ).toThrow(/Visual grounding/i);
   });
 
+  it("accepts a compact visual lesson that reuses grounded marks across narration", () => {
+    const plan = validateLessonPlan({
+      ...lesson,
+      confidence: "exploratory",
+      controls: [],
+      simulation: undefined,
+      primitives: [
+        { id: "angle-focus", kind: "circle", x: 520, y: 310, radius: 45 },
+        { id: "side-arrow", kind: "arrow", x: 710, y: 180, x2: 545, y2: 300 },
+        {
+          id: "formula",
+          kind: "equation",
+          x: 690,
+          y: 130,
+          text: "tan(theta) = opposite / adjacent",
+        },
+      ],
+      steps: [
+        { ...lesson.steps[0], id: "mark-angle", primitiveIds: ["angle-focus"] },
+        {
+          ...lesson.steps[0],
+          id: "trace-side",
+          primitiveIds: ["side-arrow", "angle-focus"],
+        },
+        { ...lesson.steps[0], id: "show-formula", primitiveIds: ["formula"] },
+      ],
+    });
+
+    expect(plan.steps).toHaveLength(3);
+  });
+
   it("treats a trusted simulation as the spatial visual across narrated steps", () => {
     expect(
       validateLessonPlan({

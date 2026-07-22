@@ -6,6 +6,7 @@ import {
   extractCompatibleText,
   extractGeminiResponse,
   extractOpenAiResponse,
+  formatValidationFeedback,
   normalizeModelLessonDraft,
   openAiReasoningEffort,
   ProviderService,
@@ -215,6 +216,74 @@ describe("provider response contracts", () => {
     expect(requestedSimulationKind("Draw an arrow along this trajectory.")).toBeUndefined();
   });
 
+  it("preserves a valid generated lesson when generic motion art omits its custom module", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [
+            { finish_reason: "stop", message: { content: JSON.stringify(compatiblePlan) } },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new ProviderService({ get: () => "nvapi-test" } as unknown as SecretStore);
+    const settings = { ...structuredClone(DEFAULT_SETTINGS), provider: "nvidia" as const };
+    const plan = await service.generate({
+      request: {
+        captureId: "capture-motion",
+        question: "Show an interactive motion-art simulation of this causal chain.",
+        includeNearbyContext: false,
+        includeActiveWindow: false,
+        researchMode: "quick",
+        allowWebResearch: false,
+        allowImageAids: false,
+        language: "en",
+        teachingStyle: "visual-fast",
+        complexity: "standard",
+        provider: "nvidia",
+        model: "nvidia/nemotron-nano-12b-v2-vl",
+      },
+      context: {
+        captureId: "capture-motion",
+        previewDataUrl: "data:image/png;base64,AA==",
+        regions: [],
+        pixelWidth: 800,
+        pixelHeight: 600,
+        capturePixelWidth: 800,
+        capturePixelHeight: 600,
+        display: {
+          id: 1,
+          label: "Test display",
+          bounds: { x: 0, y: 0, width: 800, height: 600 },
+          workArea: { x: 0, y: 0, width: 800, height: 560 },
+          size: { width: 800, height: 600 },
+          scaleFactor: 1,
+        },
+        cropBounds: { x: 0, y: 0, width: 800, height: 600 },
+        containsAnnotations: false,
+        scope: "display",
+      },
+      settings,
+      memoryContext: "",
+      signal: new AbortController().signal,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(plan.teachingMode).toBe("interactive-experiment");
+    expect(plan.simulation?.kind).toBe("custom");
+    if (plan.simulation?.kind !== "custom") throw new Error("Expected a custom simulation");
+    expect(plan.simulation.entities).toHaveLength(1);
+    expect(plan.simulation.motions).toHaveLength(1);
+  });
+
+  it("keeps the actual validation error beside the provider finish reason", () => {
+    expect(formatValidationFeedback(new Error("Custom simulation was omitted"), "stop")).toContain(
+      "Custom simulation was omitted",
+    );
+  });
+
   it("returns an honest grounded lesson after two truncated OpenAI responses", async () => {
     const truncated = {
       status: "incomplete",
@@ -304,6 +373,82 @@ describe("provider response contracts", () => {
     });
   });
 
+  it("keeps a Qwen lesson usable after two incomplete streamed JSON responses", async () => {
+    const event = {
+      choices: [
+        {
+          finish_reason: "length",
+          delta: { content: '{"version":1,"title":"Partial"' },
+        },
+      ],
+    };
+    const stream = `data: ${JSON.stringify(event)}\n\ndata: [DONE]\n\n`;
+    const fetchMock = vi.fn().mockImplementation(() =>
+      Promise.resolve(
+        new Response(stream, {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = new ProviderService({ get: () => "qwen-test-key" } as unknown as SecretStore);
+    const settings = structuredClone(DEFAULT_SETTINGS);
+    settings.provider = "alibaba";
+    settings.models.alibaba = "qwen3.5-plus";
+    settings.textModels.alibaba = "qwen3.5-plus";
+
+    const plan = await service.generate({
+      request: {
+        captureId: "capture-qwen-truncated",
+        question: "Show me this visible relationship.",
+        copiedText: "A visible relationship selected by the learner.",
+        includeNearbyContext: false,
+        includeActiveWindow: false,
+        researchMode: "quick",
+        allowWebResearch: false,
+        allowImageAids: false,
+        language: "en",
+        teachingStyle: "visual-fast",
+        complexity: "standard",
+        provider: "alibaba",
+        model: "qwen3.5-plus",
+      },
+      context: {
+        captureId: "capture-qwen-truncated",
+        previewDataUrl: "data:image/png;base64,AA==",
+        regions: [],
+        pixelWidth: 800,
+        pixelHeight: 600,
+        capturePixelWidth: 800,
+        capturePixelHeight: 600,
+        display: {
+          id: 1,
+          label: "Test display",
+          bounds: { x: 0, y: 0, width: 800, height: 600 },
+          workArea: { x: 0, y: 0, width: 800, height: 560 },
+          size: { width: 800, height: 600 },
+          scaleFactor: 1,
+        },
+        cropBounds: { x: 0, y: 0, width: 800, height: 600 },
+        containsAnnotations: false,
+        scope: "display",
+      },
+      settings,
+      memoryContext: "",
+      signal: new AbortController().signal,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(plan.title).toContain("Keep the selected idea in view");
+    expect(plan.uncertainty).toContain("length");
+    for (const call of fetchMock.mock.calls) {
+      const request = JSON.parse(String(call[1]?.body)) as Record<string, unknown>;
+      expect(request.max_tokens).toBeUndefined();
+      expect(request.enable_thinking).toBe(false);
+    }
+  });
+
   it("builds a validated local fallback that keeps requested simulations usable", () => {
     const plan = createGroundedFallbackPlan(
       {
@@ -344,6 +489,12 @@ describe("provider response contracts", () => {
 
     expect(plan.simulation?.kind).toBe("projectile");
     expect(validateLessonPlan(plan).steps).toHaveLength(2);
+    const fallbackHighlight = plan.primitives.find(
+      (primitive) => primitive.id === "fallback-focus",
+    );
+    expect(fallbackHighlight).toMatchObject({ width: 140, height: 120 });
+    const fallbackNote = plan.primitives.find((primitive) => primitive.id === "fallback-note");
+    expect(fallbackNote?.text).toBe("Select the exact part and try again");
   });
 
   it("disables hybrid Qwen thinking for a fast connection check", async () => {
@@ -423,6 +574,60 @@ describe("provider response contracts", () => {
     expect((normalized.claims as Array<{ citationIds: string[] }>)[0]?.citationIds).toEqual([]);
   });
 
+  it("keeps a complete visual lesson when Qwen collapses all drawable marks into one step", () => {
+    const normalized = normalizeModelLessonDraft({
+      version: 1,
+      title: "Find the selected angle",
+      concept: "Opposite and adjacent sides",
+      summary: "Mark the angle, trace the sides, then apply tangent.",
+      teachingMode: "worked-derivation",
+      confidence: "exploratory",
+      sourceDescription: "A selected triangle problem",
+      narration: "Follow the marked angle and its two sides.",
+      primitives: [
+        { id: "theta-focus", kind: "circle", x: 720, y: 240, radius: 44 },
+        { id: "side-arrow", kind: "arrow", x: 850, y: 180, x2: 610, y2: 520 },
+        { id: "formula", kind: "equation", x: 70, y: 80, text: "tan(theta) = 11.9 / 10" },
+      ],
+      steps: [
+        {
+          id: "locate",
+          title: "Locate theta",
+          narration: "First, find the selected angle and the two sides around it.",
+          primitiveIds: ["theta-focus", "side-arrow"],
+          durationMs: 1_200,
+        },
+        {
+          id: "relate",
+          title: "Relate the sides",
+          narration: "The arrow traces the opposite and adjacent sides.",
+          primitiveIds: [],
+          durationMs: 1_400,
+        },
+        {
+          id: "calculate",
+          title: "Apply tangent",
+          narration: "Now divide opposite by adjacent.",
+          primitiveIds: ["formula"],
+          durationMs: 1_500,
+        },
+      ],
+      controls: [],
+      claims: [],
+      citations: [],
+      followUps: [],
+    });
+    const plan = validateLessonPlan({
+      ...normalized,
+      id: "lesson-qwen-spatial-repair",
+      provider: { id: "alibaba", model: "qwen3.6-plus" },
+    });
+
+    expect(plan.steps[1]?.primitiveIds).toContain("side-arrow");
+    expect(plan.primitives).toHaveLength(3);
+    expect(plan.title).toBe("Find the selected angle");
+  });
+
   it("repairs bounded model shape mistakes without weakening final validation", () => {
     const normalized = normalizeModelLessonDraft({
       version: "1",
@@ -478,6 +683,55 @@ describe("provider response contracts", () => {
     expect(plan.controls).toEqual([]);
     expect(plan.followUps).toEqual([]);
     expect(plan.confidence).toBe("exploratory");
+  });
+
+  it("repairs a model-generated zero-length arrow without replacing the lesson", () => {
+    const normalized = normalizeModelLessonDraft({
+      title: "Projectile components",
+      concept: "Velocity components",
+      summary: "Separate horizontal and vertical motion.",
+      narration: "Follow the two component arrows.",
+      teachingMode: "interactive-experiment",
+      confidence: "verified-module",
+      sourceDescription: "A projectile diagram",
+      primitives: [
+        {
+          id: "vy-arrow",
+          kind: "arrow",
+          x: 480,
+          y: 420,
+          x2: 480,
+          y2: 420,
+          text: "vertical velocity",
+        },
+        { id: "apex", kind: "circle", x: 480, y: 420, radius: 36 },
+      ],
+      steps: [
+        {
+          id: "components",
+          title: "Split the velocity",
+          narration: "The vertical component changes under gravity.",
+          primitiveIds: ["vy-arrow", "apex"],
+          durationMs: 2_400,
+        },
+      ],
+      simulation: { kind: "projectile", parameters: { gravity: 9.81, speed: 24 } },
+      claims: [],
+      citations: [],
+      followUps: [],
+    });
+    const plan = validateLessonPlan({
+      ...normalized,
+      id: "lesson-projectile",
+      provider: { id: "alibaba", model: "qwen3.6-plus" },
+    });
+    const arrow = plan.primitives.find((primitive) => primitive.id === "vy-arrow");
+    expect(arrow).toBeDefined();
+    expect(
+      Math.hypot((arrow?.x2 ?? 0) - (arrow?.x ?? 0), (arrow?.y2 ?? 0) - (arrow?.y ?? 0)),
+    ).toBeGreaterThanOrEqual(5);
+    expect(arrow?.x2).toBe(arrow?.x);
+    expect(arrow?.y2).not.toBe(arrow?.y);
   });
 
   it("uses NVIDIA's documented prompt contract with reasoning disabled for the selected VLM", async () => {
@@ -832,9 +1086,12 @@ describe("provider response contracts", () => {
         expect(request).toMatchObject({
           stream: true,
           stream_options: { include_usage: true },
-          max_tokens: 8_192,
           enable_thinking: false,
         });
+        expect(request.max_tokens).toBeUndefined();
+        expect(request.max_completion_tokens).toBeUndefined();
+        expect(request.messages[0].content).toContain("Qwen response requirement");
+        expect(request.messages[0].content).toContain("complete JSON object");
       }
       if (testCase.provider === "cerebras") {
         expect(request.max_completion_tokens).toBe(16_000);

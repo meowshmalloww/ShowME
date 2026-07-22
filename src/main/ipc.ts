@@ -30,7 +30,7 @@ import type {
 } from "../shared/types";
 import { voiceServiceSummaries } from "../shared/voice";
 import type { CaptureService } from "./capture";
-import type { LessonService } from "./lesson";
+import { prepareSavedLessonReplay, type LessonService } from "./lesson";
 import { searchCommons } from "./media";
 import type { ProviderService } from "./providers";
 import type { SecretStore } from "./secrets";
@@ -214,9 +214,10 @@ export function registerIpc(dependencies: IpcDependencies): void {
   );
   handle(CHANNELS.lessonOpenSaved, async (_event, id: string) => {
     const stored = store.getLesson(String(id));
-    windows.showLesson(stored.presentation);
+    const presentation = prepareSavedLessonReplay(stored.presentation, store.getSettings());
+    windows.showLesson(presentation);
     dependencies.onVoiceActivity("idle");
-    return stored;
+    return { ...stored, presentation };
   });
   handle(CHANNELS.lessonSetSurface, async (_event, surface: LessonSurface) => {
     if (!["inline", "side", "focus"].includes(surface))

@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { buildMemoryContext } from "../src/main/lesson";
+import { buildMemoryContext, prepareSavedLessonReplay } from "../src/main/lesson";
 import type { AppStore } from "../src/main/store";
 import { DEFAULT_SETTINGS } from "../src/shared/defaults";
+import type { LessonPresentation } from "../src/shared/types";
 
 describe("learner context", () => {
   it("includes the learner-provided baseline even when adaptive memory is disabled", () => {
@@ -42,5 +43,28 @@ describe("learner context", () => {
     const context = buildMemoryContext(settings, store);
     expect(context).toContain("Undergraduate");
     expect(context).toContain("feedback: pacing = slower");
+  });
+});
+
+describe("saved lesson replay", () => {
+  it("uses the current voice preference without mutating the stored presentation", () => {
+    const stored = {
+      request: { replyWithVoice: false },
+    } as LessonPresentation;
+
+    const replay = prepareSavedLessonReplay(stored, { voiceEnabled: true });
+
+    expect(replay.request.replyWithVoice).toBe(true);
+    expect(stored.request.replyWithVoice).toBe(false);
+  });
+
+  it("keeps narration disabled when voice output is currently disabled", () => {
+    const stored = {
+      request: { replyWithVoice: true },
+    } as LessonPresentation;
+
+    expect(prepareSavedLessonReplay(stored, { voiceEnabled: false }).request.replyWithVoice).toBe(
+      false,
+    );
   });
 });

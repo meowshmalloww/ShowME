@@ -1,4 +1,5 @@
 import sharp from "sharp";
+import type { ScreenContrastMap } from "../shared/types";
 
 const GRID_DIVISIONS = 10;
 
@@ -18,6 +19,28 @@ export async function createGroundingImageDataUrl(png: Buffer): Promise<string> 
     .png({ compressionLevel: 6 })
     .toBuffer();
   return `data:image/png;base64,${output.toString("base64")}`;
+}
+
+export async function createScreenContrastMap(
+  png: Buffer,
+  columns = 24,
+  rows = 14,
+): Promise<ScreenContrastMap> {
+  const safeColumns = Math.max(4, Math.min(48, Math.round(columns)));
+  const safeRows = Math.max(4, Math.min(32, Math.round(rows)));
+  const { data, info } = await sharp(png, { failOn: "error", limitInputPixels: 80_000_000 })
+    .resize(safeColumns, safeRows, { fit: "fill", kernel: "mitchell" })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+  const luminance: number[] = [];
+  for (let offset = 0; offset < data.length; offset += info.channels) {
+    const red = data[offset] ?? 0;
+    const green = data[offset + 1] ?? red;
+    const blue = data[offset + 2] ?? red;
+    luminance.push(Number(((0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255).toFixed(4)));
+  }
+  return { columns: safeColumns, rows: safeRows, luminance };
 }
 
 export function buildCoordinateScaffold(width: number, height: number): string {
