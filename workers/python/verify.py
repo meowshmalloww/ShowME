@@ -118,6 +118,24 @@ def verify(simulation: dict[str, Any]) -> dict[str, Any]:
         trace = simulation.get("trace")
         valid = isinstance(trace, list) and 0 < len(trace) <= 160
         details.update(traceSteps=len(trace) if isinstance(trace, list) else 0)
+    elif kind == "motion-scene":
+        duration = finite(simulation.get("durationSeconds"), "durationSeconds")
+        beats = simulation.get("beats")
+        layouts = {"timeline", "cause-effect", "sequence", "compare", "quote"}
+        valid = (
+            3 <= duration <= 30
+            and simulation.get("layout") in layouts
+            and isinstance(beats, list)
+            and 2 <= len(beats) <= 6
+            and all(
+                isinstance(beat, dict)
+                and all(isinstance(beat.get(field), str) and beat.get(field) for field in (
+                    "id", "marker", "heading", "caption", "accent"
+                ))
+                for beat in beats
+            )
+        )
+        details.update(durationSeconds=duration, beats=len(beats) if isinstance(beats, list) else 0)
     elif kind == "custom":
         entities = simulation.get("entities")
         motions = simulation.get("motions")

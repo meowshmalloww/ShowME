@@ -10,6 +10,7 @@ import type {
   ControlSpec,
   LessonPlan,
   LessonPrimitive,
+  MotionSceneSimulationSpec,
   SimulationSpec,
 } from "../../../shared/types";
 
@@ -706,6 +707,15 @@ export function SimulationGraphic({
         </svg>
       );
     }
+    if (simulation.kind === "motion-scene") {
+      return (
+        <MotionSceneGraphic
+          simulation={simulation}
+          time={time}
+          reducedMotion={reducedMotion}
+        />
+      );
+    }
     const duration = simulation.durationSeconds * 1000;
     const t = (time % duration) / 1000;
     return (
@@ -778,6 +788,174 @@ export function SimulationGraphic({
       </div>
     );
   }
+}
+
+const MOTION_SCENE_COLORS = {
+  cyan: "#65dcff",
+  amber: "#ffc857",
+  violet: "#b79cff",
+  mint: "#67e8b5",
+  coral: "#ff8b7b",
+} as const;
+
+function MotionSceneGraphic({
+  simulation,
+  time,
+  reducedMotion,
+}: {
+  simulation: MotionSceneSimulationSpec;
+  time: number;
+  reducedMotion: boolean;
+}) {
+  const progress = reducedMotion
+    ? 1
+    : Math.min(1, time / Math.max(1, simulation.durationSeconds * 1_000));
+  const activeIndex = Math.min(
+    simulation.beats.length - 1,
+    Math.floor(progress * simulation.beats.length),
+  );
+  const positions = motionScenePositions(simulation);
+  const activeBeat = simulation.beats[activeIndex] ?? simulation.beats[0];
+
+  if (simulation.layout === "quote" && activeBeat) {
+    const accent = MOTION_SCENE_COLORS[activeBeat.accent];
+    return (
+      <svg
+        className="simulation-graphic motion-scene-graphic"
+        viewBox="0 0 800 440"
+        role="img"
+        aria-label={`Motion graphic: ${simulation.title}`}
+      >
+        <text x="400" y="45" textAnchor="middle" className="motion-scene-title">
+          {simulation.title}
+        </text>
+        <path d="M155 112 H645" stroke={accent} strokeWidth="1.5" opacity=".55" />
+        <text x="400" y="105" textAnchor="middle" className="motion-scene-marker">
+          {activeBeat.marker}
+        </text>
+        <foreignObject x="135" y="125" width="530" height="210">
+          <div className="motion-scene-quote" style={{ "--motion-accent": accent } as CSSProperties}>
+            <strong>{activeBeat.heading}</strong>
+            <span>{activeBeat.caption}</span>
+          </div>
+        </foreignObject>
+        <g transform="translate(400 380)">
+          {simulation.beats.map((beat, index) => (
+            <circle
+              key={beat.id}
+              cx={(index - (simulation.beats.length - 1) / 2) * 28}
+              cy="0"
+              r={index === activeIndex ? 5 : 3}
+              fill={index <= activeIndex ? MOTION_SCENE_COLORS[beat.accent] : "#424957"}
+            />
+          ))}
+        </g>
+      </svg>
+    );
+  }
+
+  return (
+    <svg
+      className={`simulation-graphic motion-scene-graphic layout-${simulation.layout}`}
+      viewBox="0 0 800 440"
+      role="img"
+      aria-label={`Motion graphic: ${simulation.title}`}
+    >
+      <defs>
+        <marker
+          id="motion-scene-arrow"
+          viewBox="0 0 10 10"
+          refX="8.5"
+          refY="5"
+          markerWidth="5"
+          markerHeight="5"
+          orient="auto"
+        >
+          <path d="M0 0 10 5 0 10Z" fill="#a7eaff" />
+        </marker>
+      </defs>
+      <text x="400" y="40" textAnchor="middle" className="motion-scene-title">
+        {simulation.title}
+      </text>
+      {simulation.layout === "compare" ? (
+        <line x1="400" y1="78" x2="400" y2="400" stroke="#3c4351" strokeDasharray="5 8" />
+      ) : null}
+      {positions.slice(1).map((position, index) => {
+        const previous = positions[index];
+        if (!previous) return null;
+        const revealed = index + 1 <= activeIndex;
+        return (
+          <line
+            key={`connector-${simulation.beats[index + 1]?.id ?? index}`}
+            className={`motion-scene-connector${revealed ? " revealed" : ""}`}
+            x1={previous.x}
+            y1={previous.y}
+            x2={position.x}
+            y2={position.y}
+            markerEnd="url(#motion-scene-arrow)"
+          />
+        );
+      })}
+      {simulation.beats.map((beat, index) => {
+        const position = positions[index] ?? { x: 400, y: 220 };
+        const revealed = index <= activeIndex;
+        const accent = MOTION_SCENE_COLORS[beat.accent];
+        return (
+          <g
+            key={beat.id}
+            className={`motion-scene-node${revealed ? " revealed" : ""}${index === activeIndex ? " active" : ""}`}
+          >
+            <circle cx={position.x} cy={position.y} r="8" fill={accent} />
+            <circle cx={position.x} cy={position.y} r="16" fill="none" stroke={accent} opacity=".35" />
+            <foreignObject x={position.x - 105} y={position.y + 20} width="210" height="108">
+              <div
+                className="motion-scene-card"
+                style={{ "--motion-accent": accent } as CSSProperties}
+              >
+                <small>{beat.marker}</small>
+                <strong>{beat.heading}</strong>
+                <span>{beat.caption}</span>
+              </div>
+            </foreignObject>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function motionScenePositions(
+  simulation: MotionSceneSimulationSpec,
+): { x: number; y: number }[] {
+  const count = simulation.beats.length;
+  if (simulation.layout === "compare") {
+    const leftCount = Math.ceil(count / 2);
+    return simulation.beats.map((_, index) => {
+      const left = index < leftCount;
+      const columnIndex = left ? index : index - leftCount;
+      const columnCount = left ? leftCount : count - leftCount;
+      return {
+        x: left ? 220 : 580,
+        y: 112 + (columnIndex * 245) / Math.max(1, columnCount - 1),
+      };
+    });
+  }
+  if (simulation.layout === "sequence") {
+    return simulation.beats.map((_, index) => ({
+      x: index % 2 === 0 ? 205 : 595,
+      y: 105 + (index * 255) / Math.max(1, count - 1),
+    }));
+  }
+  const gap = 620 / Math.max(1, count - 1);
+  return simulation.beats.map((_, index) => ({
+    x: 90 + index * gap,
+    y:
+      simulation.layout === "cause-effect"
+        ? index % 2 === 0
+          ? 145
+          : 265
+        : 190,
+  }));
 }
 
 function useAnimationTime(paused: boolean): number {

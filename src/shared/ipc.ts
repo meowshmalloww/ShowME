@@ -8,7 +8,9 @@ import type {
   GenerateLessonRequest,
   ImageAsset,
   LauncherMode,
+  LearningCheckSubmission,
   LearningMemory,
+  LearningOutcome,
   LessonPresentation,
   LessonProgress,
   LessonReceipt,
@@ -47,8 +49,10 @@ export const CHANNELS = {
   lessonGenerate: "lesson:generate",
   lessonAdapt: "lesson:adapt",
   lessonCancel: "lesson:cancel",
+  lessonSubmitCheck: "lesson:submit-check",
   lessonOpenSaved: "lesson:open-saved",
   lessonSetSurface: "lesson:set-surface",
+  lessonSetInteractive: "lesson:set-interactive",
   lessonClose: "lesson:close",
   voiceTranscribe: "voice:transcribe",
   voiceSynthesize: "voice:synthesize",
@@ -156,8 +160,10 @@ export interface ShowMEApi {
     generate(request: GenerateLessonRequest): Promise<LessonGenerateResult>;
     adapt(input: AdaptLessonInput): Promise<LessonGenerateResult>;
     cancel(requestId: string): Promise<void>;
+    submitCheck(input: LearningCheckSubmission): Promise<LearningOutcome>;
     openSaved(id: string): Promise<StoredLesson>;
     setSurface(surface: LessonSurface): Promise<void>;
+    setInteractive(interactive: boolean): Promise<void>;
     close(): Promise<void>;
   };
   voice: {

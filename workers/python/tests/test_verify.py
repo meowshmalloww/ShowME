@@ -61,6 +61,34 @@ class VerifyTests(unittest.TestCase):
         )
         self.assertFalse(result["verified"])
 
+    def test_motion_scene_accepts_constrained_story_beats(self):
+        result = verify(
+            {
+                "kind": "motion-scene",
+                "durationSeconds": 8,
+                "title": "Cause and effect",
+                "layout": "cause-effect",
+                "beats": [
+                    {
+                        "id": "cause",
+                        "marker": "Cause",
+                        "heading": "A condition changes",
+                        "caption": "The first event creates pressure.",
+                        "accent": "amber",
+                    },
+                    {
+                        "id": "effect",
+                        "marker": "Effect",
+                        "heading": "An outcome follows",
+                        "caption": "The consequence completes the chain.",
+                        "accent": "mint",
+                    },
+                ],
+            }
+        )
+        self.assertTrue(result["verified"])
+        self.assertEqual(result["details"]["beats"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()

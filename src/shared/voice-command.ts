@@ -3,6 +3,11 @@ import type { AdaptationKind } from "./types";
 export type VoiceLessonCommand =
   | { kind: "stop" }
   | { kind: "clear" }
+  | { kind: "go-back" }
+  | { kind: "show-both" }
+  | { kind: "keep-formula" }
+  | { kind: "current-only" }
+  | { kind: "answer"; response: string }
   | {
       kind: "adapt";
       adaptation: Exclude<AdaptationKind, "let-me-control">;
@@ -35,6 +40,24 @@ export function parseVoiceLessonCommand(rawPhrase: string): VoiceLessonCommand |
   ) {
     return { kind: "clear" };
   }
+  if (/^(?:go back|previous step|show the previous step|back one step)(?: please)?$/.test(phrase)) {
+    return { kind: "go-back" };
+  }
+  if (/^(?:show both|show both steps|keep both steps)(?: please)?$/.test(phrase)) {
+    return { kind: "show-both" };
+  }
+  if (
+    /^(?:keep the formula|keep formula|pin the formula|leave the equation)(?: please)?$/.test(
+      phrase,
+    )
+  ) {
+    return { kind: "keep-formula" };
+  }
+  if (
+    /^(?:current only|show only this step|clear old marks|hide old marks)(?: please)?$/.test(phrase)
+  ) {
+    return { kind: "current-only" };
+  }
   if (
     /^(?:simpler|make it simpler|too hard|i dont understand|i still dont understand|i dont get it|i still dont get it|explain that again|try again)$/.test(
       phrase,
@@ -60,6 +83,14 @@ export function parseVoiceLessonCommand(rawPhrase: string): VoiceLessonCommand |
   }
   if (/^(?:faster|speed up|go faster)$/.test(phrase)) {
     return { kind: "adapt", adaptation: "faster", inferredQuestion: false };
+  }
+
+  const answer = phrase.match(
+    /^(?:my answer is|i think the answer is|i believe the answer is|i choose|the answer should be)\s+(.+)$/,
+  );
+  if (answer?.[1]) return { kind: "answer", response: answer[1].trim() };
+  if (/^(?:option|choice)\s+(?:[a-d]|first|second|third|fourth)(?:\b.*)?$/.test(phrase)) {
+    return { kind: "answer", response: phrase };
   }
 
   const words = phrase.split(" ");

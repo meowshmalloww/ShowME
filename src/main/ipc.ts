@@ -17,8 +17,15 @@ import {
   type IpcResult,
   type WakeInputState,
 } from "../shared/ipc";
+import { lessonCheckForStage } from "../shared/learning-flow";
+import { evaluateLearningCheck } from "../shared/learning-check";
 import { providerSummaries } from "../shared/providers";
-import { audioProviderIdSchema, credentialIdSchema, providerIdSchema } from "../shared/schema";
+import {
+  audioProviderIdSchema,
+  credentialIdSchema,
+  learningCheckSubmissionSchema,
+  providerIdSchema,
+} from "../shared/schema";
 import type {
   AppSettings,
   CredentialId,
@@ -30,7 +37,7 @@ import type {
 } from "../shared/types";
 import { voiceServiceSummaries } from "../shared/voice";
 import type { CaptureService } from "./capture";
-import { prepareSavedLessonReplay, type LessonService } from "./lesson";
+import { type LessonService, prepareSavedLessonReplay } from "./lesson";
 import { searchCommons } from "./media";
 import type { ProviderService } from "./providers";
 import type { SecretStore } from "./secrets";
@@ -147,7 +154,12 @@ export function registerIpc(dependencies: IpcDependencies): void {
         "idle",
         "revealed",
         "question",
+        "capturing",
         "thinking",
+        "teaching",
+        "waiting",
+        "checking",
+        "complete",
         "listening",
         "transcribing",
         "speaking",
@@ -212,6 +224,27 @@ export function registerIpc(dependencies: IpcDependencies): void {
   handle(CHANNELS.lessonCancel, async (_event, requestId: string) =>
     lessons.cancel(String(requestId)),
   );
+  handle(CHANNELS.lessonSubmitCheck, async (_event, rawInput: unknown) => {
+    const input = learningCheckSubmissionSchema.parse(rawInput);
+    const lesson = store.getLesson(input.lessonId);
+    const check = lessonCheckForStage(lesson.presentation.plan, input.stage);
+    if (!check) {
+      throw new CommandError(
+        "LEARNING_CHECK_UNAVAILABLE",
+        `This lesson does not include a ${input.stage} check.`,
+      );
+    }
+    const evaluation = evaluateLearningCheck(check, {
+      ...(input.response ? { response: input.response } : {}),
+      ...(input.point ? { point: input.point } : {}),
+    });
+    return store.recordLearningOutcome(
+      input.lessonId,
+      input.stage,
+      input.response ?? (input.point ? `${input.point.x},${input.point.y}` : ""),
+      evaluation,
+    );
+  });
   handle(CHANNELS.lessonOpenSaved, async (_event, id: string) => {
     const stored = store.getLesson(String(id));
     const presentation = prepareSavedLessonReplay(stored.presentation, store.getSettings());
@@ -223,6 +256,9 @@ export function registerIpc(dependencies: IpcDependencies): void {
     if (!["inline", "side", "focus"].includes(surface))
       throw new CommandError("INVALID_SURFACE", "Unknown lesson surface.");
     windows.setLessonSurface(surface);
+  });
+  handle(CHANNELS.lessonSetInteractive, async (_event, interactive: boolean) => {
+    windows.setLessonInteractive(Boolean(interactive));
   });
   handle(CHANNELS.lessonClose, async () => windows.closeLesson());
 

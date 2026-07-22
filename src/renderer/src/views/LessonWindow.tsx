@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { findSystemVoice } from "../../../shared/audio";
+import { lessonCheckForStage, nextLearningStage } from "../../../shared/learning-flow";
+import { formatLearningCheckPrompt, resolveChoiceIndex } from "../../../shared/learning-check";
 import {
   lessonBoardFadeMs,
   lessonBoardHoldMs,
@@ -9,12 +11,15 @@ import type {
   AppBootstrap,
   AppSettings,
   ImageAsset,
+  LearningCheck,
+  LearningCheckStage,
   LessonPresentation,
+  Point,
   SpokenLessonCommandEvent,
 } from "../../../shared/types";
 import { isLikelyNarrationEcho, parseVoiceLessonCommand } from "../../../shared/voice-command";
 import { routeAudioOutput } from "../audio";
-import { WhiteboardCanvas } from "../components/WhiteboardCanvas";
+import { WhiteboardCanvas, type WhiteboardLearningCheck } from "../components/WhiteboardCanvas";
 import {
   cloudPlaybackTimeoutMs,
   delayWithSignal,
@@ -34,7 +39,10 @@ export function LessonWindow() {
   const [bootstrap, setBootstrap] = useState<AppBootstrap | null>(null);
   const [step, setStep] = useState(0);
   const [imageAsset, setImageAsset] = useState<ImageAsset>();
+  const [learningCheck, setLearningCheck] = useState<WhiteboardLearningCheck>();
   const [boardPhase, setBoardPhase] = useState<"active" | "fading">("active");
+  const [historyMode, setHistoryMode] = useState<"current" | "context">("context");
+  const [pinnedPrimitiveIds, setPinnedPrimitiveIds] = useState<string[]>([]);
   const presentationRef = useRef<LessonPresentation | null>(null);
   const bootstrapRef = useRef<AppBootstrap | null>(null);
   const pendingAutoplay = useRef<string | null>(null);
@@ -46,9 +54,15 @@ export function LessonWindow() {
   const currentNarration = useRef("");
   const adapting = useRef(false);
   const boardTimers = useRef<number[]>([]);
+  const learningCheckRef = useRef<WhiteboardLearningCheck | undefined>(undefined);
+  const activeCheckStage = useRef<"diagnostic" | LearningCheckStage | undefined>(undefined);
+  const checkSubmitting = useRef(false);
+  const stepRef = useRef(0);
 
   presentationRef.current = presentation;
   bootstrapRef.current = bootstrap;
+  learningCheckRef.current = learningCheck;
+  stepRef.current = step;
 
   const stopPlayback = useCallback((announceIdle = true): void => {
     narrationVersion.current += 1;
@@ -78,9 +92,57 @@ export function LessonWindow() {
     setBoardPhase("active");
   }, [clearBoardTimers]);
 
+  const showLearningCheck = useCallback(
+    (value: LessonPresentation, stage: LearningCheckStage): LearningCheck | undefined => {
+      const check = lessonCheckForStage(value.plan, stage);
+      if (!check) return undefined;
+      clearBoardTimers();
+      const display: WhiteboardLearningCheck = {
+        phase: "awaiting",
+        stage,
+        prompt: check.prompt,
+        ...(check.kind === "multiple-choice" ? { choices: check.choices } : {}),
+        ...(check.kind === "point" ? { pointMode: true } : {}),
+        ...(check.kind === "point"
+          ? {
+              message: `Click the target, or say “Show me, my answer is ${check.voiceAnswers[0]}.”`,
+            }
+          : {}),
+        attemptCount: 0,
+      };
+      activeCheckStage.current = stage;
+      learningCheckRef.current = display;
+      setLearningCheck(display);
+      void window.showme.lesson.setInteractive(check.kind === "point");
+      void window.showme.launcher.setMode("waiting");
+      return check;
+    },
+    [clearBoardTimers],
+  );
+
+  const showDiagnosticProbe = useCallback((value: LessonPresentation): boolean => {
+    const probe = value.plan.diagnosticProbe;
+    if (!probe) return false;
+    const display: WhiteboardLearningCheck = {
+      phase: "awaiting",
+      stage: "diagnostic",
+      prompt: probe.prompt,
+      choices: probe.choices.map((choice) => choice.label),
+      message: "Say “Show me, my answer is option A,” or name the part.",
+      attemptCount: 0,
+    };
+    activeCheckStage.current = "diagnostic";
+    learningCheckRef.current = display;
+    setLearningCheck(display);
+    void window.showme.lesson.setInteractive(false);
+    void window.showme.launcher.setMode("waiting");
+    return true;
+  }, []);
+
   const fadeAndCloseBoard = useCallback(
     (reducedMotion: boolean, userRequested = false): void => {
       clearBoardTimers();
+      void window.showme.lesson.setInteractive(false);
       setBoardPhase("fading");
       const fadeMs = userRequested ? (reducedMotion ? 80 : 260) : lessonBoardFadeMs(reducedMotion);
       boardTimers.current.push(
@@ -242,19 +304,46 @@ export function LessonWindow() {
     [speakWithCloudVoice, speakWithSystemVoice],
   );
 
-  const playLesson = useCallback(
-    async (value: LessonPresentation, settings: AppSettings): Promise<void> => {
+  const speakStatus = useCallback(
+    async (text: string, settings: AppSettings): Promise<void> => {
+      if (!settings.voiceEnabled) return;
       stopPlayback(false);
       const version = ++narrationVersion.current;
       const controller = new AbortController();
       narrationController.current = controller;
-      const segments = value.plan.steps.length
-        ? value.plan.steps.map((lessonStep) => lessonStep.narration)
+      currentNarration.current = text;
+      await window.showme.voice.activity("speaking");
+      try {
+        await speakSegment(text, settings, version, controller.signal);
+      } catch (error) {
+        if (!isAbortError(error)) console.error("Learning-check narration failed.", error);
+      } finally {
+        if (version === narrationVersion.current) {
+          currentNarration.current = "";
+          if (narrationController.current === controller) narrationController.current = null;
+          await window.showme.voice.activity("idle");
+        }
+      }
+    },
+    [speakSegment, stopPlayback],
+  );
+
+  const playLesson = useCallback(
+    async (value: LessonPresentation, settings: AppSettings, startIndex = 0): Promise<void> => {
+      stopPlayback(false);
+      const version = ++narrationVersion.current;
+      const controller = new AbortController();
+      narrationController.current = controller;
+      const steps = value.plan.steps.slice(startIndex);
+      const segments = steps.length
+        ? steps.map((lessonStep) => lessonStep.narration)
         : [value.plan.narration];
       let cloudAvailable = settings.voiceOutputProvider !== "system";
       let preparedCloud = cloudAvailable
         ? prepareCloudSpeech(segments[0] ?? value.plan.narration)
         : undefined;
+      let waitingForCheck = false;
+      await window.showme.launcher.setMode("teaching");
       await window.showme.voice.activity("speaking");
       try {
         for (let index = 0; index < segments.length; index += 1) {
@@ -264,7 +353,7 @@ export function LessonWindow() {
             cloudAvailable && index + 1 < segments.length
               ? prepareCloudSpeech(segments[index + 1] ?? value.plan.narration)
               : undefined;
-          setStep(index);
+          setStep(startIndex + index);
           currentNarration.current = segments[index] || value.plan.narration;
           await waitForWhiteboardPaint(settings.reducedMotion);
           const usedCloud = await speakSegment(
@@ -279,6 +368,13 @@ export function LessonWindow() {
             preparedCloud = undefined;
           }
           if (version !== narrationVersion.current) return;
+        }
+        const check = showLearningCheck(value, "try");
+        if (check && version === narrationVersion.current) {
+          waitingForCheck = true;
+          currentNarration.current = formatLearningCheckPrompt(check);
+          await waitForWhiteboardPaint(settings.reducedMotion);
+          await speakSegment(currentNarration.current, settings, version, controller.signal);
         }
       } catch (error) {
         if (!isAbortError(error)) {
@@ -297,29 +393,157 @@ export function LessonWindow() {
           if (narrationController.current === controller) narrationController.current = null;
           activeUtterance.current = null;
           await window.showme.voice.activity("idle");
-          if (!adapting.current) scheduleBoardRetirement(value, settings);
+          if (waitingForCheck) await window.showme.launcher.setMode("waiting");
+          if (!adapting.current && !waitingForCheck) {
+            await window.showme.launcher.setMode("complete");
+            scheduleBoardRetirement(value, settings);
+          }
         }
       }
     },
-    [scheduleBoardRetirement, speakSegment, stopPlayback],
+    [scheduleBoardRetirement, showLearningCheck, speakSegment, stopPlayback],
   );
 
   const playVisualTimeline = useCallback(
-    async (value: LessonPresentation, settings: AppSettings): Promise<void> => {
+    async (value: LessonPresentation, settings: AppSettings, startIndex = 0): Promise<void> => {
       stopPlayback(false);
       const version = ++narrationVersion.current;
+      await window.showme.launcher.setMode("teaching");
       await window.showme.voice.activity("idle");
-      const steps = value.plan.steps.length ? value.plan.steps : [undefined];
+      const steps = value.plan.steps.length ? value.plan.steps.slice(startIndex) : [undefined];
       for (let index = 0; index < steps.length; index += 1) {
         if (version !== narrationVersion.current) return;
-        setStep(index);
+        setStep(startIndex + index);
         await waitForVisualStep(silentStepDurationMs(steps[index]?.durationMs ?? 1_800));
       }
       if (version === narrationVersion.current && !adapting.current) {
-        scheduleBoardRetirement(value, settings);
+        if (!showLearningCheck(value, "try")) {
+          await window.showme.launcher.setMode("complete");
+          scheduleBoardRetirement(value, settings);
+        }
       }
     },
-    [scheduleBoardRetirement, stopPlayback],
+    [scheduleBoardRetirement, showLearningCheck, stopPlayback],
+  );
+
+  const submitActiveCheck = useCallback(
+    async ({ response, point }: { response?: string; point?: Point }): Promise<void> => {
+      const activePresentation = presentationRef.current;
+      const settings = bootstrapRef.current?.settings;
+      const display = learningCheckRef.current;
+      const stage = activeCheckStage.current;
+      if (
+        !activePresentation ||
+        !settings ||
+        !display ||
+        !stage ||
+        display.phase === "correct" ||
+        checkSubmitting.current
+      ) {
+        return;
+      }
+
+      if (stage === "diagnostic") {
+        checkSubmitting.current = true;
+        const probe = activePresentation.plan.diagnosticProbe;
+        const choiceIndex = response
+          ? resolveChoiceIndex(response, probe?.choices.map((choice) => choice.label) ?? [])
+          : undefined;
+        const choice = choiceIndex === undefined ? undefined : probe?.choices[choiceIndex];
+        if (!choice) {
+          const retry: WhiteboardLearningCheck = {
+            ...display,
+            phase: "retry",
+            message: "Name one option, or say option A, B, C, or D.",
+          };
+          learningCheckRef.current = retry;
+          setLearningCheck(retry);
+          await speakStatus("I did not catch that choice. Please name one part.", settings);
+          await window.showme.launcher.setMode("waiting");
+          checkSubmitting.current = false;
+          return;
+        }
+        const focusIndex = Math.max(
+          0,
+          activePresentation.plan.steps.findIndex((item) => item.id === choice.focusStepId),
+        );
+        activeCheckStage.current = undefined;
+        learningCheckRef.current = undefined;
+        setLearningCheck(undefined);
+        setStep(focusIndex);
+        await window.showme.launcher.setMode("teaching");
+        if (activePresentation.request.replyWithVoice && settings.voiceEnabled) {
+          await playLesson(activePresentation, settings, focusIndex);
+        } else {
+          await playVisualTimeline(activePresentation, settings, focusIndex);
+        }
+        checkSubmitting.current = false;
+        return;
+      }
+
+      const check = lessonCheckForStage(activePresentation.plan, stage);
+      if (!check) return;
+      checkSubmitting.current = true;
+      activateBoard();
+      await window.showme.lesson.setInteractive(false);
+      await window.showme.launcher.setMode("checking");
+      try {
+        const outcome = await window.showme.lesson.submitCheck({
+          lessonId: activePresentation.plan.id,
+          stage,
+          ...(response ? { response } : {}),
+          ...(point ? { point } : {}),
+        });
+        const nextStage = nextLearningStage(activePresentation.plan, stage, outcome.result);
+        if (nextStage === "transfer") {
+          const transfer = showLearningCheck(activePresentation, "transfer");
+          if (transfer) {
+            await speakStatus(
+              `${outcome.feedback} Now use the same idea on a new example. ${formatLearningCheckPrompt(transfer)}`,
+              settings,
+            );
+            await window.showme.launcher.setMode("waiting");
+          }
+          checkSubmitting.current = false;
+          return;
+        }
+
+        const next: WhiteboardLearningCheck = {
+          ...display,
+          phase: outcome.result === "correct" ? "correct" : "retry",
+          attemptCount: outcome.attemptNumber,
+          message:
+            outcome.result === "correct"
+              ? stage === "transfer"
+                ? "A separate near-transfer attempt was recorded locally."
+                : "A guided Try was recorded locally."
+              : "Say “Show me, my answer is …” when you are ready.",
+        };
+        learningCheckRef.current = next;
+        setLearningCheck(next);
+        await speakStatus(outcome.feedback, settings);
+        if (outcome.result === "correct") {
+          await window.showme.launcher.setMode("complete");
+          scheduleBoardRetirement(activePresentation, settings);
+        } else {
+          await window.showme.lesson.setInteractive(check.kind === "point");
+          await window.showme.launcher.setMode("waiting");
+        }
+      } catch (error) {
+        console.error("Could not record the learning check.", error);
+        await window.showme.lesson.setInteractive(check.kind === "point");
+        await window.showme.launcher.setMode("waiting");
+      }
+      checkSubmitting.current = false;
+    },
+    [
+      activateBoard,
+      playLesson,
+      playVisualTimeline,
+      scheduleBoardRetirement,
+      showLearningCheck,
+      speakStatus,
+    ],
   );
 
   const handleVoiceCommand = useCallback(
@@ -345,11 +569,83 @@ export function LessonWindow() {
       if (command.kind === "stop") {
         stopPlayback(false);
         await window.showme.voice.activity("idle");
+        await window.showme.launcher.setMode("complete");
         if (settings) scheduleBoardRetirement(activePresentation, settings);
+        return;
+      }
+      if (command.kind === "go-back") {
+        stopPlayback(false);
+        await window.showme.lesson.setInteractive(false);
+        activeCheckStage.current = undefined;
+        learningCheckRef.current = undefined;
+        setLearningCheck(undefined);
+        setHistoryMode("context");
+        const priorIndex = Math.max(0, stepRef.current - 1);
+        setStep(priorIndex);
+        await window.showme.launcher.setMode("teaching");
+        if (settings) {
+          const prior = activePresentation.plan.steps[priorIndex];
+          if (prior) await speakStatus(prior.narration, settings);
+        }
+        return;
+      }
+      if (command.kind === "show-both") {
+        activateBoard();
+        setHistoryMode("context");
+        if (settings) await speakStatus("Showing this step with the previous one.", settings);
+        return;
+      }
+      if (command.kind === "current-only") {
+        activateBoard();
+        setHistoryMode("current");
+        if (settings) {
+          await speakStatus("Old marks are hidden. The current step stays visible.", settings);
+        }
+        return;
+      }
+      if (command.kind === "keep-formula") {
+        activateBoard();
+        const currentStepIds = new Set(
+          activePresentation.plan.steps[stepRef.current]?.primitiveIds ?? [],
+        );
+        let formulas = activePresentation.plan.primitives.filter(
+          (primitive) => primitive.kind === "equation" && currentStepIds.has(primitive.id),
+        );
+        if (formulas.length === 0) {
+          const priorIds = new Set(
+            activePresentation.plan.steps
+              .slice(0, stepRef.current + 1)
+              .flatMap((lessonStep) => lessonStep.primitiveIds),
+          );
+          formulas = activePresentation.plan.primitives.filter(
+            (primitive) => primitive.kind === "equation" && priorIds.has(primitive.id),
+          );
+        }
+        if (formulas.length > 0) {
+          setPinnedPrimitiveIds((current) => [
+            ...new Set([...current, ...formulas.map((formula) => formula.id)]),
+          ]);
+        }
+        if (settings) {
+          await speakStatus(
+            formulas.length > 0
+              ? "I will keep the formula on screen."
+              : "There is no formula to keep yet.",
+            settings,
+          );
+        }
+        return;
+      }
+      if (command.kind === "answer") {
+        await submitActiveCheck({ response: command.response });
         return;
       }
       adapting.current = true;
       activateBoard();
+      activeCheckStage.current = undefined;
+      learningCheckRef.current = undefined;
+      setLearningCheck(undefined);
+      await window.showme.lesson.setInteractive(false);
       stopPlayback(false);
       try {
         await window.showme.lesson.adapt({
@@ -364,7 +660,14 @@ export function LessonWindow() {
         adapting.current = false;
       }
     },
-    [activateBoard, fadeAndCloseBoard, scheduleBoardRetirement, stopPlayback],
+    [
+      activateBoard,
+      fadeAndCloseBoard,
+      scheduleBoardRetirement,
+      speakStatus,
+      stopPlayback,
+      submitActiveCheck,
+    ],
   );
 
   useEffect(() => {
@@ -372,6 +675,7 @@ export function LessonWindow() {
     document.body.classList.add("whiteboard-document");
     return () => {
       clearBoardTimers();
+      void window.showme.lesson.setInteractive(false);
       document.documentElement.classList.remove("whiteboard-document");
       document.body.classList.remove("whiteboard-document");
     };
@@ -389,6 +693,12 @@ export function LessonWindow() {
         pendingAutoplay.current = value.plan.id;
         setPresentation(value);
         setStep(0);
+        setHistoryMode("context");
+        setPinnedPrimitiveIds([]);
+        activeCheckStage.current = undefined;
+        learningCheckRef.current = undefined;
+        setLearningCheck(undefined);
+        void window.showme.lesson.setInteractive(false);
         adapting.current = false;
       }),
       window.showme.events.onSettingsChanged((settings) => {
@@ -409,12 +719,21 @@ export function LessonWindow() {
     if (!presentation || !bootstrap) return;
     if (pendingAutoplay.current !== presentation.plan.id) return;
     pendingAutoplay.current = null;
+    if (showDiagnosticProbe(presentation)) {
+      const probe = presentation.plan.diagnosticProbe;
+      if (probe && presentation.request.replyWithVoice && bootstrap.settings.voiceEnabled) {
+        void speakStatus(formatDiagnosticPrompt(probe.prompt, probe.choices), bootstrap.settings)
+          .then(() => window.showme.launcher.setMode("waiting"))
+          .catch((error) => console.error("Diagnostic narration failed.", error));
+      }
+      return;
+    }
     if (presentation.request.replyWithVoice && bootstrap.settings.voiceEnabled) {
       void playLesson(presentation, bootstrap.settings);
     } else {
       void playVisualTimeline(presentation, bootstrap.settings);
     }
-  }, [bootstrap, playLesson, playVisualTimeline, presentation]);
+  }, [bootstrap, playLesson, playVisualTimeline, presentation, showDiagnosticProbe, speakStatus]);
 
   useEffect(() => {
     let cancelled = false;
@@ -445,6 +764,10 @@ export function LessonWindow() {
       stepIndex={step}
       reducedMotion={bootstrap?.settings.reducedMotion ?? false}
       phase={boardPhase}
+      historyMode={historyMode}
+      pinnedPrimitiveIds={pinnedPrimitiveIds}
+      onPointAnswer={(point) => void submitActiveCheck({ point })}
+      {...(learningCheck ? { learningCheck } : {})}
       {...(presentation.contextGeometry ? { contextGeometry: presentation.contextGeometry } : {})}
       {...(imageAsset ? { imageAsset } : {})}
     />
@@ -471,4 +794,10 @@ function waitForWhiteboardPaint(reducedMotion: boolean): Promise<void> {
 
 function waitForVisualStep(durationMs: number): Promise<void> {
   return new Promise((resolve) => window.setTimeout(resolve, durationMs));
+}
+
+function formatDiagnosticPrompt(prompt: string, choices: { label: string }[]): string {
+  return `${prompt} ${choices
+    .map((choice, index) => `${String.fromCharCode(65 + index)}, ${choice.label}`)
+    .join(". ")}.`;
 }

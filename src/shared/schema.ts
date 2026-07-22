@@ -310,6 +310,26 @@ const customEntitySchema = z
   })
   .strict();
 
+const motionSceneBeatSchema = z
+  .object({
+    id,
+    marker: z.string().min(1).max(32),
+    heading: z.string().min(1).max(90),
+    caption: z.string().min(1).max(180),
+    accent: z.enum(["cyan", "amber", "violet", "mint", "coral"]),
+  })
+  .strict();
+
+const motionSceneSchema = z
+  .object({
+    kind: z.literal("motion-scene"),
+    durationSeconds: z.number().finite().min(3).max(30),
+    title: z.string().min(1).max(100),
+    layout: z.enum(["timeline", "cause-effect", "sequence", "compare", "quote"]),
+    beats: z.array(motionSceneBeatSchema).min(2).max(6),
+  })
+  .strict();
+
 const customMotionSchema = z
   .object({
     entityId: id,
@@ -348,6 +368,7 @@ export const simulationSchema = z.discriminatedUnion("kind", [
   circuitSchema,
   eventLoopSchema,
   functionGraphSchema,
+  motionSceneSchema,
   customSchema,
 ]);
 
@@ -383,8 +404,85 @@ const allowedBindings: Record<string, ReadonlySet<string>> = {
   circuit: new Set(["voltage", "resistance", "capacitance"]),
   "function-graph": new Set(["a", "b", "c", "xMin", "xMax"]),
   "event-loop": new Set(),
+  "motion-scene": new Set(),
   custom: new Set(),
 };
+
+export const learningCheckSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("multiple-choice"),
+      prompt: z.string().min(1).max(240),
+      choices: z.array(z.string().min(1).max(100)).min(2).max(4),
+      answer: z.string().min(1).max(100),
+      explanation: z.string().min(1).max(240),
+    })
+    .strict()
+    .refine(
+      (value) => value.choices.includes(value.answer),
+      "The multiple-choice answer must exactly match one choice",
+    ),
+  z
+    .object({
+      kind: z.literal("numeric"),
+      prompt: z.string().min(1).max(240),
+      expected: z.number().finite(),
+      tolerance: z.number().finite().min(0).max(1_000_000),
+      unit: z.string().max(24),
+      explanation: z.string().min(1).max(240),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("keywords"),
+      prompt: z.string().min(1).max(240),
+      keywords: z.array(z.string().min(1).max(60)).min(1).max(5),
+      minimumMatches: z.number().int().min(1).max(5),
+      explanation: z.string().min(1).max(240),
+    })
+    .strict()
+    .refine(
+      (value) => value.minimumMatches <= value.keywords.length,
+      "minimumMatches cannot exceed the number of keywords",
+    ),
+  z
+    .object({
+      kind: z.literal("point"),
+      prompt: z.string().min(1).max(240),
+      target: z
+        .object({
+          x: z.number().finite().min(0).max(999),
+          y: z.number().finite().min(0).max(999),
+          width: z.number().finite().min(1).max(1000),
+          height: z.number().finite().min(1).max(1000),
+        })
+        .strict()
+        .refine(
+          (value) => value.x + value.width <= 1000 && value.y + value.height <= 1000,
+          "The point target must stay inside the source canvas",
+        ),
+      voiceAnswers: z.array(z.string().min(1).max(80)).min(1).max(5),
+      explanation: z.string().min(1).max(240),
+    })
+    .strict(),
+]);
+
+const diagnosticProbeSchema = z
+  .object({
+    prompt: z.string().min(1).max(240),
+    choices: z
+      .array(
+        z
+          .object({
+            label: z.string().min(1).max(100),
+            focusStepId: id,
+          })
+          .strict(),
+      )
+      .min(2)
+      .max(4),
+  })
+  .strict();
 
 export const lessonPlanSchema = z
   .object({
@@ -423,6 +521,9 @@ export const lessonPlanSchema = z
       )
       .min(1)
       .max(18),
+    diagnosticProbe: diagnosticProbeSchema.optional(),
+    learningCheck: learningCheckSchema.optional(),
+    transferCheck: learningCheckSchema.optional(),
     controls: z.array(controlSchema).max(12),
     simulation: simulationSchema.optional(),
     claims: z
@@ -464,6 +565,31 @@ export const lessonPlanSchema = z
     const primitiveIds = new Set(plan.primitives.map((item) => item.id));
     const stepIds = new Set(plan.steps.map((item) => item.id));
     const citationIds = new Set(plan.citations.map((item) => item.id));
+    for (const choice of plan.diagnosticProbe?.choices ?? []) {
+      if (!stepIds.has(choice.focusStepId)) {
+        context.addIssue({
+          code: "custom",
+          message: "Diagnostic choice references unknown step " + choice.focusStepId,
+        });
+      }
+    }
+    if (plan.transferCheck && !plan.learningCheck) {
+      context.addIssue({
+        code: "custom",
+        message: "A transfer check requires a guided learning check first",
+      });
+    }
+    if (
+      plan.transferCheck &&
+      plan.learningCheck &&
+      plan.transferCheck.prompt.trim().toLocaleLowerCase() ===
+        plan.learningCheck.prompt.trim().toLocaleLowerCase()
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "The transfer check must use a distinct surface prompt",
+      });
+    }
     const allIds = [
       ...plan.primitives.map((item) => item.id),
       ...plan.steps.map((item) => item.id),
@@ -604,6 +730,24 @@ export const generateLessonRequestSchema = z
     priorPlanId: id.optional(),
   })
   .strict();
+
+export const learningCheckSubmissionSchema = z
+  .object({
+    lessonId: id,
+    stage: z.enum(["try", "transfer"]),
+    response: z.string().trim().min(1).max(500).optional(),
+    point: z
+      .object({
+        x: z.number().finite().min(0).max(1000),
+        y: z.number().finite().min(0).max(1000),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict()
+  .refine((value) => Boolean(value.response || value.point), {
+    message: "A spoken/text response or a point is required",
+  });
 
 export type ValidatedLessonPlan = z.infer<typeof lessonPlanSchema>;
 

@@ -1507,6 +1507,18 @@ select optgroup {
 .lesson-card-body time {
   margin-right: auto;
 }
+.lesson-evidence {
+  padding: 2px 5px;
+  border: 1px solid rgba(255, 200, 87, 0.28);
+  border-radius: 999px;
+  color: #ffc857;
+  font-size: 9px;
+  font-weight: 700;
+}
+.lesson-evidence.correct {
+  border-color: rgba(103, 232, 181, 0.32);
+  color: #67e8b5;
+}
 .confidence-dot {
   width: 5px;
   height: 5px;
@@ -3643,6 +3655,25 @@ select:focus {
 
 .thinking-island .audio-wave {
   margin-left: auto;
+}
+
+.runtime-state-dot {
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: #65dcff;
+  box-shadow: 0 0 8px rgba(101, 220, 255, 0.52);
+}
+
+.runtime-waiting .runtime-state-dot {
+  background: #ffc857;
+  box-shadow: 0 0 8px rgba(255, 200, 87, 0.44);
+}
+
+.runtime-complete .runtime-state-dot {
+  background: #67e8b5;
+  box-shadow: 0 0 8px rgba(103, 232, 181, 0.44);
 }
 
 .question-island {
@@ -6301,6 +6332,37 @@ body.whiteboard-document #root {
     filter 900ms ease;
 }
 
+.whiteboard-overlay.point-mode {
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+/* A restrained activity edge: a crisp cool-spectrum core with a soft inward
+   bloom. Mint and amber are accents, not a constantly rotating rainbow. */
+.whiteboard-overlay::before {
+  content: "";
+  position: absolute;
+  z-index: 12;
+  inset: 1px;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent 1%, #50d5ff 17%, #7d86ff 52%, #67e8d0 82%, transparent 99%)
+    top / 100% 2.25px no-repeat,
+    linear-gradient(180deg, transparent 1%, #8f88ff 22%, #50d5ff 58%, #ffd166 88%, transparent 99%)
+    right / 2.25px 100% no-repeat,
+    linear-gradient(270deg, transparent 1%, #67e8d0 18%, #50d5ff 54%, #978bff 84%, transparent 99%)
+    bottom / 100% 2.25px no-repeat,
+    linear-gradient(0deg, transparent 1%, #ffd166 12%, #8f88ff 42%, #50d5ff 78%, transparent 99%)
+    left / 2.25px 100% no-repeat;
+  box-shadow:
+    inset 0 0 10px rgba(55, 210, 255, 0.24),
+    inset 0 0 26px rgba(118, 99, 255, 0.13);
+  filter: drop-shadow(0 0 4px rgba(85, 220, 255, 0.56))
+    drop-shadow(0 0 12px rgba(114, 99, 255, 0.24));
+  opacity: 0.78;
+  animation: whiteboard-edge-breathe 4.2s ease-in-out infinite alternate;
+}
+
 .whiteboard-overlay.board-fading {
   opacity: 0;
   filter: blur(2px);
@@ -6331,6 +6393,12 @@ body.whiteboard-document #root {
 
 .whiteboard-stroke.current {
   animation: whiteboard-draw 620ms cubic-bezier(0.16, 1, 0.3, 1) var(--whiteboard-delay, 0ms) both;
+}
+
+.whiteboard-stroke.previous,
+.whiteboard-spotlight.previous {
+  opacity: 0.28;
+  filter: none;
 }
 
 .whiteboard-spotlight.current {
@@ -6396,6 +6464,11 @@ body.whiteboard-document #root {
   animation: whiteboard-write 460ms cubic-bezier(0.16, 1, 0.3, 1) var(--whiteboard-delay, 0ms) both;
 }
 
+.whiteboard-text.previous {
+  opacity: 0.38;
+  filter: saturate(0.72);
+}
+
 .whiteboard-equation {
   border-color: color-mix(in srgb, var(--whiteboard-accent, #b79cff) 62%, transparent);
   background: linear-gradient(135deg, rgba(1, 6, 11, 0.94), rgba(3, 15, 24, 0.88));
@@ -6424,20 +6497,91 @@ body.whiteboard-document #root {
   height: 1px;
   pointer-events: none;
   animation: teaching-cursor-arrive 660ms cubic-bezier(0.2, 0.86, 0.28, 1.12) both;
-  filter: drop-shadow(0 1px 1px rgba(255, 255, 255, 0.8)) drop-shadow(0 2px 2px rgba(0, 0, 0, 0.92));
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.92));
+}
+
+.whiteboard-learning-check {
+  position: absolute;
+  z-index: 9;
+  bottom: 4vh;
+  box-sizing: border-box;
+  width: min(440px, 38vw, calc(100vw - 24px));
+  padding: 10px 13px 11px;
+  border: 1px solid rgba(101, 220, 255, 0.42);
+  border-radius: 9px;
+  background: rgba(5, 9, 13, 0.9);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(8px) saturate(0.82) brightness(0.72);
+  color: #f7fbff;
+  text-shadow: 0 1px 2px #000;
+  animation: whiteboard-check-in 420ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  pointer-events: none;
+}
+
+.whiteboard-learning-check.check-left {
+  left: 3vw;
+}
+.whiteboard-learning-check.check-right {
+  right: 3vw;
+}
+
+.whiteboard-learning-check .learning-check-kicker,
+.whiteboard-learning-check strong,
+.whiteboard-learning-check small,
+.whiteboard-learning-check .learning-check-choices {
+  display: block;
+}
+
+.whiteboard-learning-check .learning-check-kicker {
+  margin-bottom: 4px;
+  color: #65dcff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.whiteboard-learning-check strong {
+  font-size: clamp(14px, 1vw, 18px);
+  line-height: 1.25;
+}
+
+.whiteboard-learning-check .learning-check-choices {
+  margin-top: 7px;
+  color: rgba(238, 248, 255, 0.88);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.whiteboard-learning-check small {
+  margin-top: 7px;
+  color: rgba(210, 224, 234, 0.68);
+  font-size: 10px;
+}
+
+.whiteboard-learning-check.check-retry {
+  border-color: rgba(255, 200, 87, 0.5);
+}
+
+.whiteboard-learning-check.check-retry .learning-check-kicker {
+  color: #ffc857;
+}
+
+.whiteboard-learning-check.check-correct {
+  border-color: rgba(103, 232, 181, 0.55);
+}
+
+.whiteboard-learning-check.check-correct .learning-check-kicker {
+  color: #67e8b5;
 }
 
 .teaching-cursor-pointer {
   position: absolute;
-  left: -1px;
+  left: -2px;
   top: -2px;
-  width: 17px;
-  height: 23px;
-  clip-path: polygon(0 0, 82% 68%, 52% 71%, 67% 100%, 51% 100%, 37% 73%, 16% 92%);
-  background: color-mix(in srgb, var(--teaching-cursor-color, #ffc857) 62%, white);
-  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.78);
-  transform: rotate(-5deg);
-  transform-origin: 2px 2px;
+  width: 15px;
+  height: 21px;
+  overflow: visible;
 }
 
 .whiteboard-simulation {
@@ -6514,6 +6658,161 @@ body.whiteboard-document #root {
 
 .whiteboard-simulation.sim-custom .sim-heading {
   display: none;
+}
+
+.whiteboard-simulation.sim-motion-scene {
+  width: min(610px, 46vw, calc(100vw - 24px));
+  min-width: min(390px, calc(100vw - 24px));
+  top: 12%;
+  filter: drop-shadow(0 9px 18px rgba(0, 0, 0, 0.48));
+}
+
+.motion-scene-title {
+  fill: #f7fbff;
+  font:
+    750 22px Inter,
+    "Segoe UI",
+    sans-serif;
+  letter-spacing: -0.03em;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.9);
+  stroke-width: 3px;
+}
+
+.motion-scene-connector {
+  fill: none;
+  stroke: #a7eaff;
+  stroke-width: 1.75px;
+  stroke-dasharray: 9 7;
+  opacity: 0.08;
+  transition: opacity 300ms ease;
+}
+
+.motion-scene-connector.revealed {
+  opacity: 0.72;
+  animation: motion-connector-draw 520ms ease-out both;
+}
+
+.motion-scene-node {
+  opacity: 0.12;
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity 260ms ease;
+}
+
+.motion-scene-node.revealed {
+  opacity: 0.82;
+}
+
+.motion-scene-node.active {
+  opacity: 1;
+  animation: motion-node-arrive 430ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.motion-scene-card,
+.motion-scene-quote {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  color: #f7fbff;
+  font-family: Inter, "Segoe UI", sans-serif;
+  text-align: center;
+  text-shadow: 0 1px 2px #000;
+}
+
+.motion-scene-card {
+  padding: 7px 9px 8px;
+  border-top: 1px solid color-mix(in srgb, var(--motion-accent) 72%, transparent);
+  background: linear-gradient(180deg, rgba(5, 9, 14, 0.84), rgba(5, 9, 14, 0.62));
+  border-radius: 7px;
+}
+
+.motion-scene-card small,
+.motion-scene-card strong,
+.motion-scene-card span,
+.motion-scene-quote strong,
+.motion-scene-quote span {
+  display: block;
+}
+
+.motion-scene-card small {
+  margin-bottom: 3px;
+  color: var(--motion-accent);
+  font-size: 10px;
+  font-weight: 760;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.motion-scene-card strong {
+  font-size: 14px;
+  line-height: 1.15;
+}
+
+.motion-scene-card span {
+  margin-top: 4px;
+  color: rgba(235, 244, 250, 0.82);
+  font-size: 10px;
+  line-height: 1.22;
+}
+
+.motion-scene-marker {
+  fill: rgba(235, 246, 255, 0.76);
+  font:
+    700 12px Inter,
+    "Segoe UI",
+    sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.motion-scene-quote {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 18px 30px;
+  border-left: 2px solid var(--motion-accent);
+  border-right: 2px solid var(--motion-accent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(5, 9, 14, 0.78) 16%,
+    rgba(5, 9, 14, 0.78) 84%,
+    transparent
+  );
+}
+
+.motion-scene-quote strong {
+  color: var(--motion-accent);
+  font-size: 20px;
+}
+
+.motion-scene-quote span {
+  max-width: 460px;
+  margin-top: 12px;
+  font-size: 17px;
+  line-height: 1.38;
+}
+
+@keyframes motion-connector-draw {
+  from {
+    stroke-dashoffset: 90;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes motion-node-arrive {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .whiteboard-media {
@@ -6610,6 +6909,32 @@ body.whiteboard-document #root {
   }
 }
 
+@keyframes whiteboard-check-in {
+  from {
+    opacity: 0;
+    filter: blur(4px);
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    filter: none;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes whiteboard-edge-breathe {
+  from {
+    opacity: 0.6;
+    filter: drop-shadow(0 0 3px rgba(85, 220, 255, 0.38))
+      drop-shadow(0 0 9px rgba(114, 99, 255, 0.16));
+  }
+  to {
+    opacity: 0.9;
+    filter: drop-shadow(0 0 6px rgba(85, 220, 255, 0.62))
+      drop-shadow(0 0 16px rgba(114, 99, 255, 0.28));
+  }
+}
+
 .whiteboard-simulation,
 .whiteboard-media {
   transform: none;
@@ -6623,6 +6948,7 @@ body.whiteboard-document #root {
 }
 
 .whiteboard-overlay.reduced-motion *,
+.whiteboard-overlay.reduced-motion::before,
 .reduced-motion .whiteboard-stroke.current,
 .reduced-motion .whiteboard-text.current,
 .reduced-motion .whiteboard-spotlight.current,
@@ -6682,58 +7008,75 @@ body.whiteboard-document #root {
   box-shadow: none;
 }
 
-/* Stronger electric capture feedback, visible even against bright pages. */
+/* Planning glow: slim enough not to frame the content, but visible against both
+   bright pages and dark editors. The spectrum communicates active work without
+   reusing the teaching palette as one solid blue wall. */
 .screen-reading-overlay::before {
   content: "";
   position: absolute;
   inset: 0;
-  border: 1px solid rgba(139, 235, 255, 0.72);
+  border: 1.25px solid rgba(139, 235, 255, 0.7);
   box-shadow:
-    inset 0 0 14px rgba(31, 184, 255, 0.34),
-    inset 0 0 34px rgba(33, 112, 255, 0.16);
+    inset 0 0 11px rgba(31, 184, 255, 0.28),
+    inset 0 0 28px rgba(123, 92, 255, 0.14);
 }
 
 .screen-reading-edge {
   background: linear-gradient(
     90deg,
     transparent,
-    #1db8ff 12%,
-    #8cecff 50%,
-    #2b7cff 88%,
+    #50d5ff 14%,
+    #7d86ff 40%,
+    #8cecff 60%,
+    #67e8d0 82%,
+    #ffd166 94%,
     transparent
   );
-  filter: drop-shadow(0 0 3px #6de2ff) drop-shadow(0 0 10px rgba(30, 138, 255, 0.98));
-  opacity: 1;
+  filter: drop-shadow(0 0 3px rgba(109, 226, 255, 0.95))
+    drop-shadow(0 0 10px rgba(93, 93, 255, 0.62));
+  opacity: 0.96;
 }
 
 .screen-reading-edge.edge-top,
 .screen-reading-edge.edge-bottom {
-  height: 3px;
+  right: 14px;
+  left: 14px;
+  height: 2.25px;
 }
 
 .screen-reading-edge.edge-left,
 .screen-reading-edge.edge-right {
-  width: 3px;
+  top: 14px;
+  bottom: 14px;
+  width: 2.25px;
   background: linear-gradient(
     180deg,
     transparent,
-    #1db8ff 12%,
-    #8cecff 50%,
-    #2b7cff 88%,
+    #50d5ff 14%,
+    #7d86ff 40%,
+    #8cecff 60%,
+    #67e8d0 82%,
+    #ffd166 94%,
     transparent
   );
 }
 
 .screen-reading-corner {
-  width: 28px;
-  height: 28px;
+  border-color: #75ddff;
+  filter: drop-shadow(0 0 4px rgba(89, 220, 255, 0.94))
+    drop-shadow(0 0 11px rgba(115, 102, 255, 0.42));
+}
+
+.screen-reading-corner {
+  width: 22px;
+  height: 22px;
   border-color: #a8f1ff;
-  filter: drop-shadow(0 0 4px #5edfff) drop-shadow(0 0 12px rgba(26, 119, 255, 0.95));
+  filter: drop-shadow(0 0 3px #5edfff) drop-shadow(0 0 8px rgba(107, 89, 255, 0.72));
 }
 
 .corner-top-left,
 .corner-top-right,
 .corner-bottom-left,
 .corner-bottom-right {
-  border-width: 4px;
+  border-width: 2px;
 }

@@ -6,6 +6,9 @@ describe("top-edge launcher geometry", () => {
     expect(launcherSize("idle")).toEqual({ width: 72, height: 10 });
     expect(launcherSize("revealed")).toEqual({ width: 236, height: 40 });
     expect(launcherSize("thinking")).toEqual({ width: 252, height: 44 });
+    for (const mode of ["capturing", "teaching", "waiting", "checking", "complete"] as const) {
+      expect(launcherSize(mode)).toEqual({ width: 268, height: 44 });
+    }
     expect(launcherSize("transcribing")).toEqual({ width: 258, height: 44 });
     expect(launcherSize("listening")).toEqual({ width: 272, height: 46 });
     expect(launcherSize("speaking")).toEqual({ width: 272, height: 46 });
@@ -16,6 +19,9 @@ describe("top-edge launcher geometry", () => {
     expect(launcherActivityVisual("listening")).toBe("input-waveform");
     expect(launcherActivityVisual("transcribing")).toBe("progress");
     expect(launcherActivityVisual("thinking")).toBe("progress");
+    expect(launcherActivityVisual("capturing")).toBe("progress");
+    expect(launcherActivityVisual("checking")).toBe("progress");
+    expect(launcherActivityVisual("waiting")).toBe("none");
     expect(launcherActivityVisual("speaking")).toBe("output-waveform");
     expect(launcherActivityVisual("question")).toBe("none");
   });

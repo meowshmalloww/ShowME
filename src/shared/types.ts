@@ -58,7 +58,12 @@ export type LauncherMode =
   | "idle"
   | "revealed"
   | "question"
+  | "capturing"
   | "thinking"
+  | "teaching"
+  | "waiting"
+  | "checking"
+  | "complete"
   | "listening"
   | "transcribing"
   | "speaking";
@@ -301,6 +306,43 @@ export interface LessonStep {
   checkpoint?: string;
 }
 
+export type LearningCheck =
+  | {
+      kind: "multiple-choice";
+      prompt: string;
+      choices: string[];
+      answer: string;
+      explanation: string;
+    }
+  | {
+      kind: "numeric";
+      prompt: string;
+      expected: number;
+      tolerance: number;
+      unit: string;
+      explanation: string;
+    }
+  | {
+      kind: "keywords";
+      prompt: string;
+      keywords: string[];
+      minimumMatches: number;
+      explanation: string;
+    }
+  | {
+      kind: "point";
+      prompt: string;
+      target: { x: number; y: number; width: number; height: number };
+      /** A complete keyboard/voice alternative to the pointing gesture. */
+      voiceAnswers: string[];
+      explanation: string;
+    };
+
+export interface DiagnosticProbe {
+  prompt: string;
+  choices: { label: string; focusStepId: string }[];
+}
+
 export interface ControlSpec {
   id: string;
   label: string;
@@ -380,6 +422,27 @@ export interface FunctionGraphSimulationSpec {
   xMax: number;
 }
 
+export type MotionSceneLayout = "timeline" | "cause-effect" | "sequence" | "compare" | "quote";
+export type MotionSceneAccent = "cyan" | "amber" | "violet" | "mint" | "coral";
+
+export interface MotionSceneBeat {
+  id: string;
+  marker: string;
+  heading: string;
+  caption: string;
+  accent: MotionSceneAccent;
+}
+
+/** A constrained, code-rendered motion-graphics explainer. It contains only
+ * text and semantic layout data; no model-generated code or markup executes. */
+export interface MotionSceneSimulationSpec {
+  kind: "motion-scene";
+  durationSeconds: number;
+  title: string;
+  layout: MotionSceneLayout;
+  beats: MotionSceneBeat[];
+}
+
 export interface CustomEntity {
   id: string;
   shape: "circle" | "rect" | "arrow";
@@ -414,6 +477,7 @@ export type SimulationSpec =
   | CircuitSimulationSpec
   | EventLoopSimulationSpec
   | FunctionGraphSimulationSpec
+  | MotionSceneSimulationSpec
   | CustomSimulationSpec;
 
 export interface LessonPlan {
@@ -429,6 +493,12 @@ export interface LessonPlan {
   narration: string;
   primitives: LessonPrimitive[];
   steps: LessonStep[];
+  /** Optional learner self-report used to choose where the explanation begins. */
+  diagnosticProbe?: DiagnosticProbe;
+  /** Optional guided attempt on the representation that was just taught. */
+  learningCheck?: LearningCheck;
+  /** Optional independent near-transfer attempt with a changed surface form. */
+  transferCheck?: LearningCheck;
   controls: ControlSpec[];
   simulation?: SimulationSpec;
   claims: Claim[];
@@ -518,6 +588,40 @@ export interface LessonReceipt {
   sourceDescription: string;
   teachingMode: TeachingMode;
   helpful?: boolean;
+  learningEvidence?: {
+    result: "correct" | "retry";
+    stage: LearningCheckStage;
+    attemptCount: number;
+    checkedAt: string;
+    verifier: "local-plan-key";
+  };
+}
+
+export interface LearningCheckSubmission {
+  lessonId: string;
+  stage: LearningCheckStage;
+  response?: string;
+  point?: Point;
+}
+
+export type LearningCheckStage = "try" | "transfer";
+
+export interface LearningCheckEvaluation {
+  result: "correct" | "retry";
+  feedback: string;
+  matched: string[];
+}
+
+export interface LearningOutcome extends LearningCheckEvaluation {
+  id: string;
+  lessonId: string;
+  prompt: string;
+  response: string;
+  checkKind: LearningCheck["kind"];
+  stage: LearningCheckStage;
+  attemptNumber: number;
+  checkedAt: string;
+  verifier: "local-plan-key";
 }
 
 export interface StoredLesson extends LessonReceipt {

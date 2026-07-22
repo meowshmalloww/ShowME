@@ -7,6 +7,7 @@ import {
   extractGeminiResponse,
   extractOpenAiResponse,
   formatValidationFeedback,
+  motionSceneRequestHint,
   normalizeModelLessonDraft,
   openAiReasoningEffort,
   ProviderService,
@@ -214,6 +215,10 @@ describe("provider response contracts", () => {
       ),
     ).toContain('simulation={"kind":"projectile"');
     expect(requestedSimulationKind("Draw an arrow along this trajectory.")).toBeUndefined();
+    expect(
+      motionSceneRequestHint("Use motion graphics to explain this history timeline."),
+    ).toContain('"kind":"motion-scene"');
+    expect(motionSceneRequestHint("Circle the date on this page.")).toBe("");
   });
 
   it("preserves a valid generated lesson when generic motion art omits its custom module", async () => {
@@ -572,6 +577,73 @@ describe("provider response contracts", () => {
     expect(normalized.controls).toEqual([]);
     expect(normalized.citations).toEqual([]);
     expect((normalized.claims as Array<{ citationIds: string[] }>)[0]?.citationIds).toEqual([]);
+  });
+
+  it("normalizes provider-generated diagnosis, Try, Transfer, and point targets", () => {
+    const normalized = normalizeModelLessonDraft({
+      version: 1,
+      title: "Find theta",
+      concept: "Angle relationships",
+      summary: "Use the visible triangle.",
+      teachingMode: "diagram-annotation",
+      confidence: "exploratory",
+      sourceDescription: "Selected triangle",
+      narration: "Start with the marked angle.",
+      primitives: [
+        { id: "theta", kind: "circle", x: 400, y: 200, radius: 50 },
+        { id: "side", kind: "arrow", x: 700, y: 200, x2: 450, y2: 250 },
+      ],
+      steps: [
+        {
+          id: "locate",
+          title: "Locate",
+          narration: "Find theta.",
+          primitiveIds: ["theta"],
+          durationMs: 900,
+        },
+        {
+          id: "trace",
+          title: "Trace",
+          narration: "Trace the side.",
+          primitiveIds: ["side"],
+          durationMs: 900,
+        },
+      ],
+      diagnosticProbe: {
+        prompt: "Which part is unclear?",
+        choices: [
+          { label: "Finding theta", focusStepId: "locate" },
+          { label: "Choosing the side", focusStepId: "trace" },
+          { label: "Invalid option", focusStepId: "missing" },
+        ],
+      },
+      learningCheck: {
+        kind: "multiple-choice",
+        prompt: "Which side touches theta?",
+        choices: ["Adjacent", "Opposite"],
+        answer: "adjacent",
+        explanation: "The adjacent side touches theta.",
+      },
+      transferCheck: {
+        kind: "point",
+        prompt: "Point to theta in the new diagram.",
+        target: { x: 380, y: 180, width: 140, height: 120 },
+        voiceAnswers: ["theta", "theta"],
+        explanation: "The marked corner is theta.",
+      },
+      controls: [],
+      claims: [],
+      citations: [],
+      followUps: [],
+    });
+    expect(normalized.diagnosticProbe).toMatchObject({
+      choices: [{ focusStepId: "locate" }, { focusStepId: "trace" }],
+    });
+    expect(normalized.learningCheck).toMatchObject({ answer: "Adjacent" });
+    expect(normalized.transferCheck).toMatchObject({
+      kind: "point",
+      voiceAnswers: ["theta"],
+    });
   });
 
   it("keeps a complete visual lesson when Qwen collapses all drawable marks into one step", () => {

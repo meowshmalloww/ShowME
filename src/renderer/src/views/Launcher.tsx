@@ -426,7 +426,14 @@ export function Launcher() {
       stopWakeInput(true);
       return;
     }
-    if (mode === "idle" || mode === "revealed" || mode === "speaking") {
+    if (
+      mode === "idle" ||
+      mode === "revealed" ||
+      mode === "speaking" ||
+      mode === "teaching" ||
+      mode === "waiting" ||
+      mode === "complete"
+    ) {
       void startWakeInput(settings);
     } else {
       stopWakeInput(false);
@@ -457,6 +464,8 @@ export function Launcher() {
   const beginCapture = async (): Promise<void> => {
     setError("");
     try {
+      setMode("capturing");
+      await window.showme.launcher.setMode("capturing");
       await window.showme.capture.begin();
     } catch (reason) {
       setErrorTitle("Capture unavailable");
@@ -587,6 +596,32 @@ export function Launcher() {
             <small>{progressLabel(progress?.stage)}</small>
           </div>
           <ThinkingProgress stage={progress?.stage} />
+        </div>
+      </div>
+    );
+  }
+
+  if (["capturing", "teaching", "waiting", "checking", "complete"].includes(mode)) {
+    const copy = runtimeCopy(mode);
+    return (
+      <div
+        className={"island-stage" + (bootstrap?.settings.reducedMotion ? " reduced-motion" : "")}
+      >
+        <div className={`dynamic-island thinking-island runtime-island runtime-${mode}`}>
+          <div className="thinking-orb">
+            <BrandMark size={19} />
+          </div>
+          <div>
+            <strong>{copy.title}</strong>
+            <small>{copy.detail}</small>
+          </div>
+          {mode === "capturing" || mode === "checking" ? (
+            <span className="activity-loader" aria-hidden="true">
+              <LoaderCircle size={15} />
+            </span>
+          ) : (
+            <span className="runtime-state-dot" aria-hidden="true" />
+          )}
         </div>
       </div>
     );
@@ -728,4 +763,15 @@ function progressLabel(stage: LessonProgress["stage"] | undefined): string {
     rendering: "Laying out the story",
   };
   return stage ? labels[stage] : "Visual lesson compiler";
+}
+
+function runtimeCopy(mode: LauncherMode): { title: string; detail: string } {
+  if (mode === "capturing")
+    return { title: "Reading the selection", detail: "Capturing screen context" };
+  if (mode === "teaching")
+    return { title: "Teaching on screen", detail: "Drawing the next visual step" };
+  if (mode === "waiting")
+    return { title: "Your turn", detail: "ShowME is waiting for your answer" };
+  if (mode === "checking") return { title: "Checking locally", detail: "No additional model call" };
+  return { title: "Lesson complete", detail: "The board will clear automatically" };
 }

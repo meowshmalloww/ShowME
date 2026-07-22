@@ -48,8 +48,10 @@ const api: ShowMEApi = {
     generate: (request) => invoke(CHANNELS.lessonGenerate, request),
     adapt: (input) => invoke(CHANNELS.lessonAdapt, input),
     cancel: (requestId) => invoke(CHANNELS.lessonCancel, requestId),
+    submitCheck: (input) => invoke(CHANNELS.lessonSubmitCheck, input),
     openSaved: (id) => invoke(CHANNELS.lessonOpenSaved, id),
     setSurface: (surface) => invoke(CHANNELS.lessonSetSurface, surface),
+    setInteractive: (interactive) => invoke(CHANNELS.lessonSetInteractive, interactive),
     close: () => invoke(CHANNELS.lessonClose),
   },
   voice: {

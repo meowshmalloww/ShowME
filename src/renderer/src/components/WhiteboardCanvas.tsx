@@ -1,4 +1,4 @@
-import { type CSSProperties, useEffect, useMemo, useState } from "react";
+import { type CSSProperties, type PointerEvent, useEffect, useMemo, useState } from "react";
 import type {
   ImageAsset,
   LessonContextGeometry,
@@ -68,34 +68,60 @@ export interface WhiteboardTextLayout extends LayoutRect {
   centerY: number;
 }
 
+export interface WhiteboardLearningCheck {
+  phase: "awaiting" | "retry" | "correct";
+  stage: "diagnostic" | "try" | "transfer";
+  prompt: string;
+  choices?: string[];
+  pointMode?: boolean;
+  message?: string;
+  attemptCount: number;
+}
+
 export function WhiteboardCanvas({
   plan,
   stepIndex,
   reducedMotion,
   contextGeometry,
   imageAsset,
+  learningCheck,
   phase = "active",
+  historyMode = "context",
+  pinnedPrimitiveIds = [],
+  onPointAnswer,
 }: {
   plan: LessonPlan;
   stepIndex: number;
   reducedMotion: boolean;
   contextGeometry?: LessonContextGeometry;
   imageAsset?: ImageAsset;
+  learningCheck?: WhiteboardLearningCheck;
   phase?: "active" | "fading";
+  historyMode?: "current" | "context";
+  pinnedPrimitiveIds?: string[];
+  onPointAnswer?: (point: { x: number; y: number }) => void;
 }) {
   const viewport = useViewport();
   const source = useMemo(
     () => projectSourceRect(contextGeometry, viewport),
     [contextGeometry, viewport],
   );
-  const visibleIds = useMemo(
-    () => new Set(plan.steps.slice(0, stepIndex + 1).flatMap((step) => step.primitiveIds)),
-    [plan.steps, stepIndex],
-  );
   const currentIds = useMemo(
     () => new Set(plan.steps[stepIndex]?.primitiveIds ?? []),
     [plan.steps, stepIndex],
   );
+  const previousIds = useMemo(
+    () => new Set(stepIndex > 0 ? (plan.steps[stepIndex - 1]?.primitiveIds ?? []) : []),
+    [plan.steps, stepIndex],
+  );
+  const visibleIds = useMemo(() => {
+    const ids = new Set(currentIds);
+    if (historyMode === "context") {
+      for (const id of previousIds) ids.add(id);
+    }
+    for (const id of pinnedPrimitiveIds) ids.add(id);
+    return ids;
+  }, [currentIds, historyMode, pinnedPrimitiveIds, previousIds]);
   const primitives = plan.primitives.filter(
     (primitive) => visibleIds.size === 0 || visibleIds.has(primitive.id),
   );
@@ -132,19 +158,26 @@ export function WhiteboardCanvas({
     () => layoutWhiteboardText(textPrimitives, source, viewport, aidObstacles),
     [aidObstacles, source, textPrimitives, viewport],
   );
-  const cursorPrimitive = teachingCursorPrimitive(plan.primitives, currentIds);
   const cursorTarget = teachingCursorTarget(plan.primitives, currentIds);
-  const cursorAccent = cursorPrimitive
-    ? whiteboardPalette(cursorPrimitive, stepIndex).color
-    : WHITEBOARD_PALETTE[0].color;
-  const previousIds = new Set(plan.steps[Math.max(0, stepIndex - 1)]?.primitiveIds ?? []);
   const previousCursorTarget =
     stepIndex > 0 ? teachingCursorTarget(plan.primitives, previousIds) : undefined;
+  const pointMode = Boolean(
+    learningCheck?.pointMode && learningCheck.phase !== "correct" && onPointAnswer,
+  );
+
+  const handlePoint = (event: PointerEvent<HTMLElement>): void => {
+    if (!pointMode || !onPointAnswer) return;
+    const x = ((event.clientX - source.left) / Math.max(1, source.width)) * 1000;
+    const y = ((event.clientY - source.top) / Math.max(1, source.height)) * 1000;
+    if (x < 0 || x > 1000 || y < 0 || y > 1000) return;
+    onPointAnswer({ x, y });
+  };
 
   return (
     <main
-      className={`whiteboard-overlay board-${phase}${reducedMotion ? " reduced-motion" : ""}`}
+      className={`whiteboard-overlay board-${phase}${reducedMotion ? " reduced-motion" : ""}${pointMode ? " point-mode" : ""}`}
       aria-label={plan.title}
+      onPointerDown={handlePoint}
     >
       <svg
         className="whiteboard-geometry"
@@ -164,10 +197,10 @@ export function WhiteboardCanvas({
               id={`whiteboard-arrow-${entry.id}`}
               key={entry.id}
               viewBox="0 0 12 12"
-              refX="10"
+              refX="10.5"
               refY="6"
-              markerWidth="8"
-              markerHeight="8"
+              markerWidth="6"
+              markerHeight="6"
               orient="auto-start-reverse"
             >
               <path d="M 0 0 L 12 6 L 0 12 z" fill={entry.color} />
@@ -176,10 +209,10 @@ export function WhiteboardCanvas({
           <marker
             id="lesson-arrow"
             viewBox="0 0 12 12"
-            refX="10"
+            refX="10.5"
             refY="6"
-            markerWidth="8"
-            markerHeight="8"
+            markerWidth="6"
+            markerHeight="6"
             orient="auto-start-reverse"
           >
             <path d="M 0 0 L 12 6 L 0 12 z" fill="#65dcff" />
@@ -187,10 +220,10 @@ export function WhiteboardCanvas({
           <marker
             id="sim-arrow"
             viewBox="0 0 12 12"
-            refX="10"
+            refX="10.5"
             refY="6"
-            markerWidth="8"
-            markerHeight="8"
+            markerWidth="6"
+            markerHeight="6"
             orient="auto-start-reverse"
           >
             <path d="M 0 0 L 12 6 L 0 12 z" fill="#65dcff" />
@@ -209,6 +242,7 @@ export function WhiteboardCanvas({
             primitive={primitive}
             source={source}
             current={currentIds.has(primitive.id)}
+            previous={previousIds.has(primitive.id)}
             order={index}
           />
         ))}
@@ -220,7 +254,6 @@ export function WhiteboardCanvas({
           target={cursorTarget}
           source={source}
           reducedMotion={reducedMotion}
-          accent={cursorAccent}
           {...(previousCursorTarget ? { from: previousCursorTarget } : {})}
         />
       ) : null}
@@ -233,6 +266,7 @@ export function WhiteboardCanvas({
           source={source}
           {...(contextGeometry?.contrastMap ? { contrastMap: contextGeometry.contrastMap } : {})}
           current={currentIds.has(primitive.id)}
+          previous={previousIds.has(primitive.id)}
           order={index}
         />
       ))}
@@ -255,6 +289,40 @@ export function WhiteboardCanvas({
           </figcaption>
         </figure>
       ) : null}
+
+      {learningCheck ? (
+        <aside
+          className={`whiteboard-learning-check check-${learningCheck.phase} ${
+            aidOnLeft ? "check-right" : "check-left"
+          }`}
+          aria-live="polite"
+        >
+          <span className="learning-check-kicker">
+            {learningCheck.phase === "correct"
+              ? learningCheck.stage === "transfer"
+                ? "Transfer observed"
+                : learningCheck.stage === "diagnostic"
+                  ? "Focus selected"
+                  : "Try completed"
+              : learningCheck.phase === "retry"
+                ? "Try once more"
+                : learningCheck.stage === "diagnostic"
+                  ? "Choose a focus"
+                  : learningCheck.stage === "transfer"
+                    ? "Transfer"
+                    : "Try it"}
+          </span>
+          <strong>{learningCheck.prompt}</strong>
+          {learningCheck.choices?.length ? (
+            <span className="learning-check-choices">
+              {learningCheck.choices
+                .map((choice, index) => `${String.fromCharCode(65 + index)}. ${choice}`)
+                .join("  ·  ")}
+            </span>
+          ) : null}
+          <small>{learningCheck.message ?? "Say “Show me, my answer is …”"}</small>
+        </aside>
+      ) : null}
     </main>
   );
 }
@@ -263,11 +331,13 @@ function WhiteboardPrimitive({
   primitive,
   source,
   current,
+  previous,
   order,
 }: {
   primitive: LessonPrimitive;
   source: SourceRect;
   current: boolean;
+  previous: boolean;
   order: number;
 }) {
   const palette = whiteboardPalette(primitive, order);
@@ -276,9 +346,9 @@ function WhiteboardPrimitive({
   const isBroadHighlight =
     primitive.kind === "highlight" &&
     (primitiveWidth > 320 || primitiveHeight > 260 || primitiveWidth * primitiveHeight > 72_000);
-  const strokeWidth = isBroadHighlight ? 1.75 : Math.max(2.5, primitive.strokeWidth ?? 5);
+  const strokeWidth = isBroadHighlight ? 1.2 : Math.max(1.6, primitive.strokeWidth ?? 3);
   const props = {
-    className: `whiteboard-stroke${isBroadHighlight ? " broad-highlight" : ""}${current ? " current" : ""}`,
+    className: `whiteboard-stroke${isBroadHighlight ? " broad-highlight" : ""}${previous && !current ? " previous" : ""}${current ? " current" : ""}`,
     stroke: palette.color,
     strokeWidth,
     strokeOpacity: isBroadHighlight ? 0.58 : 1,
@@ -393,7 +463,9 @@ function WhiteboardPrimitive({
     const spotlightRadiusX = (spotlightRadius * shortestSourceSide) / Math.max(1, source.width);
     const spotlightRadiusY = (spotlightRadius * shortestSourceSide) / Math.max(1, source.height);
     return (
-      <g className={current ? "whiteboard-spotlight current" : "whiteboard-spotlight"}>
+      <g
+        className={`whiteboard-spotlight${previous && !current ? " previous" : ""}${current ? " current" : ""}`}
+      >
         <ellipse
           cx={primitive.x}
           cy={primitive.y}
@@ -422,6 +494,7 @@ function WhiteboardText({
   source,
   contrastMap,
   current,
+  previous,
   order,
 }: {
   primitive: LessonPrimitive;
@@ -429,6 +502,7 @@ function WhiteboardText({
   source: SourceRect;
   contrastMap?: ScreenContrastMap;
   current: boolean;
+  previous: boolean;
   order: number;
 }) {
   const palette = whiteboardPalette(primitive, order);
@@ -442,7 +516,7 @@ function WhiteboardText({
   } as CSSProperties;
   return (
     <span
-      className={`whiteboard-text whiteboard-${primitive.kind} surface-${surface}${current ? " current" : ""}`}
+      className={`whiteboard-text whiteboard-${primitive.kind} surface-${surface}${previous && !current ? " previous" : ""}${current ? " current" : ""}`}
       data-surface={surface}
       style={style}
     >
@@ -456,13 +530,11 @@ function TeachingCursor({
   from,
   source,
   reducedMotion,
-  accent,
 }: {
   target: { x: number; y: number };
   from?: { x: number; y: number };
   source: SourceRect;
   reducedMotion: boolean;
-  accent: string;
 }) {
   const left = source.left + (target.x / 1000) * source.width;
   const top = source.top + (target.y / 1000) * source.height;
@@ -473,7 +545,6 @@ function TeachingCursor({
     top,
     "--cursor-from-x": `${fromLeft - left}px`,
     "--cursor-from-y": `${fromTop - top}px`,
-    "--teaching-cursor-color": accent,
   } as CSSProperties;
   return (
     <div
@@ -481,7 +552,15 @@ function TeachingCursor({
       className={`teaching-cursor${reducedMotion ? " reduced-motion" : ""}`}
       style={style}
     >
-      <span className="teaching-cursor-pointer" />
+      <svg className="teaching-cursor-pointer" viewBox="0 0 16 22" aria-hidden="true">
+        <path
+          d="M2 1.5v16.1l4.05-3.6 3.05 6.45 2.65-1.25-3.05-6.4 5.55-.3L2 1.5Z"
+          fill="#f8fafc"
+          stroke="#111318"
+          strokeWidth="1.35"
+          strokeLinejoin="round"
+        />
+      </svg>
     </div>
   );
 }

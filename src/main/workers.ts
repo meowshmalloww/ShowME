@@ -186,6 +186,11 @@ function verifyWithTypeScript(simulation: SimulationSpec, error: unknown): Verif
       details.traceSteps = simulation.trace.length;
       valid = simulation.trace.length > 0;
       break;
+    case "motion-scene":
+      details.beats = simulation.beats.length;
+      details.durationSeconds = simulation.durationSeconds;
+      valid = simulation.beats.length >= 2 && simulation.durationSeconds >= 3;
+      break;
     case "custom":
       details.entities = simulation.entities.length;
       details.motions = simulation.motions.length;

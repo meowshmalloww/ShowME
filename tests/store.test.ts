@@ -230,4 +230,89 @@ describe("local SQLite product state", () => {
     expect(row.presentation_json).not.toContain("luminance");
     database.close();
   });
+
+  it("persists an honest immediate-transfer receipt separately from lesson pixels", () => {
+    const directory = mkdtempSync(join(tmpdir(), "showme-store-"));
+    temporaryDirectories.push(directory);
+    const store = new AppStore(join(directory, "showme.sqlite3"));
+    const presentation: LessonPresentation = {
+      plan: {
+        version: 1,
+        id: "learning-check-test",
+        title: "A checked lesson",
+        concept: "Immediate transfer",
+        summary: "Teach, then observe one response.",
+        teachingMode: "diagram-annotation",
+        confidence: "exploratory",
+        sourceDescription: "Selected screen region",
+        narration: "First inspect the relationship.",
+        primitives: [],
+        steps: [
+          {
+            id: "step-1",
+            title: "Inspect",
+            narration: "Inspect the visible relationship.",
+            primitiveIds: [],
+            durationMs: 1_000,
+          },
+        ],
+        learningCheck: {
+          kind: "numeric",
+          prompt: "What is two plus two?",
+          expected: 4,
+          tolerance: 0,
+          unit: "",
+          explanation: "Two pairs make four.",
+        },
+        transferCheck: {
+          kind: "numeric",
+          prompt: "What is three plus one?",
+          expected: 4,
+          tolerance: 0,
+          unit: "",
+          explanation: "Three and one more make four.",
+        },
+        controls: [],
+        claims: [],
+        citations: [],
+        followUps: [],
+        provider: { id: "openai", model: "gpt-5.6-sol" },
+      },
+      request: {
+        captureId: "capture-check",
+        question: "Help me understand this.",
+        includeNearbyContext: false,
+        includeActiveWindow: false,
+        researchMode: "quick",
+        allowWebResearch: false,
+        allowImageAids: false,
+        language: "en",
+        teachingStyle: "step-by-step",
+        complexity: "standard",
+        provider: "openai",
+        model: "gpt-5.6-sol",
+      },
+      verification: { verified: false, engine: "none", summary: "No simulation.", details: {} },
+      createdAt: new Date().toISOString(),
+      surface: "side",
+    };
+    store.saveLesson(presentation);
+    const outcome = store.recordLearningOutcome(presentation.plan.id, "transfer", "four", {
+      result: "correct",
+      feedback: "Yes. Immediate transfer observed.",
+      matched: ["4"],
+    });
+    expect(outcome.attemptNumber).toBe(1);
+    expect(store.getLesson(presentation.plan.id).learningEvidence).toMatchObject({
+      result: "correct",
+      stage: "transfer",
+      attemptCount: 1,
+      verifier: "local-plan-key",
+    });
+    expect(store.listLearningOutcomes(presentation.plan.id)[0]?.response).toBe("four");
+    expect(
+      store.listMemories().some((memory) => memory.value === "immediate-transfer-observed"),
+    ).toBe(true);
+    store.close();
+  });
 });

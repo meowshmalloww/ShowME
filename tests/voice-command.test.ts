@@ -42,4 +42,22 @@ describe("spoken lesson commands", () => {
       ),
     ).toBe(true);
   });
+
+  it("captures an explicit spoken transfer answer", () => {
+    expect(parseVoiceLessonCommand("Hey Show Me, my answer is option B")).toEqual({
+      kind: "answer",
+      response: "option b",
+    });
+    expect(parseVoiceLessonCommand("choice third")).toEqual({
+      kind: "answer",
+      response: "choice third",
+    });
+  });
+
+  it("controls annotation history without opening another interface", () => {
+    expect(parseVoiceLessonCommand("Show me, go back")).toEqual({ kind: "go-back" });
+    expect(parseVoiceLessonCommand("show both steps")).toEqual({ kind: "show-both" });
+    expect(parseVoiceLessonCommand("keep the formula")).toEqual({ kind: "keep-formula" });
+    expect(parseVoiceLessonCommand("clear old marks")).toEqual({ kind: "current-only" });
+  });
 });

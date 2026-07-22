@@ -110,6 +110,43 @@ describe("visual lesson canvas", () => {
     expect(html).toContain("url(#lesson-arrow)");
   });
 
+  it("renders a safe code-driven history or reading motion scene", () => {
+    const simulation: SimulationSpec = {
+      kind: "motion-scene",
+      durationSeconds: 8,
+      title: "Cause and consequence",
+      layout: "cause-effect",
+      beats: [
+        {
+          id: "pressure",
+          marker: "Cause",
+          heading: "Pressure builds",
+          caption: "A visible condition creates tension.",
+          accent: "amber",
+        },
+        {
+          id: "choice",
+          marker: "Decision",
+          heading: "A choice is made",
+          caption: "The response changes what follows.",
+          accent: "violet",
+        },
+        {
+          id: "outcome",
+          marker: "Effect",
+          heading: "The result appears",
+          caption: "The consequence completes the chain.",
+          accent: "mint",
+        },
+      ],
+    };
+    const html = render(lesson({ simulation }));
+    expect(html).toContain("Motion graphic: Cause and consequence");
+    expect(html).toContain("motion-scene-card");
+    expect(html).toContain("Pressure builds");
+    expect(html).not.toContain("simulation-error");
+  });
+
   it.each([
     {
       kind: "orbit",

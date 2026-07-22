@@ -164,6 +164,90 @@ describe("trusted lesson schema", () => {
     ).toBe("orbit");
   });
 
+  it("accepts constrained motion graphics and a locally gradable transfer check", () => {
+    const plan = validateLessonPlan({
+      ...lesson,
+      confidence: "exploratory",
+      controls: [],
+      simulation: {
+        kind: "motion-scene",
+        durationSeconds: 7,
+        title: "A short causal story",
+        layout: "cause-effect",
+        beats: [
+          {
+            id: "cause",
+            marker: "Cause",
+            heading: "Condition",
+            caption: "The first event changes the situation.",
+            accent: "amber",
+          },
+          {
+            id: "effect",
+            marker: "Effect",
+            heading: "Outcome",
+            caption: "The consequence follows from that change.",
+            accent: "mint",
+          },
+        ],
+      },
+      learningCheck: {
+        kind: "multiple-choice",
+        prompt: "Which event is the effect?",
+        choices: ["Condition", "Outcome"],
+        answer: "Outcome",
+        explanation: "The outcome follows the condition.",
+      },
+    });
+    expect(plan.simulation?.kind).toBe("motion-scene");
+    expect(plan.learningCheck?.kind).toBe("multiple-choice");
+  });
+
+  it("accepts a focused diagnosis plus distinct Try and point-based Transfer", () => {
+    const plan = validateLessonPlan({
+      ...lesson,
+      diagnosticProbe: {
+        prompt: "Which part is unclear?",
+        choices: [
+          { label: "The starting direction", focusStepId: "step-1" },
+          { label: "The inward force", focusStepId: "step-1" },
+        ],
+      },
+      learningCheck: {
+        kind: "multiple-choice",
+        prompt: "Which way does velocity begin?",
+        choices: ["Sideways", "Inward"],
+        answer: "Sideways",
+        explanation: "The initial velocity is tangential.",
+      },
+      transferCheck: {
+        kind: "point",
+        prompt: "Point to the inward direction.",
+        target: { x: 420, y: 420, width: 160, height: 160 },
+        voiceAnswers: ["toward the center"],
+        explanation: "Inward acceleration points toward the center.",
+      },
+    });
+    expect(plan.diagnosticProbe?.choices).toHaveLength(2);
+    expect(plan.transferCheck?.kind).toBe("point");
+  });
+
+  it("rejects transfer evidence without a preceding guided Try", () => {
+    expect(() =>
+      validateLessonPlan({
+        ...lesson,
+        transferCheck: {
+          kind: "numeric",
+          prompt: "What changes?",
+          expected: 2,
+          tolerance: 0,
+          unit: "",
+          explanation: "The value doubles.",
+        },
+      }),
+    ).toThrow(/requires a guided learning check/i);
+  });
+
   it("exports a closed JSON schema for strict provider output", () => {
     const schema = lessonJsonSchema();
     expect(schema.additionalProperties).toBe(false);
@@ -188,13 +272,17 @@ describe("trusted lesson schema", () => {
     const refSiblings: string[] = [];
     const visit = (value: unknown, path = "$"): void => {
       if (Array.isArray(value)) {
-        value.forEach((child, index) => visit(child, `${path}[${index}]`));
+        value.forEach((child, index) => {
+          visit(child, `${path}[${index}]`);
+        });
         return;
       }
       if (typeof value !== "object" || value === null) return;
       const object = value as Record<string, unknown>;
       if ("$ref" in object && Object.keys(object).length > 1) refSiblings.push(path);
-      Object.entries(object).forEach(([key, child]) => visit(child, `${path}.${key}`));
+      Object.entries(object).forEach(([key, child]) => {
+        visit(child, `${path}.${key}`);
+      });
     };
     visit(standard);
     expect(refSiblings).toEqual([]);

@@ -2,10 +2,14 @@ import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { DEFAULT_SETTINGS } from "../shared/defaults";
+import { lessonCheckForStage } from "../shared/learning-flow";
 import { appSettingsSchema } from "../shared/schema";
 import type {
   AppSettings,
+  LearningCheckEvaluation,
+  LearningCheckStage,
   LearningMemory,
+  LearningOutcome,
   LessonPresentation,
   LessonReceipt,
   MemorySummary,
@@ -45,6 +49,23 @@ export class AppStore {
       );
       CREATE INDEX IF NOT EXISTS lessons_updated_idx ON lessons(updated_at DESC);
       CREATE INDEX IF NOT EXISTS lessons_concept_idx ON lessons(concept);
+      CREATE TABLE IF NOT EXISTS lesson_outcomes (
+        id TEXT PRIMARY KEY,
+        lesson_id TEXT NOT NULL,
+        checked_at TEXT NOT NULL,
+        prompt TEXT NOT NULL,
+        response TEXT NOT NULL,
+        check_kind TEXT NOT NULL,
+        stage TEXT NOT NULL DEFAULT 'try',
+        attempt_number INTEGER NOT NULL,
+        result TEXT NOT NULL,
+        feedback TEXT NOT NULL,
+        matched_json TEXT NOT NULL,
+        verifier TEXT NOT NULL,
+        FOREIGN KEY(lesson_id) REFERENCES lessons(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS lesson_outcomes_lesson_idx
+        ON lesson_outcomes(lesson_id, checked_at DESC);
       CREATE TABLE IF NOT EXISTS memories (
         id TEXT PRIMARY KEY,
         kind TEXT NOT NULL,
@@ -57,6 +78,10 @@ export class AppStore {
       CREATE UNIQUE INDEX IF NOT EXISTS memories_identity_idx
         ON memories(kind, topic, value);
     `);
+    const outcomeColumns = this.db.prepare("PRAGMA table_info(lesson_outcomes)").all() as Row[];
+    if (!outcomeColumns.some((column) => String(column.name) === "stage")) {
+      this.db.exec("ALTER TABLE lesson_outcomes ADD COLUMN stage TEXT NOT NULL DEFAULT 'try'");
+    }
   }
 
   close(): void {
@@ -231,20 +256,41 @@ export class AppStore {
     const rows = normalized
       ? (this.db
           .prepare(`
-            SELECT * FROM lessons
-            WHERE title LIKE ? ESCAPE '\\' OR concept LIKE ? ESCAPE '\\'
-              OR question LIKE ? ESCAPE '\\'
+            SELECT lessons.*,
+              (SELECT result FROM lesson_outcomes WHERE lesson_id = lessons.id ORDER BY checked_at DESC LIMIT 1) AS learning_result,
+              (SELECT stage FROM lesson_outcomes WHERE lesson_id = lessons.id ORDER BY checked_at DESC LIMIT 1) AS learning_stage,
+              (SELECT COUNT(*) FROM lesson_outcomes WHERE lesson_id = lessons.id) AS learning_attempt_count,
+              (SELECT checked_at FROM lesson_outcomes WHERE lesson_id = lessons.id ORDER BY checked_at DESC LIMIT 1) AS learning_checked_at
+            FROM lessons
+            WHERE lessons.title LIKE ? ESCAPE '\\' OR lessons.concept LIKE ? ESCAPE '\\'
+              OR lessons.question LIKE ? ESCAPE '\\'
             ORDER BY updated_at DESC LIMIT ?
           `)
           .all(...Array(3).fill("%" + escapeLike(normalized) + "%"), limit) as Row[])
       : (this.db
-          .prepare("SELECT * FROM lessons ORDER BY updated_at DESC LIMIT ?")
+          .prepare(`
+            SELECT lessons.*,
+              (SELECT result FROM lesson_outcomes WHERE lesson_id = lessons.id ORDER BY checked_at DESC LIMIT 1) AS learning_result,
+              (SELECT stage FROM lesson_outcomes WHERE lesson_id = lessons.id ORDER BY checked_at DESC LIMIT 1) AS learning_stage,
+              (SELECT COUNT(*) FROM lesson_outcomes WHERE lesson_id = lessons.id) AS learning_attempt_count,
+              (SELECT checked_at FROM lesson_outcomes WHERE lesson_id = lessons.id ORDER BY checked_at DESC LIMIT 1) AS learning_checked_at
+            FROM lessons ORDER BY updated_at DESC LIMIT ?
+          `)
           .all(limit) as Row[]);
     return rows.map(toReceipt);
   }
 
   getLesson(id: string): StoredLesson {
-    const row = this.db.prepare("SELECT * FROM lessons WHERE id = ?").get(id) as Row | undefined;
+    const row = this.db
+      .prepare(`
+        SELECT lessons.*,
+          (SELECT result FROM lesson_outcomes WHERE lesson_id = lessons.id ORDER BY checked_at DESC LIMIT 1) AS learning_result,
+          (SELECT stage FROM lesson_outcomes WHERE lesson_id = lessons.id ORDER BY checked_at DESC LIMIT 1) AS learning_stage,
+          (SELECT COUNT(*) FROM lesson_outcomes WHERE lesson_id = lessons.id) AS learning_attempt_count,
+          (SELECT checked_at FROM lesson_outcomes WHERE lesson_id = lessons.id ORDER BY checked_at DESC LIMIT 1) AS learning_checked_at
+        FROM lessons WHERE lessons.id = ?
+      `)
+      .get(id) as Row | undefined;
     if (!row) throw new Error("Lesson not found");
     return { ...toReceipt(row), presentation: JSON.parse(String(row.presentation_json)) };
   }
@@ -261,6 +307,76 @@ export class AppStore {
     this.db
       .prepare("UPDATE lessons SET helpful = ?, updated_at = ? WHERE id = ?")
       .run(helpful ? 1 : 0, new Date().toISOString(), id);
+  }
+
+  recordLearningOutcome(
+    lessonId: string,
+    stage: LearningCheckStage,
+    response: string,
+    evaluation: LearningCheckEvaluation,
+  ): LearningOutcome {
+    const lesson = this.getLesson(lessonId);
+    const check = lessonCheckForStage(lesson.presentation.plan, stage);
+    if (!check) throw new Error("This lesson does not have a learning check");
+    const checkedAt = new Date().toISOString();
+    const attemptNumber =
+      Number(
+        (
+          this.db
+            .prepare(
+              "SELECT COUNT(*) AS count FROM lesson_outcomes WHERE lesson_id = ? AND stage = ?",
+            )
+            .get(lessonId, stage) as Row
+        ).count,
+      ) + 1;
+    const outcome: LearningOutcome = {
+      id: crypto.randomUUID(),
+      lessonId,
+      prompt: check.prompt,
+      response: response.trim().slice(0, 500),
+      checkKind: check.kind,
+      stage,
+      attemptNumber,
+      checkedAt,
+      verifier: "local-plan-key",
+      ...evaluation,
+    };
+    this.db
+      .prepare(`
+        INSERT INTO lesson_outcomes(
+          id, lesson_id, checked_at, prompt, response, check_kind, stage, attempt_number,
+          result, feedback, matched_json, verifier
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      .run(
+        outcome.id,
+        outcome.lessonId,
+        outcome.checkedAt,
+        outcome.prompt,
+        outcome.response,
+        outcome.checkKind,
+        outcome.stage,
+        outcome.attemptNumber,
+        outcome.result,
+        outcome.feedback,
+        JSON.stringify(outcome.matched),
+        outcome.verifier,
+      );
+    if (outcome.result === "correct" && stage === "transfer") {
+      this.upsertMemory("feedback", lesson.concept, "immediate-transfer-observed", 0.5);
+    } else if (outcome.result === "correct") {
+      this.upsertMemory("feedback", lesson.concept, "guided-try-correct", 0.25);
+    }
+    return outcome;
+  }
+
+  listLearningOutcomes(lessonId?: string): LearningOutcome[] {
+    const rows = lessonId
+      ? (this.db
+          .prepare("SELECT * FROM lesson_outcomes WHERE lesson_id = ? ORDER BY checked_at DESC")
+          .all(lessonId) as Row[])
+      : (this.db.prepare("SELECT * FROM lesson_outcomes ORDER BY checked_at DESC").all() as Row[]);
+    return rows.map(toLearningOutcome);
   }
 
   upsertMemory(
@@ -349,12 +465,14 @@ export class AppStore {
     exportedAt: string;
     lessons: StoredLesson[];
     memories: LearningMemory[];
+    learningOutcomes: LearningOutcome[];
     settings: AppSettings;
   } {
     return {
       exportedAt: new Date().toISOString(),
       lessons: this.listLessons("", 10_000).map((lesson) => this.getLesson(lesson.id)),
       memories: this.listMemories(),
+      learningOutcomes: this.listLearningOutcomes(),
       settings: this.getSettings(),
     };
   }
@@ -373,6 +491,10 @@ function escapeLike(value: string): string {
 function toReceipt(row: Row): LessonReceipt {
   const helpful =
     row.helpful === null || row.helpful === undefined ? undefined : Number(row.helpful) === 1;
+  const learningResult =
+    row.learning_result === "correct" || row.learning_result === "retry"
+      ? row.learning_result
+      : undefined;
   return {
     id: String(row.id),
     createdAt: String(row.created_at),
@@ -387,6 +509,34 @@ function toReceipt(row: Row): LessonReceipt {
     sourceDescription: String(row.source_description),
     teachingMode: String(row.teaching_mode) as LessonReceipt["teachingMode"],
     ...(helpful === undefined ? {} : { helpful }),
+    ...(learningResult && row.learning_checked_at
+      ? {
+          learningEvidence: {
+            result: learningResult,
+            stage: row.learning_stage === "transfer" ? "transfer" : "try",
+            attemptCount: Number(row.learning_attempt_count ?? 0),
+            checkedAt: String(row.learning_checked_at),
+            verifier: "local-plan-key" as const,
+          },
+        }
+      : {}),
+  };
+}
+
+function toLearningOutcome(row: Row): LearningOutcome {
+  return {
+    id: String(row.id),
+    lessonId: String(row.lesson_id),
+    prompt: String(row.prompt),
+    response: String(row.response),
+    checkKind: String(row.check_kind) as LearningOutcome["checkKind"],
+    stage: row.stage === "transfer" ? "transfer" : "try",
+    result: String(row.result) as LearningOutcome["result"],
+    feedback: String(row.feedback),
+    matched: JSON.parse(String(row.matched_json)) as string[],
+    attemptNumber: Number(row.attempt_number),
+    checkedAt: String(row.checked_at),
+    verifier: "local-plan-key",
   };
 }
 

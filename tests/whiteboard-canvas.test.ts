@@ -265,6 +265,94 @@ describe("desktop whiteboard projection", () => {
     expect(html).not.toContain("Evidence &amp; confidence");
   });
 
+  it("keeps the voice-driven transfer check screen-native and renders one neutral pointer", () => {
+    const html = renderToStaticMarkup(
+      createElement(WhiteboardCanvas, {
+        plan,
+        stepIndex: 0,
+        reducedMotion: false,
+        contextGeometry: geometry,
+        learningCheck: {
+          phase: "awaiting",
+          stage: "try",
+          prompt: "Which side is opposite theta?",
+          choices: ["11.9", "10"],
+          attemptCount: 0,
+        },
+      }),
+    );
+
+    expect(html).toContain("whiteboard-learning-check check-awaiting");
+    expect(html).toContain("Which side is opposite theta?");
+    expect(html).toContain("Say “Show me, my answer is …”");
+    expect(html.match(/teaching-cursor-pointer/g)).toHaveLength(1);
+    expect(html).not.toContain("teaching-cursor-ring");
+    expect(html).not.toContain("--teaching-cursor-color");
+  });
+
+  it("retires old annotations while preserving one context step and pinned formulas", () => {
+    const historyPlan: LessonPlan = {
+      ...plan,
+      primitives: [
+        { id: "old", kind: "label", x: 100, y: 100, text: "Retired mark" },
+        { id: "previous", kind: "label", x: 200, y: 200, text: "Previous mark" },
+        { id: "current", kind: "label", x: 300, y: 300, text: "Current mark" },
+        { id: "formula-pin", kind: "equation", x: 500, y: 100, text: "a = b" },
+      ],
+      steps: [
+        { id: "one", title: "One", narration: "One", primitiveIds: ["old"], durationMs: 500 },
+        {
+          id: "two",
+          title: "Two",
+          narration: "Two",
+          primitiveIds: ["previous", "formula-pin"],
+          durationMs: 500,
+        },
+        {
+          id: "three",
+          title: "Three",
+          narration: "Three",
+          primitiveIds: ["current"],
+          durationMs: 500,
+        },
+      ],
+    };
+    const html = renderToStaticMarkup(
+      createElement(WhiteboardCanvas, {
+        plan: historyPlan,
+        stepIndex: 2,
+        reducedMotion: true,
+        contextGeometry: geometry,
+        pinnedPrimitiveIds: ["formula-pin"],
+      }),
+    );
+    expect(html).not.toContain("Retired mark");
+    expect(html).toContain("Previous mark");
+    expect(html).toContain("Current mark");
+    expect(html).toContain("a = b");
+    expect(html).toContain("previous");
+  });
+
+  it("exposes click-to-point mode only while a point check is active", () => {
+    const html = renderToStaticMarkup(
+      createElement(WhiteboardCanvas, {
+        plan,
+        stepIndex: 0,
+        reducedMotion: true,
+        contextGeometry: geometry,
+        learningCheck: {
+          phase: "awaiting",
+          stage: "transfer",
+          prompt: "Point to theta.",
+          pointMode: true,
+          attemptCount: 0,
+        },
+        onPointAnswer: () => undefined,
+      }),
+    );
+    expect(html).toContain("whiteboard-overlay board-active reduced-motion point-mode");
+  });
+
   it("renders the complete grounded drawing vocabulary on the desktop", () => {
     const primitives: LessonPlan["primitives"] = [
       { id: "circle", kind: "circle", x: 100, y: 100, radius: 40 },

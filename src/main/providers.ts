@@ -6,7 +6,12 @@ import {
   mergeProviderModels,
 } from "../shared/model-catalog";
 import { PROVIDER_DEFINITIONS, providerEndpoints } from "../shared/providers";
-import { lessonGenerationJsonSchema, simulationSchema, validateLessonPlan } from "../shared/schema";
+import {
+  learningCheckSchema,
+  lessonGenerationJsonSchema,
+  simulationSchema,
+  validateLessonPlan,
+} from "../shared/schema";
 import type {
   AppSettings,
   AudioProviderId,
@@ -1321,10 +1326,14 @@ Teaching rules:
 - Make 3–7 short spoken steps. Narration is read aloud, so use natural sentences without Markdown, lists, raw URLs, or notation that sounds awkward; say what is being drawn as it appears.
 - Choose the smallest useful teaching medium for this question. Not every lesson needs an equation, external image, or simulation. The renderer can sequence animated arrows, circles, shapes, paths, numbers, labels, equations, highlights, and declarative motion directly over the screen; use only the pieces that make the explanation clearer.
 - Keep the complete JSON compact enough to finish in one response. Prefer 3–5 steps, 900–2400 ms visual durations, and no more than 12 primitives unless the screen genuinely requires more.
-- Use trusted simulation modules only when motion materially teaches the idea: orbit, projectile, trigonometry, wave, circuit, event-loop, function-graph, or constrained custom entities/motions. They are declarative; never return executable code.
+- Use trusted simulation modules only when motion materially teaches the idea: orbit, projectile, trigonometry, wave, circuit, event-loop, function-graph, motion-scene, or constrained custom entities/motions. They are declarative; never return executable code.
+- For history, literature, reading, causal chains, or ordered processes, motion-scene can create a compact code-rendered explainer. Choose timeline, cause-effect, sequence, compare, or quote; use 2-5 concise beats with marker, heading, caption, and semantic accent. It is motion graphics, not a replacement page, and must stay grounded in selected or cited evidence.
 - Controls may bind only to real numeric fields of that simulation. Do not fake controls.
 - Use equations sparingly and pair each with plain language.
-- Questions and follow-ups must help the learner test understanding, not merely repeat the answer.`;
+- Questions and follow-ups must help the learner test understanding, not merely repeat the answer.
+- If the learner's request is genuinely ambiguous, include one compact diagnosticProbe with 2-4 self-report choices. Each choice must point to a real lesson step via focusStepId so the answer changes where teaching begins. Omit it when the question already names the confusion.
+- When the lesson teaches a transferable idea, include a short learningCheck as a guided Try on the just-taught representation. When a genuinely different surface example can be locally checked, also include transferCheck. The transfer prompt must change the values, wording, or context while testing the same rule; never copy the Try answer. Omit both for simple navigation or uncertain content. A correct response is one observed attempt, never proof of durable mastery.
+- Checks may be multiple-choice, numeric, keywords, or point. Use point only when the answer is an observed screen location; give voiceAnswers as a complete non-pointer alternative and use a tight normalized target rectangle.`;
 
 const COMPATIBLE_OUTPUT_GUIDE = `This endpoint cannot enforce a JSON response schema for you. Follow this compact accepted shape exactly.
 
@@ -1336,7 +1345,10 @@ Required top-level fields: version, title, concept, summary, teachingMode, confi
 - line/arrow/curved-arrow/vector/axis need x2,y2; path needs points; rect/highlight need width,height; circle/spotlight need radius; text kinds need text.
 - rect/highlight must satisfy x+width<=1000 and y+height<=1000, and must tightly mark one source object rather than frame most of the screen.
 - every step requires id, title, narration, primitiveIds, durationMs. durationMs is 250-30000. Every primitiveIds value must name a real primitive.
-- Unless a supported deterministic simulation is genuinely useful, return controls as [] and omit simulation.
+- diagnosticProbe is optional: {"prompt":"Which part is unclear?","choices":[{"label":"short self-report","focusStepId":"real-step-id"}]}.
+- learningCheck and transferCheck are optional. Exact variants: {"kind":"multiple-choice","prompt":"question","choices":["two to four choices"],"answer":"exact choice text","explanation":"why"}; {"kind":"numeric","prompt":"question","expected":number,"tolerance":number>=0,"unit":"short or empty","explanation":"why"}; {"kind":"keywords","prompt":"question","keywords":["one to five required ideas"],"minimumMatches":number,"explanation":"why"}; or {"kind":"point","prompt":"what to point at","target":{"x":number,"y":number,"width":number,"height":number},"voiceAnswers":["complete spoken alternative"],"explanation":"why"}.
+- Unless a supported simulation or grounded motion-scene is genuinely useful, return controls as [] and omit simulation. motion-scene never has controls and never justifies verified-module confidence by itself.
+- motion-scene exact shape: {"kind":"motion-scene","durationSeconds":number,"title":"short title","layout":"timeline|cause-effect|sequence|compare|quote","beats":[{"id":"unique-id","marker":"short cue","heading":"short heading","caption":"one concise sentence","accent":"cyan|amber|violet|mint|coral"}]}; include 2-5 beats.
 - every claim requires id, text, evidence, citationIds. evidence: selected-source | calculation | web-source | model-inference.
 - without observed web results, citations must be [] and citationIds must be [].
 - IDs must be unique. Do not add keys that are not listed.
@@ -1407,6 +1419,17 @@ export function simulationRequestHint(question: string): string {
   );
 }
 
+export function motionSceneRequestHint(question: string): string {
+  if (
+    !/\b(?:motion\s+(?:art|graphic|graphics)|animated?\s+(?:story|timeline|explanation)|animate\s+(?:the\s+)?(?:history|story|sequence|process|cause|comparison))\b/i.test(
+      question,
+    )
+  ) {
+    return "";
+  }
+  return 'The learner explicitly requested code-rendered motion graphics. Prefer simulation={"kind":"motion-scene","durationSeconds":3..30,"title":"short title","layout":"timeline|cause-effect|sequence|compare|quote","beats":[{"id":"unique","marker":"short cue","heading":"short heading","caption":"one concise sentence","accent":"cyan|amber|violet|mint|coral"}]} with 2-5 evidence-grounded beats and controls=[]. Do not return code, HTML, SVG, or a diffusion-video request.';
+}
+
 function buildUserPrompt(
   request: GenerateLessonRequest,
   context: PreparedContext,
@@ -1419,6 +1442,7 @@ function buildUserPrompt(
   const lines = [
     "Learner question: " + request.question,
     simulationRequestHint(request.question),
+    motionSceneRequestHint(request.question),
     "Language: " + request.language,
     "Teaching style: " + request.teachingStyle,
     "Requested complexity: " + request.complexity,
@@ -1444,10 +1468,11 @@ function buildUserPrompt(
   if (correction) {
     const visualRepair = requiresVisualRepair(validationError);
     const simulationHint = simulationRequestHint(request.question);
+    const motionHint = motionSceneRequestHint(request.question);
     lines.push(
       visualRepair
         ? "Your previous JSON was not a drawable visual lesson. Re-read the attached coordinate-scaffolded image and return a corrected plan with 3 compact steps and no more than 10 primitives. Every shape must have complete geometry, and all source marks must land on observed pixels."
-        : simulationHint
+        : simulationHint || motionHint
           ? "Your previous JSON failed validation or omitted the explicitly requested trusted simulation. Return one corrected compact JSON object with no more than 3 steps and 8 primitives, and include the exact simulation module described above."
           : "Your previous JSON failed validation. Return one completely corrected, compact JSON object. Keep no more than 3 steps and 8 primitives; use empty arrays and omit simulation and controls if uncertain.",
       "Repair these exact validation issues:\n" +
@@ -1996,6 +2021,7 @@ const SIMULATION_BINDINGS: Record<string, ReadonlySet<string>> = {
   circuit: new Set(["voltage", "resistance", "capacitance"]),
   "function-graph": new Set(["a", "b", "c", "xMin", "xMax"]),
   "event-loop": new Set(),
+  "motion-scene": new Set(),
   custom: new Set(),
 };
 
@@ -2013,6 +2039,9 @@ export function normalizeModelLessonDraft(value: Record<string, unknown>): Recor
     "narration",
     "primitives",
     "steps",
+    "diagnosticProbe",
+    "learningCheck",
+    "transferCheck",
     "controls",
     "simulation",
     "claims",
@@ -2128,6 +2157,23 @@ export function normalizeModelLessonDraft(value: Record<string, unknown>): Recor
     steps.push(clean);
   }
   draft.steps = steps;
+  const diagnosticProbe = normalizeDiagnosticProbe(draft.diagnosticProbe, stepIdMap, steps);
+  if (diagnosticProbe) draft.diagnosticProbe = diagnosticProbe;
+  else delete draft.diagnosticProbe;
+  const learningCheck = normalizeLearningCheck(draft.learningCheck);
+  if (learningCheck) draft.learningCheck = learningCheck;
+  else delete draft.learningCheck;
+  const candidateTransferCheck = learningCheck
+    ? normalizeLearningCheck(draft.transferCheck)
+    : undefined;
+  const transferCheck =
+    candidateTransferCheck &&
+    String(candidateTransferCheck.prompt).trim().toLocaleLowerCase() !==
+      String(learningCheck?.prompt).trim().toLocaleLowerCase()
+      ? candidateTransferCheck
+      : undefined;
+  if (transferCheck) draft.transferCheck = transferCheck;
+  else delete draft.transferCheck;
   for (const primitive of primitives) {
     const rawStepId = primitiveStepRefs.get(primitive);
     const mapped = rawStepId ? stepIdMap.get(rawStepId) : undefined;
@@ -2153,6 +2199,9 @@ export function normalizeModelLessonDraft(value: Record<string, unknown>): Recor
     reconcileSpatialStepReferences(primitives, steps);
   }
   if (!simulation && draft.confidence === "verified-module") draft.confidence = "exploratory";
+  if (simulation?.kind === "motion-scene" && draft.confidence === "verified-module") {
+    draft.confidence = "exploratory";
+  }
 
   const bindings = simulation ? SIMULATION_BINDINGS[String(simulation.kind)] : undefined;
   const controls: Record<string, unknown>[] = [];
@@ -2265,11 +2314,17 @@ function reconcileSpatialStepReferences(
   const relationshipId = spatialPrimitives.find((primitive) =>
     RELATIONSHIP_PRIMITIVE_KINDS.has(String(primitive.kind)),
   )?.id;
-  const preferredIds = [focusId, relationshipId, ...spatialPrimitives.map((item) => item.id)].filter(
-    (id): id is string => typeof id === "string",
-  );
+  const preferredIds = [
+    focusId,
+    relationshipId,
+    ...spatialPrimitives.map((item) => item.id),
+  ].filter((id): id is string => typeof id === "string");
 
-  for (let index = 0; index < steps.length && spatialStepCount() < requiredSpatialSteps; index += 1) {
+  for (
+    let index = 0;
+    index < steps.length && spatialStepCount() < requiredSpatialSteps;
+    index += 1
+  ) {
     const step = steps[index];
     if (!step || !Array.isArray(step.primitiveIds)) continue;
     if (step.primitiveIds.some((primitiveId) => spatialIds.has(String(primitiveId)))) continue;
@@ -2307,6 +2362,7 @@ function normalizeSimulation(value: unknown): Record<string, unknown> | undefine
     circuit: ["kind", "voltage", "resistance", "capacitance"],
     "function-graph": ["kind", "expression", "a", "b", "c", "xMin", "xMax"],
     "event-loop": ["kind", "source", "trace"],
+    "motion-scene": ["kind", "durationSeconds", "title", "layout", "beats"],
     custom: ["kind", "durationSeconds", "entities", "motions"],
   };
   const allowed = fields[kind];
@@ -2322,6 +2378,9 @@ function normalizeSimulation(value: unknown): Record<string, unknown> | undefine
         "showTrail",
         "source",
         "trace",
+        "title",
+        "layout",
+        "beats",
         "entities",
         "motions",
       ].includes(key)
@@ -2336,6 +2395,11 @@ function normalizeSimulation(value: unknown): Record<string, unknown> | undefine
       pickKeys(item, ["id", "phase", "action", "label", "value", "line"]),
     );
   }
+  if (kind === "motion-scene") {
+    clean.beats = arrayRecords(clean.beats)
+      .slice(0, 6)
+      .map((item) => pickKeys(item, ["id", "marker", "heading", "caption", "accent"]));
+  }
   if (kind === "custom") {
     clean.entities = arrayRecords(clean.entities).map((item) =>
       pickKeys(item, ["id", "shape", "x", "y", "width", "height", "color", "label"]),
@@ -2346,6 +2410,113 @@ function normalizeSimulation(value: unknown): Record<string, unknown> | undefine
   }
   const parsed = simulationSchema.safeParse(clean);
   return parsed.success ? parsed.data : undefined;
+}
+
+function normalizeLearningCheck(value: unknown): Record<string, unknown> | undefined {
+  const check = asRecord(value);
+  const kind = cleanText(check.kind, 40);
+  const prompt = cleanText(check.prompt, 240);
+  const explanation = cleanText(check.explanation, 240);
+  if (!kind || !prompt || !explanation) return undefined;
+
+  let clean: Record<string, unknown>;
+  if (kind === "multiple-choice") {
+    const choices = Array.isArray(check.choices)
+      ? [
+          ...new Set(
+            check.choices.flatMap((choice) => {
+              const text = cleanText(choice, 100);
+              return text ? [text] : [];
+            }),
+          ),
+        ].slice(0, 4)
+      : [];
+    const rawAnswer = cleanText(check.answer, 100);
+    const answer = choices.find(
+      (choice) => choice.toLocaleLowerCase() === rawAnswer?.toLocaleLowerCase(),
+    );
+    if (choices.length < 2 || !answer) return undefined;
+    clean = { kind, prompt, choices, answer, explanation };
+  } else if (kind === "numeric") {
+    const expected = finiteNumber(check.expected);
+    const tolerance = boundedNumber(check.tolerance, 0, 1_000_000);
+    if (expected === undefined || tolerance === undefined) return undefined;
+    clean = {
+      kind,
+      prompt,
+      expected,
+      tolerance,
+      unit: cleanText(check.unit, 24) ?? "",
+      explanation,
+    };
+  } else if (kind === "keywords") {
+    const keywords = Array.isArray(check.keywords)
+      ? [
+          ...new Set(
+            check.keywords.flatMap((keyword) => {
+              const text = cleanText(keyword, 60);
+              return text ? [text] : [];
+            }),
+          ),
+        ].slice(0, 5)
+      : [];
+    const minimumMatches = boundedNumber(check.minimumMatches, 1, keywords.length, true);
+    if (keywords.length < 1 || minimumMatches === undefined) return undefined;
+    clean = { kind, prompt, keywords, minimumMatches, explanation };
+  } else if (kind === "point") {
+    const target = asRecord(check.target);
+    const x = boundedNumber(target.x, 0, 999);
+    const y = boundedNumber(target.y, 0, 999);
+    const width = x === undefined ? undefined : boundedNumber(target.width, 1, 1_000 - x);
+    const height = y === undefined ? undefined : boundedNumber(target.height, 1, 1_000 - y);
+    const voiceAnswers = Array.isArray(check.voiceAnswers)
+      ? [
+          ...new Set(
+            check.voiceAnswers.flatMap((answer) => {
+              const text = cleanText(answer, 80);
+              return text ? [text] : [];
+            }),
+          ),
+        ].slice(0, 5)
+      : [];
+    if (
+      x === undefined ||
+      y === undefined ||
+      width === undefined ||
+      height === undefined ||
+      voiceAnswers.length < 1
+    ) {
+      return undefined;
+    }
+    clean = { kind, prompt, target: { x, y, width, height }, voiceAnswers, explanation };
+  } else {
+    return undefined;
+  }
+
+  const parsed = learningCheckSchema.safeParse(clean);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function normalizeDiagnosticProbe(
+  value: unknown,
+  stepIdMap: ReadonlyMap<string, string>,
+  steps: Record<string, unknown>[],
+): Record<string, unknown> | undefined {
+  const probe = asRecord(value);
+  const prompt = cleanText(probe.prompt, 240);
+  if (!prompt) return undefined;
+  const choices = arrayRecords(probe.choices)
+    .slice(0, 4)
+    .flatMap((choice) => {
+      const label = cleanText(choice.label, 100);
+      const rawStepId = cleanText(choice.focusStepId, 100);
+      const focusStepId = rawStepId
+        ? (stepIdMap.get(rawStepId) ??
+          (steps.some((step) => step.id === rawStepId) ? rawStepId : undefined))
+        : undefined;
+      return label && focusStepId ? [{ label, focusStepId }] : [];
+    });
+  return choices.length >= 2 ? { prompt, choices } : undefined;
 }
 
 function unwrapLessonDraft(value: unknown): Record<string, unknown> {

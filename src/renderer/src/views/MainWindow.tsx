@@ -2468,6 +2468,11 @@ function LessonCard({ lesson, onOpen }: { lesson: LessonReceipt; onOpen: (id: st
         <em>{lesson.question}</em>
         <span>
           <time>{relativeDate(lesson.updatedAt)}</time>
+          {lesson.learningEvidence ? (
+            <b className={`lesson-evidence ${lesson.learningEvidence.result}`}>
+              {lesson.learningEvidence.result === "correct" ? "Transfer observed" : "Try recorded"}
+            </b>
+          ) : null}
           {confidenceLabel(lesson.confidence)}
         </span>
       </span>

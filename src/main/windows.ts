@@ -269,6 +269,12 @@ export class WindowManager {
     if (this.lessonDisplayId !== null) this.positionLesson(this.lessonDisplayId);
   }
 
+  setLessonInteractive(interactive: boolean): void {
+    const lesson = this.lesson;
+    if (!lesson || lesson.isDestroyed()) return;
+    lesson.setIgnoreMouseEvents(!interactive, interactive ? undefined : { forward: true });
+  }
+
   closeLesson(notify = true): void {
     const lesson = this.lesson;
     if (lesson && !lesson.isDestroyed()) {
