@@ -21,6 +21,7 @@ import type {
 import {
   isCollaborativeInkRequest,
   isLikelyNarrationEcho,
+  parseActivatedLessonCommand,
   parseVoiceLessonCommand,
 } from "../../../shared/voice-command";
 import { routeAudioOutput } from "../audio";
@@ -141,7 +142,7 @@ export function LessonWindow() {
       stage: "diagnostic",
       prompt: probe.prompt,
       choices: probe.choices.map((choice) => choice.label),
-      message: "Say “Show me, my answer is option A,” or name the part.",
+      message: "Say “ShowME, my answer is option A” — or say “ShowME” and wait for Listening.",
       attemptCount: 0,
     };
     activeCheckStage.current = "diagnostic";
@@ -540,7 +541,7 @@ export function LessonWindow() {
               ? stage === "transfer"
                 ? "A separate near-transfer attempt was recorded locally."
                 : "A guided Try was recorded locally."
-              : "Say “Show me, my answer is …” when you are ready.",
+              : "Say “ShowME, my answer is …” — or say “ShowME” and wait for Listening.",
         };
         learningCheckRef.current = next;
         setLearningCheck(next);
@@ -573,7 +574,11 @@ export function LessonWindow() {
   const handleVoiceCommand = useCallback(
     async (event: SpokenLessonCommandEvent): Promise<void> => {
       if (event.confidence < 0.45 || adapting.current) return;
-      const command = parseVoiceLessonCommand(event.phrase);
+      const command =
+        parseVoiceLessonCommand(event.phrase) ??
+        (event.activated && learningCheckRef.current
+          ? parseActivatedLessonCommand(event.phrase)
+          : null);
       const activePresentation = presentationRef.current;
       if (!command || !activePresentation) return;
       if (

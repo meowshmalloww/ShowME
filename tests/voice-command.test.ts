@@ -1,11 +1,40 @@
 import { describe, expect, it } from "vitest";
 import {
+  isBareWakePhrase,
   isCollaborativeInkRequest,
   isLikelyNarrationEcho,
+  parseActivatedLessonCommand,
   parseVoiceLessonCommand,
+  wakePhraseRemainder,
 } from "../src/shared/voice-command";
 
 describe("spoken lesson commands", () => {
+  it("keeps the question spoken in the same wake utterance", () => {
+    expect(wakePhraseRemainder("Hey ShowME, I don't understand this question")).toBe(
+      "I don't understand this question",
+    );
+    expect(wakePhraseRemainder("Show me how do I solve this?")).toBe("how do I solve this?");
+    expect(wakePhraseRemainder("unrelated room speech")).toBeNull();
+  });
+
+  it("distinguishes a bare activation from a complete spoken command", () => {
+    expect(isBareWakePhrase("ShowME")).toBe(true);
+    expect(isBareWakePhrase("Okay, ShowME")).toBe(true);
+    expect(isBareWakePhrase("ShowME, my answer is B")).toBe(false);
+    expect(parseVoiceLessonCommand("ShowME, my answer is B")).toEqual({
+      kind: "answer",
+      response: "b",
+    });
+    expect(parseActivatedLessonCommand("67.4 degrees")).toEqual({
+      kind: "answer",
+      response: "67.4 degrees",
+    });
+    expect(parseVoiceLessonCommand("ShowME, my answer is 67.4 degrees")).toEqual({
+      kind: "answer",
+      response: "67.4 degrees",
+    });
+  });
+
   it("accepts natural adaptation phrases with an optional wake prefix", () => {
     expect(parseVoiceLessonCommand("Hey Show Me, I still don't get it")).toMatchObject({
       kind: "adapt",

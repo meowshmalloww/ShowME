@@ -25,10 +25,32 @@ export function normalizeVoiceText(value: string): string {
     .trim();
 }
 
+/**
+ * Returns the words spoken after the ShowME wake phrase. `null` means the
+ * utterance did not start with the wake phrase; an empty string means the
+ * learner said only "ShowME" and expects the app to open an active turn.
+ */
+export function wakePhraseRemainder(rawPhrase: string): string | null {
+  const original = rawPhrase.trim().slice(0, 500);
+  const match = original.match(
+    /^(?:(?:hey|okay|ok)\s*[,.:;!?—-]?\s+)?show\s*me(?:\s+please)?(?:\s*[,.:;!?—-]\s*|\s+|$)/i,
+  );
+  if (!match) return null;
+  return original.slice(match[0].length).trim();
+}
+
+export function isBareWakePhrase(rawPhrase: string): boolean {
+  return wakePhraseRemainder(rawPhrase) === "";
+}
+
+function stripOptionalWakePhrase(rawPhrase: string): string {
+  return wakePhraseRemainder(rawPhrase) ?? rawPhrase.trim().slice(0, 500);
+}
+
 export function parseVoiceLessonCommand(rawPhrase: string): VoiceLessonCommand | null {
   const original = rawPhrase.trim().slice(0, 500);
-  let phrase = normalizeVoiceText(original);
-  phrase = phrase.replace(/^(?:hey |okay |ok )?show me(?: please)?\s*/, "").trim();
+  const originalWithoutWake = stripOptionalWakePhrase(original);
+  const phrase = normalizeVoiceText(originalWithoutWake);
   if (!phrase) return null;
 
   if (/^(?:stop|pause|stop talking|be quiet|hold on|wait)(?: please)?$/.test(phrase)) {
@@ -87,10 +109,15 @@ export function parseVoiceLessonCommand(rawPhrase: string): VoiceLessonCommand |
     return { kind: "adapt", adaptation: "faster", inferredQuestion: false };
   }
 
-  const answer = phrase.match(
-    /^(?:my answer is|i think the answer is|i believe the answer is|i choose|the answer should be)\s+(.+)$/,
+  const answer = originalWithoutWake.match(
+    /^(?:my answer is|i think the answer is|i believe the answer is|i choose|the answer should be)\s+(.+)$/i,
   );
-  if (answer?.[1]) return { kind: "answer", response: answer[1].trim() };
+  if (answer?.[1]) {
+    return {
+      kind: "answer",
+      response: answer[1].replace(/\s+/g, " ").trim().toLowerCase(),
+    };
+  }
   if (/^(?:option|choice)\s+(?:[a-d]|first|second|third|fourth)(?:\b.*)?$/.test(phrase)) {
     return { kind: "answer", response: phrase };
   }
@@ -111,20 +138,23 @@ export function parseVoiceLessonCommand(rawPhrase: string): VoiceLessonCommand |
   return null;
 }
 
+/** Treat otherwise-unstructured speech as the learner's answer after an explicit activation. */
+export function parseActivatedLessonCommand(rawPhrase: string): VoiceLessonCommand | null {
+  const command = parseVoiceLessonCommand(rawPhrase);
+  if (command) return command;
+  const response = rawPhrase.replace(/\s+/g, " ").trim().slice(0, 500).toLowerCase();
+  return response ? { kind: "answer", response } : null;
+}
+
 export function isCollaborativeInkRequest(rawPhrase: string): boolean {
-  const phrase = normalizeVoiceText(rawPhrase)
-    .replace(/^(?:hey |okay |ok )?show me(?: please)?\s*/, "")
-    .trim();
+  const phrase = normalizeVoiceText(stripOptionalWakePhrase(rawPhrase));
   return /^(?:(?:can|could|may) i (?:draw|write|sketch|mark|highlight|underline)|let me (?:draw|write|sketch|mark|highlight|underline)|i (?:want|would like) to (?:draw|write|sketch|mark|highlight|underline)|(?:can|could) we draw together|(?:open|show) (?:the )?(?:drawing tools|pen tools|whiteboard)|let me use (?:the )?(?:pen|marker|highlighter|eraser)|(?:can|could) i use (?:the )?(?:pen|marker|highlighter|eraser)|draw with (?:you|me))(?:\b.*)?$/.test(
     phrase,
   );
 }
 
 export function isLikelyNarrationEcho(heard: string, currentNarration: string): boolean {
-  const normalizedHeard = normalizeVoiceText(heard).replace(
-    /^(?:hey |okay |ok )?show me(?: please)?\s*/,
-    "",
-  );
+  const normalizedHeard = normalizeVoiceText(stripOptionalWakePhrase(heard));
   const normalizedNarration = normalizeVoiceText(currentNarration);
   return normalizedHeard.split(" ").length >= 3 && normalizedNarration.includes(normalizedHeard);
 }

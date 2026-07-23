@@ -3,6 +3,7 @@ import { app, globalShortcut, Menu, nativeImage, nativeTheme, Tray } from "elect
 import { redactSecrets } from "../shared/errors";
 import { type AppSettings, PROVIDER_IDS } from "../shared/types";
 import { reconcileVoiceRoutes } from "../shared/voice";
+import { isBareWakePhrase } from "../shared/voice-command";
 import { CaptureService } from "./capture";
 import { registerIpc } from "./ipc";
 import { LessonService } from "./lesson";
@@ -72,8 +73,14 @@ async function startApplication(): Promise<void> {
   capture = new CaptureService(workers, () => windows?.getLauncher() ?? null);
   wakeWord = new WakeWordService(rootPath, process.resourcesPath, app.isPackaged, {
     onLevel: (level) => windows?.broadcastVoiceLevel(level),
-    onWake: () => void beginWakeInteraction(),
-    onCommand: (phrase, confidence) => windows?.broadcastVoiceCommand(phrase, confidence),
+    onWake: (phrase) => void beginWakeInteraction(phrase),
+    onCommand: (phrase, confidence) => {
+      if (windows?.hasLesson() && isBareWakePhrase(phrase)) {
+        windows.requestVoiceCommandCapture();
+        return;
+      }
+      windows?.broadcastVoiceCommand(phrase, confidence);
+    },
     onStatus: (status) => {
       console.info(status.message);
       windows?.broadcastWakeStatus(status);
@@ -127,7 +134,7 @@ async function startApplication(): Promise<void> {
   });
 }
 
-async function beginWakeInteraction(): Promise<void> {
+async function beginWakeInteraction(wakePhrase?: string): Promise<void> {
   if (!capture || !windows) return;
   if (hotkeyBusy) {
     wakeWord?.resume();
@@ -139,7 +146,7 @@ async function beginWakeInteraction(): Promise<void> {
   windows.showLauncher(false);
   try {
     const context = await capture.captureVoiceContext();
-    windows.broadcastWakeDetected(context);
+    windows.broadcastWakeDetected(context, wakePhrase);
     windows.showLauncher(false);
   } catch (error) {
     console.error(redactSecrets(error instanceof Error ? error.message : String(error)));

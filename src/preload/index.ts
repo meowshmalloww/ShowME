@@ -59,6 +59,7 @@ const api: ShowMEApi = {
     synthesize: (text) => invoke(CHANNELS.voiceSynthesize, text),
     testProvider: (provider) => invoke(CHANNELS.voiceTestProvider, provider),
     activity: (state) => invoke(CHANNELS.voiceActivity, state),
+    command: (phrase) => invoke(CHANNELS.voiceCommand, phrase),
     reportPlaybackError: (message) => invoke(CHANNELS.voicePlaybackError, message),
   },
   wake: {
@@ -92,6 +93,7 @@ const api: ShowMEApi = {
     onWakeStatus: (callback) => subscribe(CHANNELS.eventWakeStatus, callback),
     onSettingsChanged: (callback) => subscribe(CHANNELS.eventSettingsChanged, callback),
     onVoiceCommand: (callback) => subscribe(CHANNELS.eventVoiceCommand, callback),
+    onVoiceCommandCapture: (callback) => subscribe(CHANNELS.eventVoiceCommandCapture, callback),
     onVoicePlaybackError: (callback) => subscribe(CHANNELS.eventVoicePlaybackError, callback),
   },
 };

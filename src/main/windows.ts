@@ -10,6 +10,7 @@ import type {
   LessonProgress,
   LessonSurface,
   PreparedContext,
+  WakeDetectedEvent,
   WakeListenerStatus,
   WindowRole,
 } from "../shared/types";
@@ -343,9 +344,14 @@ export class WindowManager {
     if (launcher) launcher.webContents.send(CHANNELS.eventVoiceLevel, level);
   }
 
-  broadcastWakeDetected(context: PreparedContext): void {
+  broadcastWakeDetected(context: PreparedContext, phrase?: string): void {
     const launcher = this.getLauncher();
-    if (launcher) launcher.webContents.send(CHANNELS.eventWakeDetected, context);
+    if (!launcher) return;
+    const event: WakeDetectedEvent = {
+      context,
+      ...(phrase?.trim() ? { phrase: phrase.trim().slice(0, 500) } : {}),
+    };
+    launcher.webContents.send(CHANNELS.eventWakeDetected, event);
   }
 
   broadcastWakeStatus(status: WakeListenerStatus): void {
@@ -356,13 +362,22 @@ export class WindowManager {
     }
   }
 
-  broadcastVoiceCommand(phrase: string, confidence: number): void {
+  broadcastVoiceCommand(phrase: string, confidence: number, activated = false): void {
     const lesson = this.lesson;
     if (!lesson || lesson.isDestroyed()) return;
     lesson.webContents.send(CHANNELS.eventVoiceCommand, {
       phrase: phrase.slice(0, 500),
       confidence: Math.max(0, Math.min(1, confidence)),
+      ...(activated ? { activated: true } : {}),
     });
+  }
+
+  requestVoiceCommandCapture(): void {
+    const launcher = this.getLauncher();
+    if (!launcher) return;
+    this.setLauncherMode("listening");
+    this.showLauncher(false);
+    launcher.webContents.send(CHANNELS.eventVoiceCommandCapture);
   }
 
   broadcastVoicePlaybackError(message: string): void {

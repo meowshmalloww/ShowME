@@ -24,11 +24,13 @@ import type {
   PreparedContext,
   WakeListenerStatus,
 } from "../../../shared/types";
+import { wakePhraseRemainder } from "../../../shared/voice-command";
 import { openConfiguredMicrophone, rmsLevel } from "../audio";
 import { BrandMark } from "../components/BrandMark";
 import { errorMessage } from "../components/Ui";
 
 const EMPTY_LEVELS = [0.08, 0.12, 0.09, 0.15, 0.1, 0.13, 0.08, 0.12, 0.09, 0.14, 0.1, 0.12];
+type RecordingIntent = "question" | "lesson-command";
 
 export function Launcher() {
   const [mode, setMode] = useState<LauncherMode>("idle");
@@ -207,6 +209,14 @@ export function Launcher() {
     [],
   );
 
+  const finishLessonCommandWithError = useCallback(async (message: string): Promise<void> => {
+    setErrorTitle("I didn't catch that");
+    setError(message);
+    setMode("waiting");
+    await window.showme.launcher.setMode("waiting");
+    await window.showme.voice.activity("idle");
+  }, []);
+
   const submitText = useCallback(
     async (rawQuestion: string, replyWithVoice = false): Promise<void> => {
       const activeBootstrap = bootstrapRef.current;
@@ -254,108 +264,138 @@ export function Launcher() {
     [finishVoiceWithError],
   );
 
-  const startRecording = useCallback(async (): Promise<void> => {
-    if (recorder.current) return;
-    let stream = stopWakeInput(false, true);
-    setError("");
-    try {
-      const settings = bootstrapRef.current?.settings;
-      if (!settings) throw new Error("ShowME is still loading audio settings.");
-      let fellBackToDefault = false;
-      if (
-        !stream?.active ||
-        stream.getAudioTracks().every((track) => track.readyState !== "live")
-      ) {
-        for (const track of stream?.getTracks() ?? []) track.stop();
-        const opened = await openConfiguredMicrophone(settings);
-        stream = opened.stream;
-        fellBackToDefault = opened.fellBackToDefault;
-      }
-      if (fellBackToDefault) {
-        setError("The saved microphone is unavailable, so ShowME used the system default.");
-      }
-      if (!stream) throw new Error("ShowME could not open the selected microphone.");
-      const recordingStream = stream;
-      const preferred = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
-        ? "audio/webm;codecs=opus"
-        : "audio/webm";
-      const next = new MediaRecorder(recordingStream, { mimeType: preferred });
-      const nextAudioContext = new AudioContext({ latencyHint: "interactive" });
-      await nextAudioContext.resume();
-      const source = nextAudioContext.createMediaStreamSource(recordingStream);
-      const analyser = nextAudioContext.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.55;
-      source.connect(analyser);
-      audioContext.current = nextAudioContext;
-      chunks.current = [];
-      const endpoint = new VoiceEndpointDetector(
-        settings.voiceSilenceMs,
-        settings.voiceMaxSeconds * 1000,
-      );
-      const samples = new Uint8Array(analyser.fftSize);
-      const frequencyBins = new Uint8Array(analyser.frequencyBinCount);
+  const startRecording = useCallback(
+    async (intent: RecordingIntent = "question"): Promise<void> => {
+      if (recorder.current) return;
+      let stream = stopWakeInput(false, true);
+      setError("");
+      try {
+        const settings = bootstrapRef.current?.settings;
+        if (!settings) throw new Error("ShowME is still loading audio settings.");
+        let fellBackToDefault = false;
+        if (
+          !stream?.active ||
+          stream.getAudioTracks().every((track) => track.readyState !== "live")
+        ) {
+          for (const track of stream?.getTracks() ?? []) track.stop();
+          const opened = await openConfiguredMicrophone(settings);
+          stream = opened.stream;
+          fellBackToDefault = opened.fellBackToDefault;
+        }
+        if (fellBackToDefault) {
+          setError("The saved microphone is unavailable, so ShowME used the system default.");
+        }
+        if (!stream) throw new Error("ShowME could not open the selected microphone.");
+        const recordingStream = stream;
+        const preferred = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : "audio/webm";
+        const next = new MediaRecorder(recordingStream, { mimeType: preferred });
+        const nextAudioContext = new AudioContext({ latencyHint: "interactive" });
+        await nextAudioContext.resume();
+        const source = nextAudioContext.createMediaStreamSource(recordingStream);
+        const analyser = nextAudioContext.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.55;
+        source.connect(analyser);
+        audioContext.current = nextAudioContext;
+        chunks.current = [];
+        const endpoint = new VoiceEndpointDetector(
+          settings.voiceSilenceMs,
+          settings.voiceMaxSeconds * 1000,
+        );
+        const samples = new Uint8Array(analyser.fftSize);
+        const frequencyBins = new Uint8Array(analyser.frequencyBinCount);
 
-      const monitor = (): void => {
-        if (next.state === "inactive") return;
-        analyser.getByteTimeDomainData(samples);
-        analyser.getByteFrequencyData(frequencyBins);
-        const rms = rmsLevel(samples);
-        setVoiceLevels(frequencySpectrumLevels(frequencyBins, EMPTY_LEVELS.length));
+        const monitor = (): void => {
+          if (next.state === "inactive") return;
+          analyser.getByteTimeDomainData(samples);
+          analyser.getByteFrequencyData(frequencyBins);
+          const rms = rmsLevel(samples);
+          setVoiceLevels(frequencySpectrumLevels(frequencyBins, EMPTY_LEVELS.length));
 
-        const decision = endpoint.push(rms, performance.now());
-        if (decision !== "continue") {
-          if (endpoint.hasHeardSpeech()) {
-            setMode("transcribing");
-            void window.showme.voice.activity("transcribing");
+          const decision = endpoint.push(rms, performance.now());
+          if (decision !== "continue") {
+            if (endpoint.hasHeardSpeech()) {
+              setMode("transcribing");
+              void window.showme.voice.activity("transcribing");
+            }
+            next.stop();
+          } else monitorTimer.current = window.setTimeout(monitor, 32);
+        };
+
+        next.ondataavailable = (event) => {
+          if (event.data.size > 0) chunks.current.push(event.data);
+        };
+        next.onstop = async () => {
+          recorder.current = null;
+          setRecording(false);
+          stopAudioMonitoring();
+          for (const track of recordingStream.getTracks()) track.stop();
+          const blob = new Blob(chunks.current, { type: next.mimeType });
+          if (blob.size === 0 || !endpoint.hasHeardSpeech()) {
+            if (intent === "lesson-command") {
+              await finishLessonCommandWithError(
+                "Say “ShowME,” wait for Listening, then speak your answer.",
+              );
+            } else {
+              await finishVoiceWithError("ShowME did not hear a question. Please try again.");
+            }
+            return;
           }
-          next.stop();
-        } else monitorTimer.current = window.setTimeout(monitor, 32);
-      };
-
-      next.ondataavailable = (event) => {
-        if (event.data.size > 0) chunks.current.push(event.data);
-      };
-      next.onstop = async () => {
-        recorder.current = null;
-        setRecording(false);
-        stopAudioMonitoring();
-        for (const track of recordingStream.getTracks()) track.stop();
-        const blob = new Blob(chunks.current, { type: next.mimeType });
-        if (blob.size === 0 || !endpoint.hasHeardSpeech()) {
-          await finishVoiceWithError("ShowME did not hear a question. Please try again.");
-          return;
-        }
-        setTranscribing(true);
-        setMode("transcribing");
-        await window.showme.voice.activity("transcribing");
-        try {
-          const text = (
-            await window.showme.voice.transcribe({
-              bytes: new Uint8Array(await blob.arrayBuffer()),
-              mimeType: next.mimeType,
-            })
-          ).trim();
-          if (!text) throw new Error("ShowME did not hear a question. Please try again.");
-          setQuestion(text);
-          await submitText(text, true);
-        } catch (reason) {
+          setTranscribing(true);
+          setMode("transcribing");
+          await window.showme.voice.activity("transcribing");
+          try {
+            const text = (
+              await window.showme.voice.transcribe({
+                bytes: new Uint8Array(await blob.arrayBuffer()),
+                mimeType: next.mimeType,
+              })
+            ).trim();
+            if (!text) throw new Error("ShowME did not hear any speech. Please try again.");
+            if (intent === "lesson-command") {
+              await window.showme.voice.command(text);
+              setMode("waiting");
+              await window.showme.launcher.setMode("waiting");
+              await window.showme.voice.activity("idle");
+            } else {
+              setQuestion(text);
+              await submitText(text, true);
+            }
+          } catch (reason) {
+            if (intent === "lesson-command") {
+              await finishLessonCommandWithError(errorMessage(reason));
+            } else {
+              await finishVoiceWithError(errorMessage(reason));
+            }
+          } finally {
+            setTranscribing(false);
+          }
+        };
+        recorder.current = next;
+        next.start(160);
+        setRecording(true);
+        setMode("listening");
+        await window.showme.voice.activity("listening");
+        monitor();
+      } catch (reason) {
+        for (const track of stream?.getTracks() ?? []) track.stop();
+        if (intent === "lesson-command") {
+          await finishLessonCommandWithError(errorMessage(reason));
+        } else {
           await finishVoiceWithError(errorMessage(reason));
-        } finally {
-          setTranscribing(false);
         }
-      };
-      recorder.current = next;
-      next.start(160);
-      setRecording(true);
-      setMode("listening");
-      await window.showme.voice.activity("listening");
-      monitor();
-    } catch (reason) {
-      for (const track of stream?.getTracks() ?? []) track.stop();
-      await finishVoiceWithError(errorMessage(reason));
-    }
-  }, [finishVoiceWithError, stopAudioMonitoring, stopWakeInput, submitText]);
+      }
+    },
+    [
+      finishLessonCommandWithError,
+      finishVoiceWithError,
+      stopAudioMonitoring,
+      stopWakeInput,
+      submitText,
+    ],
+  );
 
   const closeQuestion = useCallback(async (): Promise<void> => {
     if (recorder.current?.state !== "inactive") recorder.current?.stop();
@@ -390,12 +430,23 @@ export function Launcher() {
         setMode("thinking");
       }),
       window.showme.events.onVoiceLevel(setWakeLevel),
-      window.showme.events.onWakeDetected((value) => {
-        contextRef.current = value;
-        setContext(value);
-        setMode("listening");
+      window.showme.events.onWakeDetected((event) => {
+        contextRef.current = event.context;
+        setContext(event.context);
         setError("");
-        void startRecording();
+        const sameTurnQuestion = wakePhraseRemainder(event.phrase ?? "");
+        if (sameTurnQuestion && bootstrapRef.current) {
+          setMode("thinking");
+          void submitText(sameTurnQuestion, true);
+        } else {
+          setMode("listening");
+          void startRecording("question");
+        }
+      }),
+      window.showme.events.onVoiceCommandCapture(() => {
+        setError("");
+        setMode("listening");
+        void startRecording("lesson-command");
       }),
       window.showme.events.onWakeStatus(setWakeStatus),
       window.showme.events.onSettingsChanged((settings) => {
@@ -417,7 +468,7 @@ export function Launcher() {
       stopAudioMonitoring();
       stopWakeInput(false);
     };
-  }, [closeQuestion, startRecording, stopAudioMonitoring, stopWakeInput]);
+  }, [closeQuestion, startRecording, stopAudioMonitoring, stopWakeInput, submitText]);
 
   useEffect(() => {
     const settings = bootstrap?.settings;

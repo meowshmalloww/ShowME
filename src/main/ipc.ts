@@ -302,6 +302,20 @@ export function registerIpc(dependencies: IpcDependencies): void {
     }
     dependencies.onVoiceActivity(state);
   });
+  handle(CHANNELS.voiceCommand, async (event, rawPhrase: unknown) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== windows.getLauncher()) {
+      throw new CommandError("VOICE_COMMAND_SOURCE", "Voice commands must come from ShowME.");
+    }
+    const phrase = String(rawPhrase ?? "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 500);
+    if (!phrase) throw new CommandError("VOICE_COMMAND_EMPTY", "No spoken answer was detected.");
+    if (!windows.hasLesson()) {
+      throw new CommandError("LESSON_CLOSED", "The lesson is no longer open.");
+    }
+    windows.broadcastVoiceCommand(phrase, 1, true);
+  });
   handle(CHANNELS.voicePlaybackError, async (_event, rawMessage: unknown) => {
     const message = String(rawMessage).replace(/\s+/g, " ").trim().slice(0, 400);
     if (message) windows.broadcastVoicePlaybackError(message);

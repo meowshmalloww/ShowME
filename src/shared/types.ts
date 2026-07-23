@@ -599,6 +599,14 @@ export interface WhiteboardInkContext {
 export interface SpokenLessonCommandEvent {
   phrase: string;
   confidence: number;
+  /** True when a bare "ShowME" explicitly opened a follow-up listening turn. */
+  activated?: boolean;
+}
+
+export interface WakeDetectedEvent {
+  context: PreparedContext;
+  /** Full local-recognizer utterance, retained so one natural sentence is enough. */
+  phrase?: string;
 }
 
 export interface ImageAsset {

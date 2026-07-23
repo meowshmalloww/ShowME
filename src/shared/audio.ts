@@ -48,20 +48,25 @@ export class VoiceEndpointDetector {
     const level = Number.isFinite(rawLevel) ? Math.max(0, rawLevel) : 0;
     this.peakEnvelope = Math.max(level, this.peakEnvelope * 0.985);
 
-    // Learn low, steady energy without treating normal speech as the noise floor. Once speech is
-    // active, the peak-relative ceiling lets the estimate catch up quickly when the user pauses.
-    const learningCeiling = Math.max(0.028, Math.min(0.05, this.peakEnvelope * 0.45));
-    if (level < learningCeiling) {
-      this.noiseFloor = this.noiseFloor * 0.82 + level * 0.18;
-    }
-
-    const startThreshold = Math.max(0.01, this.noiseFloor * 1.8);
+    // Use the same calibrated onset floor as wake listening. The previous 0.01 minimum could
+    // recognize "ShowME" but then reject the learner's quieter question on the same microphone.
+    const startThreshold = calibratedSpeechThreshold(this.noiseFloor);
     const continuationThreshold = Math.max(
-      0.009,
-      this.noiseFloor * 1.75,
-      Math.min(0.026, this.peakEnvelope * 0.22),
+      0.0045,
+      this.noiseFloor * 1.35,
+      Math.min(0.026, this.peakEnvelope * 0.25),
     );
     const speaking = level > (this.heardSpeech ? continuationThreshold : startThreshold);
+
+    // Learn only from frames that are not currently classified as speech. This hysteresis keeps
+    // quiet voices from being absorbed into the room-noise estimate. Sustained energy far below a
+    // recent speech peak is allowed to raise the floor so a fan cannot hold the turn open forever.
+    const learningCeiling = Math.max(0.028, Math.min(0.05, this.peakEnvelope * 0.45));
+    const likelySteadyNoise =
+      this.heardSpeech && this.peakEnvelope > 0 && level < this.peakEnvelope * 0.45;
+    if ((!speaking || likelySteadyNoise) && level < learningCeiling) {
+      this.noiseFloor = this.noiseFloor * 0.82 + level * 0.18;
+    }
 
     if (!this.heardSpeech) {
       this.speechFrames = speaking ? this.speechFrames + 1 : 0;

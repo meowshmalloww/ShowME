@@ -79,6 +79,18 @@ describe("voice question endpointing", () => {
     expect(endpoint.push(0.003, 4_000)).toBe("finish-no-speech");
     expect(endpoint.hasHeardSpeech()).toBe(false);
   });
+
+  it("accepts quiet AirPods speech at the same floor used by wake listening", () => {
+    const endpoint = new VoiceEndpointDetector(1_200, 45_000);
+    for (const now of [0, 32, 64, 96]) endpoint.push(0.007, now);
+    expect(endpoint.hasHeardSpeech()).toBe(true);
+  });
+
+  it("does not classify steady energy below the calibrated floor as speech", () => {
+    const endpoint = new VoiceEndpointDetector(1_200, 45_000);
+    for (let now = 0; now <= 3_500; now += 32) endpoint.push(0.005, now);
+    expect(endpoint.hasHeardSpeech()).toBe(false);
+  });
 });
 
 describe("wake microphone PCM conversion", () => {

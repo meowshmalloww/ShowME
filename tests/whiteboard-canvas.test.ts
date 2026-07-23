@@ -318,9 +318,10 @@ describe("desktop whiteboard projection", () => {
       }),
     );
 
-    expect(html).toContain("whiteboard-learning-check check-awaiting");
+    expect(html).toContain("whiteboard-learning-check whiteboard-hand-note check-awaiting");
     expect(html).toContain("Which side is opposite theta?");
-    expect(html).toContain("Say “Show me, my answer is …”");
+    expect(html).toContain("Say “ShowME, my answer is …”");
+    expect(html).toContain("wait for Listening");
     expect(html.match(/teaching-cursor-pointer/g)).toHaveLength(1);
     expect(html).not.toContain("teaching-cursor-ring");
     expect(html).not.toContain("--teaching-cursor-color");

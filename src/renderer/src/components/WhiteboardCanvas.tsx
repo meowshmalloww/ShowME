@@ -345,7 +345,7 @@ export function WhiteboardCanvas({
 
       {learningCheck ? (
         <aside
-          className={`whiteboard-learning-check check-${learningCheck.phase} ${
+          className={`whiteboard-learning-check whiteboard-hand-note check-${learningCheck.phase} ${
             aidOnLeft ? "check-right" : "check-left"
           }`}
           aria-live="polite"
@@ -363,7 +363,7 @@ export function WhiteboardCanvas({
                   ? "Choose a focus"
                   : learningCheck.stage === "transfer"
                     ? "Transfer"
-                    : "Try it"}
+                    : "Try this"}
           </span>
           <strong>{learningCheck.prompt}</strong>
           {learningCheck.choices?.length ? (
@@ -373,7 +373,10 @@ export function WhiteboardCanvas({
                 .join("  ·  ")}
             </span>
           ) : null}
-          <small>{learningCheck.message ?? "Say “Show me, my answer is …”"}</small>
+          <small>
+            {learningCheck.message ??
+              "Say “ShowME, my answer is …” — or say “ShowME” and wait for Listening."}
+          </small>
         </aside>
       ) : null}
     </main>

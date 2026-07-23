@@ -7078,12 +7078,12 @@ body.whiteboard-document #root {
   from {
     opacity: 0;
     filter: blur(4px);
-    transform: translateY(8px) scale(0.98);
+    transform: translateY(8px) rotate(-0.25deg) scale(0.98);
   }
   to {
     opacity: 1;
     filter: none;
-    transform: translateY(0) scale(1);
+    transform: translateY(0) rotate(-0.25deg) scale(1);
   }
 }
 
@@ -8379,6 +8379,86 @@ body.whiteboard-document #root {
   border: 0;
   background: transparent;
   box-shadow: none;
+}
+
+.whiteboard-learning-check.whiteboard-hand-note {
+  --check-ink: #78d9ff;
+  width: min(460px, 38vw, calc(100vw - 24px));
+  padding: 12px 17px 14px;
+  border: 0;
+  border-radius: 5px 9px 6px 10px / 8px 5px 10px 6px;
+  background: rgba(8, 10, 14, 0.86);
+  box-shadow: 0 9px 24px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(5px) saturate(0.76) brightness(0.72);
+  color: #f7fbff;
+  font-family: "Segoe Print", "Bradley Hand", cursive;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.94);
+  transform: rotate(-0.25deg);
+}
+
+.whiteboard-learning-check.whiteboard-hand-note::before {
+  position: absolute;
+  inset: 1px -2px -2px 1px;
+  border: 1.5px solid color-mix(in srgb, var(--check-ink) 74%, transparent);
+  border-radius: 7px 4px 9px 5px / 4px 9px 5px 8px;
+  content: "";
+  opacity: 0.74;
+  pointer-events: none;
+  transform: rotate(0.35deg);
+}
+
+.whiteboard-learning-check.whiteboard-hand-note .learning-check-kicker {
+  width: max-content;
+  margin: 0 0 6px;
+  color: var(--check-ink);
+  font-family: inherit;
+  font-size: clamp(12px, 0.8vw, 15px);
+  font-weight: 650;
+  letter-spacing: 0.035em;
+  line-height: 1.1;
+  text-transform: none;
+}
+
+.whiteboard-learning-check.whiteboard-hand-note .learning-check-kicker::after {
+  display: block;
+  width: 76%;
+  height: 5px;
+  margin-top: -1px;
+  border-bottom: 2px solid color-mix(in srgb, var(--check-ink) 76%, transparent);
+  border-radius: 50%;
+  content: "";
+  transform: rotate(-1.4deg);
+}
+
+.whiteboard-learning-check.whiteboard-hand-note strong {
+  font-family: inherit;
+  font-size: clamp(16px, 1.12vw, 21px);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.whiteboard-learning-check.whiteboard-hand-note .learning-check-choices {
+  margin-top: 7px;
+  color: #edf7ff;
+  font-family: inherit;
+  font-size: clamp(12px, 0.8vw, 15px);
+  line-height: 1.4;
+}
+
+.whiteboard-learning-check.whiteboard-hand-note small {
+  margin-top: 8px;
+  color: rgba(219, 230, 239, 0.78);
+  font-family: inherit;
+  font-size: clamp(10px, 0.7vw, 13px);
+  line-height: 1.35;
+}
+
+.whiteboard-learning-check.whiteboard-hand-note.check-retry {
+  --check-ink: #f3c568;
+}
+
+.whiteboard-learning-check.whiteboard-hand-note.check-correct {
+  --check-ink: #78ddb0;
 }
 
 .whiteboard-text.current {

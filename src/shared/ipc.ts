@@ -24,6 +24,7 @@ import type {
   SpokenLessonCommandEvent,
   StoredLesson,
   VoiceActivityState,
+  WakeDetectedEvent,
   WakeListenerStatus,
   WhiteboardInkContext,
 } from "./types";
@@ -59,6 +60,7 @@ export const CHANNELS = {
   voiceSynthesize: "voice:synthesize",
   voiceTestProvider: "voice:test-provider",
   voiceActivity: "voice:activity",
+  voiceCommand: "voice:command",
   voicePlaybackError: "voice:playback-error",
   wakeAudio: "wake:audio",
   wakeInputState: "wake:input-state",
@@ -84,6 +86,7 @@ export const CHANNELS = {
   eventWakeStatus: "event:wake-status",
   eventSettingsChanged: "event:settings-changed",
   eventVoiceCommand: "event:voice-command",
+  eventVoiceCommandCapture: "event:voice-command-capture",
   eventVoicePlaybackError: "event:voice-playback-error",
 } as const;
 
@@ -173,6 +176,7 @@ export interface ShowMEApi {
     synthesize(text: string): Promise<{ bytes: Uint8Array; mimeType: string }>;
     testProvider(provider: AudioProviderId): Promise<string>;
     activity(state: VoiceActivityState): Promise<void>;
+    command(phrase: string): Promise<void>;
     reportPlaybackError(message: string): Promise<void>;
   };
   wake: {
@@ -204,10 +208,11 @@ export interface ShowMEApi {
     onLessonReady(callback: (presentation: LessonPresentation) => void): () => void;
     onLauncherMode(callback: (mode: LauncherMode) => void): () => void;
     onVoiceLevel(callback: (level: number) => void): () => void;
-    onWakeDetected(callback: (context: PreparedContext) => void): () => void;
+    onWakeDetected(callback: (event: WakeDetectedEvent) => void): () => void;
     onWakeStatus(callback: (status: WakeListenerStatus) => void): () => void;
     onSettingsChanged(callback: (settings: AppSettings) => void): () => void;
     onVoiceCommand(callback: (event: SpokenLessonCommandEvent) => void): () => void;
+    onVoiceCommandCapture(callback: () => void): () => void;
     onVoicePlaybackError(callback: (message: string) => void): () => void;
   };
 }

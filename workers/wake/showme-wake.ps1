@@ -63,11 +63,12 @@ try {
     if ([string]::IsNullOrWhiteSpace($Text)) { return $false }
     $normalized = ($Text.ToLowerInvariant() -replace "[^a-z0-9 ]", " " -replace "\s+", " ").Trim()
     $words = @($normalized -split " " | Where-Object { $_ })
-    if ($words.Count -gt 5) { return $false }
-    for ($index = 0; $index -lt $words.Count - 1; $index += 1) {
-      if ($words[$index] -eq "show" -and $words[$index + 1] -eq "me") { return $true }
-    }
-    return $false
+    if ($words.Count -lt 2 -or $words.Count -gt 40) { return $false }
+    if ($words[0] -eq "show" -and $words[1] -eq "me") { return $true }
+    return $words.Count -ge 3 -and
+      @("hey", "okay", "ok").Contains($words[0]) -and
+      $words[1] -eq "show" -and
+      $words[2] -eq "me"
   }
 
   $choices = [System.Speech.Recognition.Choices]::new()
@@ -125,7 +126,8 @@ try {
   if ($StreamInput) {
     # Use a separate dictation recognizer as a rejection gate. A closed grammar by
     # itself tries to coerce every sentence into its nearest allowed wake phrase.
-    # Only short utterances that actually contain "show" reach the wake recognizer.
+    # Only utterances beginning with the wake phrase reach the wake recognizer.
+    # Retain the full phrase so "ShowME, I don't understand this" works in one turn.
     $dictationRecognizer = [System.Speech.Recognition.SpeechRecognitionEngine]::new(
       $recognizerCulture
     )
