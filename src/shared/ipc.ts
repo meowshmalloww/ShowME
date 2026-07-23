@@ -25,6 +25,7 @@ import type {
   StoredLesson,
   VoiceActivityState,
   WakeListenerStatus,
+  WhiteboardInkContext,
 } from "./types";
 
 export const CHANNELS = {
@@ -120,6 +121,7 @@ export interface AdaptLessonInput {
   presentation: LessonPresentation;
   adaptation: AdaptationKind;
   question?: string;
+  ink?: WhiteboardInkContext;
 }
 
 export interface LessonGenerateResult {

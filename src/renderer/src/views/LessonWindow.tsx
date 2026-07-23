@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { findSystemVoice } from "../../../shared/audio";
-import { lessonCheckForStage, nextLearningStage } from "../../../shared/learning-flow";
 import { formatLearningCheckPrompt, resolveChoiceIndex } from "../../../shared/learning-check";
+import { lessonCheckForStage, nextLearningStage } from "../../../shared/learning-flow";
 import {
   lessonBoardFadeMs,
   lessonBoardHoldMs,
@@ -16,8 +16,13 @@ import type {
   LessonPresentation,
   Point,
   SpokenLessonCommandEvent,
+  WhiteboardInkContext,
 } from "../../../shared/types";
-import { isLikelyNarrationEcho, parseVoiceLessonCommand } from "../../../shared/voice-command";
+import {
+  isCollaborativeInkRequest,
+  isLikelyNarrationEcho,
+  parseVoiceLessonCommand,
+} from "../../../shared/voice-command";
 import { routeAudioOutput } from "../audio";
 import { WhiteboardCanvas, type WhiteboardLearningCheck } from "../components/WhiteboardCanvas";
 import {
@@ -43,6 +48,12 @@ export function LessonWindow() {
   const [boardPhase, setBoardPhase] = useState<"active" | "fading">("active");
   const [historyMode, setHistoryMode] = useState<"current" | "context">("context");
   const [pinnedPrimitiveIds, setPinnedPrimitiveIds] = useState<string[]>([]);
+  const [inkBusy, setInkBusy] = useState(false);
+  const [inkMode, setInkMode] = useState(false);
+  const [inkReview, setInkReview] = useState<{
+    prior: LessonPresentation;
+    currentId: string;
+  }>();
   const presentationRef = useRef<LessonPresentation | null>(null);
   const bootstrapRef = useRef<AppBootstrap | null>(null);
   const pendingAutoplay = useRef<string | null>(null);
@@ -51,6 +62,8 @@ export function LessonWindow() {
   const activeAudio = useRef<HTMLAudioElement | null>(null);
   const activeAudioUrl = useRef<string | null>(null);
   const activeUtterance = useRef<SpeechSynthesisUtterance | null>(null);
+  const currentInk = useRef<WhiteboardInkContext | undefined>(undefined);
+  const pendingInkPrior = useRef<LessonPresentation | null>(null);
   const currentNarration = useRef("");
   const adapting = useRef(false);
   const boardTimers = useRef<number[]>([]);
@@ -113,7 +126,7 @@ export function LessonWindow() {
       activeCheckStage.current = stage;
       learningCheckRef.current = display;
       setLearningCheck(display);
-      void window.showme.lesson.setInteractive(check.kind === "point");
+      void window.showme.lesson.setInteractive(true);
       void window.showme.launcher.setMode("waiting");
       return check;
     },
@@ -134,7 +147,7 @@ export function LessonWindow() {
     activeCheckStage.current = "diagnostic";
     learningCheckRef.current = display;
     setLearningCheck(display);
-    void window.showme.lesson.setInteractive(false);
+    void window.showme.lesson.setInteractive(true);
     void window.showme.launcher.setMode("waiting");
     return true;
   }, []);
@@ -167,6 +180,16 @@ export function LessonWindow() {
     },
     [clearBoardTimers, fadeAndCloseBoard],
   );
+
+  useEffect(() => {
+    if (inkMode) return;
+    const handleEscape = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape") return;
+      fadeAndCloseBoard(bootstrapRef.current?.settings.reducedMotion ?? false, true);
+    };
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
+  }, [fadeAndCloseBoard, inkMode]);
 
   const speakWithSystemVoice = useCallback(
     async (
@@ -523,15 +546,16 @@ export function LessonWindow() {
         setLearningCheck(next);
         await speakStatus(outcome.feedback, settings);
         if (outcome.result === "correct") {
+          await window.showme.lesson.setInteractive(true);
           await window.showme.launcher.setMode("complete");
           scheduleBoardRetirement(activePresentation, settings);
         } else {
-          await window.showme.lesson.setInteractive(check.kind === "point");
+          await window.showme.lesson.setInteractive(true);
           await window.showme.launcher.setMode("waiting");
         }
       } catch (error) {
         console.error("Could not record the learning check.", error);
-        await window.showme.lesson.setInteractive(check.kind === "point");
+        await window.showme.lesson.setInteractive(true);
         await window.showme.launcher.setMode("waiting");
       }
       checkSubmitting.current = false;
@@ -566,6 +590,20 @@ export function LessonWindow() {
         fadeAndCloseBoard(settings?.reducedMotion ?? false, true);
         return;
       }
+      if (command.kind === "draw") {
+        stopPlayback(false);
+        activateBoard();
+        setInkMode(true);
+        await window.showme.lesson.setInteractive(true);
+        await window.showme.launcher.setMode("waiting");
+        if (settings) {
+          await speakStatus(
+            "Drawing is ready across the whole screen. Use the pen, marker, or eraser, then ask me about your marks.",
+            settings,
+          );
+        }
+        return;
+      }
       if (command.kind === "stop") {
         stopPlayback(false);
         await window.showme.voice.activity("idle");
@@ -575,7 +613,7 @@ export function LessonWindow() {
       }
       if (command.kind === "go-back") {
         stopPlayback(false);
-        await window.showme.lesson.setInteractive(false);
+        await window.showme.lesson.setInteractive(true);
         activeCheckStage.current = undefined;
         learningCheckRef.current = undefined;
         setLearningCheck(undefined);
@@ -648,12 +686,15 @@ export function LessonWindow() {
       await window.showme.lesson.setInteractive(false);
       stopPlayback(false);
       try {
+        if (currentInk.current) pendingInkPrior.current = activePresentation;
         await window.showme.lesson.adapt({
           presentation: activePresentation,
           adaptation: command.adaptation,
           ...(command.question ? { question: command.question } : {}),
+          ...(currentInk.current ? { ink: currentInk.current } : {}),
         });
       } catch (error) {
+        pendingInkPrior.current = null;
         console.error("Spoken lesson adaptation failed.", error);
         await window.showme.voice.activity("idle");
       } finally {
@@ -669,6 +710,60 @@ export function LessonWindow() {
       submitActiveCheck,
     ],
   );
+
+  const handleInkAsk = useCallback(
+    async (ink: WhiteboardInkContext): Promise<void> => {
+      const activePresentation = presentationRef.current;
+      if (!activePresentation || adapting.current) return;
+      adapting.current = true;
+      setInkBusy(true);
+      pendingInkPrior.current = activePresentation;
+      activateBoard();
+      activeCheckStage.current = undefined;
+      learningCheckRef.current = undefined;
+      setLearningCheck(undefined);
+      stopPlayback(false);
+      await window.showme.lesson.setInteractive(true);
+      try {
+        await window.showme.lesson.adapt({
+          presentation: activePresentation,
+          adaptation: "question",
+          question:
+            "Read the learner's new marks on the selected screen. Explain or correct them directly with concise handwriting-style labels, arrows, equations, or shapes, and include one brief spoken response.",
+          ink,
+        });
+      } catch (error) {
+        pendingInkPrior.current = null;
+        console.error("Whiteboard ink response failed.", error);
+        await window.showme.voice.activity("idle");
+      } finally {
+        adapting.current = false;
+        setInkBusy(false);
+      }
+    },
+    [activateBoard, stopPlayback],
+  );
+
+  const handleInkChange = useCallback((ink: WhiteboardInkContext | undefined): void => {
+    currentInk.current = ink;
+  }, []);
+
+  const acceptInkResponse = useCallback((): void => {
+    setInkReview(undefined);
+  }, []);
+
+  const rejectInkResponse = useCallback(async (): Promise<void> => {
+    if (!inkReview) return;
+    const review = inkReview;
+    setInkReview(undefined);
+    presentationRef.current = review.prior;
+    setPresentation(review.prior);
+    activateBoard();
+    await window.showme.lesson.setInteractive(true);
+    await window.showme.memory.deleteLesson(review.currentId).catch((error) => {
+      console.error("Could not remove the rejected whiteboard response.", error);
+    });
+  }, [activateBoard, inkReview]);
 
   useEffect(() => {
     document.documentElement.classList.add("whiteboard-document");
@@ -689,6 +784,17 @@ export function LessonWindow() {
       window.showme.events.onLessonReady((value) => {
         stopPlayback(false);
         activateBoard();
+        const priorInkPresentation = pendingInkPrior.current;
+        pendingInkPrior.current = null;
+        const shouldOpenInk =
+          Boolean(priorInkPresentation) || isCollaborativeInkRequest(value.request.question);
+        currentInk.current = undefined;
+        setInkMode(shouldOpenInk);
+        if (priorInkPresentation) {
+          setInkReview({ prior: priorInkPresentation, currentId: value.plan.id });
+        } else {
+          setInkReview(undefined);
+        }
         presentationRef.current = value;
         pendingAutoplay.current = value.plan.id;
         setPresentation(value);
@@ -698,7 +804,8 @@ export function LessonWindow() {
         activeCheckStage.current = undefined;
         learningCheckRef.current = undefined;
         setLearningCheck(undefined);
-        void window.showme.lesson.setInteractive(false);
+        setInkBusy(false);
+        void window.showme.lesson.setInteractive(shouldOpenInk);
         adapting.current = false;
       }),
       window.showme.events.onSettingsChanged((settings) => {
@@ -719,6 +826,15 @@ export function LessonWindow() {
     if (!presentation || !bootstrap) return;
     if (pendingAutoplay.current !== presentation.plan.id) return;
     pendingAutoplay.current = null;
+    if (isCollaborativeInkRequest(presentation.request.question)) {
+      void speakStatus(
+        "Drawing is ready across the whole screen. Use the pen, marker, or eraser, then ask me about your marks.",
+        bootstrap.settings,
+      )
+        .then(() => window.showme.launcher.setMode("waiting"))
+        .catch((error) => console.error("Drawing-mode narration failed.", error));
+      return;
+    }
     if (showDiagnosticProbe(presentation)) {
       const probe = presentation.plan.diagnosticProbe;
       if (probe && presentation.request.replyWithVoice && bootstrap.settings.voiceEnabled) {
@@ -767,6 +883,25 @@ export function LessonWindow() {
       historyMode={historyMode}
       pinnedPrimitiveIds={pinnedPrimitiveIds}
       onPointAnswer={(point) => void submitActiveCheck({ point })}
+      {...(inkMode
+        ? {
+            inkBusy,
+            inkReviewPending: Boolean(inkReview),
+            inkSessionId: presentation.request.captureId,
+            initialInkSpace: presentation.learnerInkSpace ?? ("selection" as const),
+            initialInkStrokes: presentation.learnerInk ?? [],
+            onAcceptInkResponse: acceptInkResponse,
+            onInkActivity: activateBoard,
+            onInkAsk: handleInkAsk,
+            onInkChange: handleInkChange,
+            onExit: () => {
+              currentInk.current = undefined;
+              setInkMode(false);
+              void window.showme.lesson.setInteractive(Boolean(learningCheckRef.current));
+            },
+            onRejectInkResponse: rejectInkResponse,
+          }
+        : {})}
       {...(learningCheck ? { learningCheck } : {})}
       {...(presentation.contextGeometry ? { contextGeometry: presentation.contextGeometry } : {})}
       {...(imageAsset ? { imageAsset } : {})}

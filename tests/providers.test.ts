@@ -363,13 +363,9 @@ describe("provider response contracts", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(plan.title).toContain("Keep the selected idea in view");
+    expect(plan.title).toContain("Visual lesson interrupted");
     expect(plan.uncertainty).toContain("max_output_tokens");
-    expect(plan.primitives.map((primitive) => primitive.kind)).toEqual([
-      "highlight",
-      "arrow",
-      "callout",
-    ]);
+    expect(plan.primitives.map((primitive) => primitive.kind)).toEqual(["point", "callout"]);
     const firstRequest = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(firstRequest).toMatchObject({
       max_output_tokens: 24_000,
@@ -445,7 +441,7 @@ describe("provider response contracts", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(plan.title).toContain("Keep the selected idea in view");
+    expect(plan.title).toContain("Visual lesson interrupted");
     expect(plan.uncertainty).toContain("length");
     for (const call of fetchMock.mock.calls) {
       const request = JSON.parse(String(call[1]?.body)) as Record<string, unknown>;
@@ -493,13 +489,10 @@ describe("provider response contracts", () => {
     );
 
     expect(plan.simulation?.kind).toBe("projectile");
-    expect(validateLessonPlan(plan).steps).toHaveLength(2);
-    const fallbackHighlight = plan.primitives.find(
-      (primitive) => primitive.id === "fallback-focus",
-    );
-    expect(fallbackHighlight).toMatchObject({ width: 140, height: 120 });
+    expect(validateLessonPlan(plan).steps).toHaveLength(1);
+    expect(plan.primitives.some((primitive) => primitive.kind === "highlight")).toBe(false);
     const fallbackNote = plan.primitives.find((primitive) => primitive.id === "fallback-note");
-    expect(fallbackNote?.text).toBe("Select the exact part and try again");
+    expect(fallbackNote?.text).toBe("The visual answer did not finish safely");
   });
 
   it("disables hybrid Qwen thinking for a fast connection check", async () => {
@@ -698,6 +691,66 @@ describe("provider response contracts", () => {
     expect(plan.steps[1]?.primitiveIds).toContain("side-arrow");
     expect(plan.primitives).toHaveLength(3);
     expect(plan.title).toBe("Find the selected angle");
+  });
+
+  it("keeps the tutorial when Qwen omits only the connector shape", () => {
+    const normalized = normalizeModelLessonDraft({
+      version: 1,
+      title: "Use the visible triangle",
+      concept: "Triangle relationships",
+      summary: "Identify the marked region, then follow the explanation.",
+      teachingMode: "diagram-annotation",
+      confidence: "exploratory",
+      sourceDescription: "The selected triangle question",
+      narration: "Start with the marked part of the triangle.",
+      primitives: [
+        { id: "focus", kind: "circle", x: 510, y: 350, radius: 46, color: "amber" },
+        {
+          id: "note",
+          kind: "label",
+          x: 720,
+          y: 150,
+          width: 220,
+          text: "Use the two visible sides",
+          color: "violet",
+        },
+      ],
+      steps: [
+        {
+          id: "locate",
+          title: "Locate the target",
+          narration: "First locate the marked triangle feature.",
+          primitiveIds: ["focus"],
+          durationMs: 1_000,
+        },
+        {
+          id: "explain",
+          title: "Connect the idea",
+          narration: "Now connect that feature to the relationship in the note.",
+          primitiveIds: ["note"],
+          durationMs: 1_200,
+        },
+      ],
+      controls: [],
+      claims: [],
+      citations: [],
+      followUps: [],
+    });
+    const plan = validateLessonPlan({
+      ...normalized,
+      id: "lesson-auto-connector",
+      provider: { id: "alibaba", model: "qwen3.6-plus" },
+    });
+    const connector = plan.primitives.find((primitive) => primitive.id.startsWith("relationship"));
+
+    expect(connector).toMatchObject({
+      kind: "curved-arrow",
+      x2: 510,
+      y2: 350,
+      color: "cyan",
+    });
+    expect(plan.steps[1]?.primitiveIds).toContain(connector?.id);
+    expect(plan.title).toBe("Use the visible triangle");
   });
 
   it("repairs bounded model shape mistakes without weakening final validation", () => {

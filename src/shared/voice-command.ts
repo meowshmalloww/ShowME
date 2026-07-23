@@ -3,6 +3,7 @@ import type { AdaptationKind } from "./types";
 export type VoiceLessonCommand =
   | { kind: "stop" }
   | { kind: "clear" }
+  | { kind: "draw" }
   | { kind: "go-back" }
   | { kind: "show-both" }
   | { kind: "keep-formula" }
@@ -40,6 +41,7 @@ export function parseVoiceLessonCommand(rawPhrase: string): VoiceLessonCommand |
   ) {
     return { kind: "clear" };
   }
+  if (isCollaborativeInkRequest(phrase)) return { kind: "draw" };
   if (/^(?:go back|previous step|show the previous step|back one step)(?: please)?$/.test(phrase)) {
     return { kind: "go-back" };
   }
@@ -107,6 +109,15 @@ export function parseVoiceLessonCommand(rawPhrase: string): VoiceLessonCommand |
     };
   }
   return null;
+}
+
+export function isCollaborativeInkRequest(rawPhrase: string): boolean {
+  const phrase = normalizeVoiceText(rawPhrase)
+    .replace(/^(?:hey |okay |ok )?show me(?: please)?\s*/, "")
+    .trim();
+  return /^(?:(?:can|could|may) i (?:draw|write|sketch|mark|highlight|underline)|let me (?:draw|write|sketch|mark|highlight|underline)|i (?:want|would like) to (?:draw|write|sketch|mark|highlight|underline)|(?:can|could) we draw together|(?:open|show) (?:the )?(?:drawing tools|pen tools|whiteboard)|let me use (?:the )?(?:pen|marker|highlighter|eraser)|(?:can|could) i use (?:the )?(?:pen|marker|highlighter|eraser)|draw with (?:you|me))(?:\b.*)?$/.test(
+    phrase,
+  );
 }
 
 export function isLikelyNarrationEcho(heard: string, currentNarration: string): boolean {

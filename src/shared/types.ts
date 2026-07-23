@@ -275,6 +275,7 @@ export type PrimitiveKind =
   | "vector"
   | "bracket"
   | "axis"
+  | "underline"
   | "callout";
 
 export interface LessonPrimitive {
@@ -550,11 +551,49 @@ export interface LessonPresentation {
   verification: VerificationResult;
   createdAt: string;
   surface: LessonSurface;
+  /** Learner-authored vector ink kept locally with an accepted lesson response. */
+  learnerInk?: WhiteboardInkStroke[];
+  /** Missing on older lessons whose learner ink was normalized to the selected source. */
+  learnerInkSpace?: "screen";
   /** In-memory visual context for the active lesson. AppStore removes this before persistence. */
   contextPreviewDataUrl?: string;
   contextPreviewExpiresAt?: string;
   /** In-memory desktop projection data. AppStore removes this before persistence. */
   contextGeometry?: LessonContextGeometry;
+}
+
+export type WhiteboardInkTool = "pen" | "highlighter";
+
+export interface WhiteboardInkPoint extends Point {
+  /** Normalized Pointer Events pressure in the inclusive 0-1 range. */
+  pressure: number;
+}
+
+export interface WhiteboardInkStroke {
+  id: string;
+  tool: WhiteboardInkTool;
+  color: string;
+  /** Visual width in normalized whiteboard coordinates. */
+  width: number;
+  points: WhiteboardInkPoint[];
+}
+
+export interface WhiteboardInkContext {
+  /** Transparent PNG aligned to the entire lesson overlay. */
+  imageDataUrl: string;
+  strokes: WhiteboardInkStroke[];
+  coordinateSpace: "screen";
+  /** CSS-pixel geometry used to map screen ink back onto the selected visual context. */
+  canvas: {
+    width: number;
+    height: number;
+    sourceRect: {
+      left: number;
+      top: number;
+      width: number;
+      height: number;
+    };
+  };
 }
 
 export interface SpokenLessonCommandEvent {

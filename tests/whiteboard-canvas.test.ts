@@ -8,6 +8,7 @@ import {
   projectSourceRect,
   WhiteboardCanvas,
 } from "../src/renderer/src/components/WhiteboardCanvas";
+import { selectionInkToScreen } from "../src/renderer/src/components/WhiteboardInkLayer";
 import type { LessonContextGeometry, LessonPlan } from "../src/shared/types";
 
 const geometry: LessonContextGeometry = {
@@ -58,6 +59,25 @@ const plan: LessonPlan = {
 };
 
 describe("desktop whiteboard projection", () => {
+  it("maps legacy selection ink into the full-screen coordinate space", () => {
+    const [stroke] = selectionInkToScreen(
+      [
+        {
+          id: "legacy-stroke",
+          tool: "pen",
+          color: "#52b8e8",
+          width: 4,
+          points: [{ x: 500, y: 500, pressure: 0.5 }],
+        },
+      ],
+      { left: 400, top: 200, width: 800, height: 400 },
+      1600,
+      1000,
+    );
+
+    expect(stroke?.points[0]).toMatchObject({ x: 500, y: 400, pressure: 0.5 });
+    expect(stroke?.width).toBeCloseTo(1.6);
+  });
   it("maps physical capture pixels into display-independent overlay coordinates", () => {
     expect(projectSourceRect(geometry, { width: 1920, height: 1080 })).toEqual({
       left: 192,
@@ -107,6 +127,22 @@ describe("desktop whiteboard projection", () => {
     );
 
     expect(layouts.angle?.width).toBe(64);
+  });
+
+  it("moves teaching text toward clean writing space when the intended pixels are visually busy", () => {
+    const layouts = layoutWhiteboardText(
+      [{ id: "working", kind: "equation", x: 800, y: 420, text: "tan(theta) = 11.9 / 10" }],
+      { left: 0, top: 0, width: 1000, height: 600 },
+      { width: 1000, height: 600 },
+      [],
+      {
+        columns: 4,
+        rows: 2,
+        luminance: [0.08, 0.09, 0.04, 0.96, 0.08, 0.09, 0.96, 0.04],
+      },
+    );
+
+    expect(layouts.working?.left).toBeLessThan(100);
   });
 
   it("places a simulation opposite the densest group of teaching marks", () => {
@@ -372,6 +408,7 @@ describe("desktop whiteboard projection", () => {
         ],
       },
       { id: "highlight", kind: "highlight", x: 430, y: 100, width: 180, height: 90 },
+      { id: "underline", kind: "underline", x: 430, y: 225, x2: 610, y2: 225 },
       { id: "spotlight", kind: "spotlight", x: 520, y: 300, radius: 75 },
       { id: "point", kind: "point", x: 650, y: 300 },
       { id: "vector", kind: "vector", x: 600, y: 420, x2: 820, y2: 360 },
@@ -398,8 +435,10 @@ describe("desktop whiteboard projection", () => {
     );
 
     expect(html).toContain("whiteboard-stroke current");
+    expect(html).toContain("whiteboard-underline");
     expect(html).toContain("whiteboard-spotlight current");
-    expect(html).toMatch(/url\(#whiteboard-arrow-(?:cyan|amber|violet|mint|coral)\)/);
+    expect(html.match(/<path /g)?.length).toBeGreaterThan(12);
+    expect(html).toContain('stroke-linecap="round"');
     expect(html).toContain("teaching-cursor");
     expect(html).toContain("teaching-cursor-pointer");
     expect(html).not.toContain("teaching-cursor-ring");
@@ -410,10 +449,8 @@ describe("desktop whiteboard projection", () => {
     expect(html).toContain("1. Start here");
     expect(html).toContain("tan θ = opposite / adjacent");
     expect(html).toContain("This angle changes");
-    expect(html).toContain("<polyline");
     expect(html).toContain("<ellipse");
-    expect(html).toContain("<rect");
-    expect(html).toContain("rgba(255, 200, 87, 0.05)");
+    expect(html).toContain("rgba(255, 200, 87, 0.17)");
   });
 
   it("renders broad source highlights as quiet guides instead of neon panels", () => {
@@ -443,8 +480,8 @@ describe("desktop whiteboard projection", () => {
     );
 
     expect(html).toContain("whiteboard-stroke broad-highlight current");
-    expect(html).toContain('fill="transparent"');
-    expect(html).toContain('stroke-opacity="0.58"');
+    expect(html).toContain('fill="none"');
+    expect(html).toContain('opacity="0.58"');
     expect(html).toContain('stroke-dasharray="10 13"');
   });
 

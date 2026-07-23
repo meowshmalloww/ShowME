@@ -1,12 +1,15 @@
 import { type CSSProperties, type PointerEvent, useEffect, useMemo, useState } from "react";
+import rough from "roughjs";
 import type {
   ImageAsset,
   LessonContextGeometry,
   LessonPlan,
   LessonPrimitive,
   ScreenContrastMap,
+  WhiteboardInkContext,
 } from "../../../shared/types";
 import { SimulationGraphic } from "./LessonCanvas";
+import { WhiteboardInkLayer } from "./WhiteboardInkLayer";
 
 interface Viewport {
   width: number;
@@ -61,6 +64,9 @@ const WHITEBOARD_PALETTE = [
 ] as const;
 
 type WhiteboardPaletteEntry = (typeof WHITEBOARD_PALETTE)[number];
+const whiteboardInk = rough.generator();
+type RoughInkOptions = NonNullable<Parameters<typeof whiteboardInk.line>[4]>;
+type RoughDrawable = ReturnType<typeof whiteboardInk.line>;
 
 export interface WhiteboardTextLayout extends LayoutRect {
   width: number;
@@ -89,6 +95,17 @@ export function WhiteboardCanvas({
   historyMode = "context",
   pinnedPrimitiveIds = [],
   onPointAnswer,
+  inkSessionId,
+  inkBusy = false,
+  onInkAsk,
+  onInkActivity,
+  onInkChange,
+  onExit,
+  inkReviewPending = false,
+  onAcceptInkResponse,
+  onRejectInkResponse,
+  initialInkStrokes = [],
+  initialInkSpace = "selection",
 }: {
   plan: LessonPlan;
   stepIndex: number;
@@ -100,6 +117,17 @@ export function WhiteboardCanvas({
   historyMode?: "current" | "context";
   pinnedPrimitiveIds?: string[];
   onPointAnswer?: (point: { x: number; y: number }) => void;
+  inkSessionId?: string;
+  inkBusy?: boolean;
+  onInkAsk?: (ink: WhiteboardInkContext) => Promise<void>;
+  onInkActivity?: () => void;
+  onInkChange?: (ink: WhiteboardInkContext | undefined) => void;
+  onExit?: () => void;
+  inkReviewPending?: boolean;
+  onAcceptInkResponse?: () => void;
+  onRejectInkResponse?: () => Promise<void>;
+  initialInkStrokes?: WhiteboardInkContext["strokes"];
+  initialInkSpace?: "screen" | "selection";
 }) {
   const viewport = useViewport();
   const source = useMemo(
@@ -139,6 +167,12 @@ export function WhiteboardCanvas({
     width: source.width,
     height: source.height,
   };
+  const inkCanvasStyle: CSSProperties = {
+    left: 0,
+    top: 0,
+    width: viewport.width,
+    height: viewport.height,
+  };
   const aidOnLeft = useMemo(
     () => placeWhiteboardAidOnLeft(plan.primitives, source, viewport),
     [plan.primitives, source, viewport],
@@ -155,8 +189,15 @@ export function WhiteboardCanvas({
     [simulationHost, source],
   );
   const textLayouts = useMemo(
-    () => layoutWhiteboardText(textPrimitives, source, viewport, aidObstacles),
-    [aidObstacles, source, textPrimitives, viewport],
+    () =>
+      layoutWhiteboardText(
+        textPrimitives,
+        source,
+        viewport,
+        aidObstacles,
+        contextGeometry?.contrastMap,
+      ),
+    [aidObstacles, contextGeometry?.contrastMap, source, textPrimitives, viewport],
   );
   const cursorTarget = teachingCursorTarget(plan.primitives, currentIds);
   const previousCursorTarget =
@@ -192,20 +233,6 @@ export function WhiteboardCanvas({
         data-source-height={Math.round(source.height)}
       >
         <defs>
-          {WHITEBOARD_PALETTE.map((entry) => (
-            <marker
-              id={`whiteboard-arrow-${entry.id}`}
-              key={entry.id}
-              viewBox="0 0 12 12"
-              refX="10.5"
-              refY="6"
-              markerWidth="6"
-              markerHeight="6"
-              orient="auto-start-reverse"
-            >
-              <path d="M 0 0 L 12 6 L 0 12 z" fill={entry.color} />
-            </marker>
-          ))}
           <marker
             id="lesson-arrow"
             viewBox="0 0 12 12"
@@ -270,6 +297,32 @@ export function WhiteboardCanvas({
           order={index}
         />
       ))}
+
+      {inkSessionId &&
+      onInkAsk &&
+      onInkActivity &&
+      onInkChange &&
+      onExit &&
+      onAcceptInkResponse &&
+      onRejectInkResponse ? (
+        <WhiteboardInkLayer
+          busy={inkBusy}
+          canvasHeight={viewport.height}
+          canvasStyle={inkCanvasStyle}
+          canvasWidth={viewport.width}
+          initialCoordinateSpace={initialInkSpace}
+          initialStrokes={initialInkStrokes}
+          onAcceptResponse={onAcceptInkResponse}
+          onActivity={onInkActivity}
+          onAsk={onInkAsk}
+          onInkChange={onInkChange}
+          onExit={onExit}
+          onRejectResponse={onRejectInkResponse}
+          reviewPending={inkReviewPending}
+          sessionId={inkSessionId}
+          sourceRect={source}
+        />
+      ) : null}
 
       {plan.simulation ? (
         <section
@@ -346,65 +399,101 @@ function WhiteboardPrimitive({
   const isBroadHighlight =
     primitive.kind === "highlight" &&
     (primitiveWidth > 320 || primitiveHeight > 260 || primitiveWidth * primitiveHeight > 72_000);
-  const strokeWidth = isBroadHighlight ? 1.2 : Math.max(1.6, primitive.strokeWidth ?? 3);
-  const props = {
-    className: `whiteboard-stroke${isBroadHighlight ? " broad-highlight" : ""}${previous && !current ? " previous" : ""}${current ? " current" : ""}`,
+  const strokeWidth = isBroadHighlight ? 1.05 : clamp(primitive.strokeWidth ?? 2.1, 1.25, 2.85);
+  const className = `whiteboard-stroke${isBroadHighlight ? " broad-highlight" : ""}${previous && !current ? " previous" : ""}${current ? " current" : ""}`;
+  const style = {
+    "--whiteboard-delay": `${Math.min(order * 70, 420)}ms`,
+    "--whiteboard-color": palette.color,
+  } as CSSProperties;
+  const inkOptions: RoughInkOptions = {
+    seed: Math.max(1, Math.abs(hashText(primitive.id)) % 2_147_483_647),
     stroke: palette.color,
     strokeWidth,
-    strokeOpacity: isBroadHighlight ? 0.58 : 1,
-    vectorEffect: "non-scaling-stroke" as const,
-    strokeDasharray: isBroadHighlight ? "10 13" : primitive.dashed ? "12 10" : undefined,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    style: {
-      "--whiteboard-delay": `${Math.min(order * 70, 420)}ms`,
-      "--whiteboard-color": palette.color,
-    } as CSSProperties,
+    roughness: isBroadHighlight ? 0.34 : primitive.kind === "point" ? 0.48 : 0.72,
+    bowing: 0.62,
+    maxRandomnessOffset: isBroadHighlight ? 0.65 : 1.35,
+    preserveVertices: true,
+    disableMultiStroke: isBroadHighlight,
+    fillStyle: "solid",
+    ...(isBroadHighlight
+      ? { strokeLineDash: [10, 13] }
+      : primitive.dashed
+        ? { strokeLineDash: [12, 10] }
+        : {}),
   };
+  const opacity = isBroadHighlight ? 0.58 : 1;
   const shortestSourceSide = Math.max(1, Math.min(source.width, source.height));
   const circleRadius = primitive.radius ?? (primitive.kind === "point" ? 9 : 72);
   const circleRadiusX = (circleRadius * shortestSourceSide) / Math.max(1, source.width);
   const circleRadiusY = (circleRadius * shortestSourceSide) / Math.max(1, source.height);
   if (primitive.kind === "circle" || primitive.kind === "point") {
     return (
-      <ellipse
-        cx={primitive.x}
-        cy={primitive.y}
-        rx={circleRadiusX}
-        ry={circleRadiusY}
-        fill={primitive.kind === "point" ? palette.color : palette.wash}
-        {...props}
+      <RoughInk
+        className={className}
+        drawables={[
+          whiteboardInk.ellipse(primitive.x, primitive.y, circleRadiusX * 2, circleRadiusY * 2, {
+            ...inkOptions,
+            fill: primitive.kind === "point" ? palette.color : palette.wash,
+          }),
+        ]}
+        opacity={opacity}
+        style={style}
       />
     );
   }
   if (primitive.kind === "rect" || primitive.kind === "highlight") {
     return (
-      <rect
-        x={primitive.x}
-        y={primitive.y}
-        width={primitiveWidth}
-        height={primitiveHeight}
-        rx={primitive.kind === "highlight" ? 20 : 10}
-        fill={
-          primitive.kind === "highlight" && !isBroadHighlight
-            ? palette.highlightWash
-            : "transparent"
-        }
-        {...props}
+      <RoughInk
+        className={className}
+        drawables={[
+          whiteboardInk.rectangle(primitive.x, primitive.y, primitiveWidth, primitiveHeight, {
+            ...inkOptions,
+            ...(primitive.kind === "highlight" && !isBroadHighlight
+              ? { fill: palette.wash, strokeWidth: Math.min(strokeWidth, 1.65) }
+              : {}),
+          }),
+        ]}
+        opacity={opacity}
+        style={style}
+      />
+    );
+  }
+  if (primitive.kind === "underline") {
+    const x2 = primitive.x2 ?? primitive.x + 140;
+    const y2 = primitive.y2 ?? primitive.y;
+    const midX = (primitive.x + x2) / 2;
+    const midY = (primitive.y + y2) / 2 + 3.5;
+    return (
+      <RoughInk
+        className={`${className} whiteboard-underline`}
+        drawables={[
+          whiteboardInk.curve(
+            [
+              [primitive.x, primitive.y],
+              [midX, midY],
+              [x2, y2],
+            ],
+            {
+              ...inkOptions,
+              roughness: 0.9,
+              bowing: 0.8,
+              strokeWidth: Math.min(strokeWidth, 2.35),
+            },
+          ),
+        ]}
+        opacity={opacity}
+        style={style}
       />
     );
   }
   if (primitive.kind === "line" || primitive.kind === "arrow" || primitive.kind === "vector") {
-    return (
-      <line
-        x1={primitive.x}
-        y1={primitive.y}
-        x2={primitive.x2 ?? primitive.x + 120}
-        y2={primitive.y2 ?? primitive.y}
-        markerEnd={primitive.kind === "line" ? undefined : `url(#whiteboard-arrow-${palette.id})`}
-        {...props}
-      />
-    );
+    const x2 = primitive.x2 ?? primitive.x + 120;
+    const y2 = primitive.y2 ?? primitive.y;
+    const drawables = [whiteboardInk.line(primitive.x, primitive.y, x2, y2, inkOptions)];
+    if (primitive.kind !== "line") {
+      drawables.push(roughArrowHead(primitive.x, primitive.y, x2, y2, inkOptions));
+    }
+    return <RoughInk className={className} drawables={drawables} opacity={opacity} style={style} />;
   }
   if (primitive.kind === "curved-arrow") {
     const x2 = primitive.x2 ?? primitive.x + 150;
@@ -412,49 +501,74 @@ function WhiteboardPrimitive({
     const midX = (primitive.x + x2) / 2;
     const midY = Math.min(primitive.y, y2) - Math.max(55, Math.abs(x2 - primitive.x) * 0.28);
     return (
-      <path
-        d={`M ${primitive.x} ${primitive.y} Q ${midX} ${midY} ${x2} ${y2}`}
-        fill="none"
-        markerEnd={`url(#whiteboard-arrow-${palette.id})`}
-        {...props}
+      <RoughInk
+        className={className}
+        drawables={[
+          whiteboardInk.curve(
+            [
+              [primitive.x, primitive.y],
+              [midX, midY],
+              [x2, y2],
+            ],
+            inkOptions,
+          ),
+          roughArrowHead(midX, midY, x2, y2, inkOptions),
+        ]}
+        opacity={opacity}
+        style={style}
       />
     );
   }
   if (primitive.kind === "path") {
     return (
-      <polyline
-        points={(primitive.points ?? []).map((point) => `${point.x},${point.y}`).join(" ")}
-        fill="none"
-        {...props}
+      <RoughInk
+        className={className}
+        drawables={[
+          whiteboardInk.linearPath(
+            (primitive.points ?? []).map((point) => [point.x, point.y]),
+            inkOptions,
+          ),
+        ]}
+        opacity={opacity}
+        style={style}
       />
     );
   }
   if (primitive.kind === "axis") {
+    const verticalEndY = primitive.y ?? 150;
+    const horizontalEndX = primitive.x2 ?? 850;
+    const axisBaseY = primitive.y2 ?? 850;
     return (
-      <g {...props}>
-        <line
-          x1={primitive.x}
-          y1={primitive.y2 ?? 850}
-          x2={primitive.x}
-          y2={primitive.y ?? 150}
-          markerEnd={`url(#whiteboard-arrow-${palette.id})`}
-        />
-        <line
-          x1={primitive.x}
-          y1={primitive.y}
-          x2={primitive.x2 ?? 850}
-          y2={primitive.y}
-          markerEnd={`url(#whiteboard-arrow-${palette.id})`}
-        />
-      </g>
+      <RoughInk
+        className={className}
+        drawables={[
+          whiteboardInk.line(primitive.x, axisBaseY, primitive.x, verticalEndY, inkOptions),
+          roughArrowHead(primitive.x, axisBaseY, primitive.x, verticalEndY, inkOptions),
+          whiteboardInk.line(primitive.x, primitive.y, horizontalEndX, primitive.y, inkOptions),
+          roughArrowHead(primitive.x, primitive.y, horizontalEndX, primitive.y, inkOptions),
+        ]}
+        opacity={opacity}
+        style={style}
+      />
     );
   }
   if (primitive.kind === "bracket") {
     return (
-      <path
-        d={`M ${primitive.x} ${primitive.y} h -18 v ${primitive.height ?? 140} h 18`}
-        fill="none"
-        {...props}
+      <RoughInk
+        className={className}
+        drawables={[
+          whiteboardInk.linearPath(
+            [
+              [primitive.x, primitive.y],
+              [primitive.x - 18, primitive.y],
+              [primitive.x - 18, primitive.y + (primitive.height ?? 140)],
+              [primitive.x, primitive.y + (primitive.height ?? 140)],
+            ],
+            inkOptions,
+          ),
+        ]}
+        opacity={opacity}
+        style={style}
       />
     );
   }
@@ -480,12 +594,86 @@ function WhiteboardPrimitive({
           rx={spotlightRadiusX * 0.72}
           ry={spotlightRadiusY * 0.72}
           fill="none"
-          {...props}
+          stroke="transparent"
+        />
+        <RoughInk
+          className={className}
+          drawables={[
+            whiteboardInk.ellipse(
+              primitive.x,
+              primitive.y,
+              spotlightRadiusX * 1.44,
+              spotlightRadiusY * 1.44,
+              inkOptions,
+            ),
+          ]}
+          opacity={opacity}
+          style={style}
         />
       </g>
     );
   }
   return null;
+}
+
+function RoughInk({
+  drawables,
+  className,
+  style,
+  opacity,
+}: {
+  drawables: RoughDrawable[];
+  className: string;
+  style: CSSProperties;
+  opacity: number;
+}) {
+  const paths = drawables.flatMap((drawable) =>
+    whiteboardInk.toPaths(drawable).map((path) => ({
+      path,
+      dash: drawable.options.strokeLineDash,
+      dashOffset: drawable.options.strokeLineDashOffset,
+    })),
+  );
+  return (
+    <g className={className} style={style} opacity={opacity}>
+      {paths.map(({ path, dash, dashOffset }) => (
+        <path
+          d={path.d}
+          fill={path.fill ?? "none"}
+          key={`${path.stroke}-${path.fill ?? "none"}-${path.d}`}
+          stroke={path.stroke}
+          strokeDasharray={dash?.join(" ")}
+          strokeDashoffset={dashOffset}
+          strokeWidth={path.strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      ))}
+    </g>
+  );
+}
+
+function roughArrowHead(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  options: RoughInkOptions,
+): RoughDrawable {
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const length = 14;
+  const spread = 0.56;
+  const arrowOptions = { ...options };
+  delete arrowOptions.fill;
+  return whiteboardInk.linearPath(
+    [
+      [x2 - length * Math.cos(angle - spread), y2 - length * Math.sin(angle - spread)],
+      [x2, y2],
+      [x2 - length * Math.cos(angle + spread), y2 - length * Math.sin(angle + spread)],
+    ],
+    { ...arrowOptions, preserveVertices: true },
+  );
 }
 
 function WhiteboardText({
@@ -612,15 +800,26 @@ function whiteboardTextSurface(
   source: SourceRect,
   contrastMap?: ScreenContrastMap,
 ): "halo" | "soft" | "plate" {
-  if (primitive.kind === "equation" || primitive.kind === "callout") return "plate";
+  if (primitive.kind === "callout") return "plate";
   const text = (primitive.text ?? "").trim();
   const compact = text.length <= 22 && !text.includes("\n");
   // Numbered teaching labels commonly sit directly beside source text or code.
   // Give only the glyph-sized label a quiet surface so the number and caption do
   // not visually merge with the material underneath.
-  const enumerated = /^(?:step\s*)?\d+[.)\s:\-]/i.test(text);
+  const enumerated = /^(?:step\s*)?\d+[.)\s:-]/i.test(text);
   if (primitive.kind === "label" && enumerated) return "soft";
-  const fallback = compact ? "halo" : text.length <= 48 ? "soft" : "plate";
+  const fallback =
+    primitive.kind === "equation"
+      ? text.length <= 54
+        ? "halo"
+        : text.length <= 96
+          ? "soft"
+          : "plate"
+      : compact
+        ? "halo"
+        : text.length <= 48
+          ? "soft"
+          : "plate";
   const sample = sampleScreenContrast(layout, source, contrastMap);
   if (!sample) return fallback;
   if (sample.mean >= 0.64 || sample.range >= 0.34) {
@@ -633,7 +832,7 @@ function whiteboardTextSurface(
 }
 
 function sampleScreenContrast(
-  layout: WhiteboardTextLayout | undefined,
+  layout: LayoutRect | undefined,
   source: SourceRect,
   map: ScreenContrastMap | undefined,
 ): { mean: number; range: number } | undefined {
@@ -689,6 +888,7 @@ export function layoutWhiteboardText(
   source: SourceRect,
   viewport: Viewport,
   obstacles: LayoutRect[] = [],
+  contrastMap?: ScreenContrastMap,
 ): Record<string, WhiteboardTextLayout> {
   const layouts: Record<string, WhiteboardTextLayout> = {};
   const placed: LayoutRect[] = [...obstacles];
@@ -727,6 +927,17 @@ export function layoutWhiteboardText(
     );
     const candidates: Array<{ left: number; centerY: number }> = [
       { left: desiredLeft, centerY: desiredCenterY },
+      { left: margin, centerY: desiredCenterY },
+      { left: viewport.width - margin - width, centerY: desiredCenterY },
+      { left: desiredLeft, centerY: margin + height / 2 },
+      { left: desiredLeft, centerY: viewport.height - margin - height / 2 },
+      { left: margin, centerY: margin + height / 2 },
+      { left: margin, centerY: viewport.height - margin - height / 2 },
+      { left: viewport.width - margin - width, centerY: margin + height / 2 },
+      {
+        left: viewport.width - margin - width,
+        centerY: viewport.height - margin - height / 2,
+      },
     ];
     for (const obstacle of placed) {
       candidates.push(
@@ -745,12 +956,20 @@ export function layoutWhiteboardText(
           Math.max(margin + height / 2, viewport.height - margin - height / 2),
         ),
       }))
-      .sort(
-        (a, b) =>
-          Math.abs(a.left - desiredLeft) +
-          Math.abs(a.centerY - desiredCenterY) -
-          (Math.abs(b.left - desiredLeft) + Math.abs(b.centerY - desiredCenterY)),
-      );
+      .sort((a, b) => {
+        const score = (candidate: { left: number; centerY: number }): number => {
+          const rect = layoutRect(candidate.left, candidate.centerY, width, height);
+          const sample = sampleScreenContrast(rect, source, contrastMap);
+          const distance =
+            Math.abs(candidate.left - desiredLeft) + Math.abs(candidate.centerY - desiredCenterY);
+          if (!sample) return distance;
+          // Prefer clean, low-detail writing space without letting the layout drift
+          // far from the model-grounded target. A bright but uniform area is still
+          // usable because the text surface can add a compact contrast backing.
+          return distance * 0.34 + sample.range * 480 + Math.max(0, sample.mean - 0.8) * 42;
+        };
+        return score(a) - score(b);
+      });
     const chosen = normalized.find((candidate) => {
       const rect = layoutRect(candidate.left, candidate.centerY, width, height);
       return placed.every((other) => !rectanglesOverlap(rect, other, gap));

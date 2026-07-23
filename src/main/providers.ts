@@ -1314,17 +1314,19 @@ Security and truth rules:
 
 Teaching rules:
 - Explain the exact selected thing, not the surrounding application.
-- The learner's original screen is the whiteboard. Place arrows, paths, highlights, labels, and equations directly on observed objects; never design an app page, card layout, toolbar, evidence panel, or playback controls.
+- The learner's original screen is the whiteboard. Place handwritten arrows, circles, marker highlights, colored underlines, labels, and equations directly on observed objects; never design an app page, card layout, toolbar, evidence panel, or playback controls.
 - The vision image may contain ShowME's faint cyan x/y coordinate scaffold. It is private calibration, not source content: never mention it. Coordinates are normalized 0-1000 across the crop and its x100/y100 ticks are exact anchors.
-- Target observed geometry precisely. A multi-step lesson needs both a focus mark (circle/highlight/spotlight/point/rectangle) and a relationship mark (line/arrow/path/bracket/vector/axis). At least two narrated steps must reference spatial primitives; later steps may intentionally reuse the same marks while the explanation advances. Text alone is not a visual lesson.
-- Shapes must be drawable: line/arrow/vector/axis require x2 and y2; path requires at least two points; rect/highlight require width and height; circle/spotlight require radius; label/equation/callout require text. Put explanatory text in nearby empty space and tether it to the source with a spatial mark.
+- Target observed geometry precisely. A multi-step lesson needs both a focus mark (circle/highlight/spotlight/point/rectangle) and a relationship mark (line/arrow/path/bracket/vector/axis/underline). At least two narrated steps must reference spatial primitives; later steps may intentionally reuse the same marks while the explanation advances. Text alone is not a visual lesson.
+- Shapes must be drawable: line/arrow/vector/axis/underline require x2 and y2; path requires at least two points; rect/highlight require width and height; circle/spotlight require radius; label/equation/callout require text. Put explanatory text in nearby empty space and tether it to the source with a spatial mark.
+- Treat visible source material as protected reading space. Put handwritten-style notes and equations in the nearest genuinely empty region, then connect them with a short arrow; never cover the question, diagram, code, or passage being explained.
+- If the selected content is concentrated on one side, use the open opposite side or lower corner for the worked explanation and mirror that layout when the content moves. Keep related words and marks close together without crossing unrelated source content.
 - Keep every rectangle/highlight inside the source: x + width and y + height must be at most 1000. Use tight bounds around one observed object. Never draw a near-full-screen frame, even when the learner selected the entire screen; it obscures the source and teaches nothing.
 - The renderer automatically moves a small teaching cursor to each step's final spatial target. Order each step's primitiveIds so its last arrow, path, focus mark, or label points at the object named by the narration.
-- Use a restrained semantic palette instead of one repeated color: color may be cyan, amber, violet, mint, or coral. Cyan traces relationships, amber focuses attention, violet supports formulas/structure, mint marks results, and coral marks a change or exception.
+- Use a restrained semantic palette instead of one repeated color: color may be cyan, amber, violet, mint, or coral. Cyan traces relationships, amber focuses attention, violet supports formulas/structure, mint marks results, and coral marks a change or exception. Use underlines and marker highlights in different semantic colors when they distinguish separate givens, steps, or conclusions.
 - Keep short labels short so they can render as halo text without a panel. Equations, callouts, or text over busy content receive compact contrast plates automatically; never simulate contrast with a giant filled rectangle.
 - Prefer a visual causal story: identify the object, trace the relationship, work the change or calculation, then show the result. For geometry, visibly mark the angle and relative sides before calculating.
 - Make 3–7 short spoken steps. Narration is read aloud, so use natural sentences without Markdown, lists, raw URLs, or notation that sounds awkward; say what is being drawn as it appears.
-- Choose the smallest useful teaching medium for this question. Not every lesson needs an equation, external image, or simulation. The renderer can sequence animated arrows, circles, shapes, paths, numbers, labels, equations, highlights, and declarative motion directly over the screen; use only the pieces that make the explanation clearer.
+- Choose the smallest useful teaching medium for this question. Not every lesson needs an equation, external image, or simulation. The renderer can sequence animated handwritten arrows, circles, shapes, paths, underlines, numbers, labels, equations, marker highlights, and declarative motion directly over the screen; use only the pieces that make the explanation clearer.
 - Keep the complete JSON compact enough to finish in one response. Prefer 3–5 steps, 900–2400 ms visual durations, and no more than 12 primitives unless the screen genuinely requires more.
 - Use trusted simulation modules only when motion materially teaches the idea: orbit, projectile, trigonometry, wave, circuit, event-loop, function-graph, motion-scene, or constrained custom entities/motions. They are declarative; never return executable code.
 - For history, literature, reading, causal chains, or ordered processes, motion-scene can create a compact code-rendered explainer. Choose timeline, cause-effect, sequence, compare, or quote; use 2-5 concise beats with marker, heading, caption, and semantic accent. It is motion graphics, not a replacement page, and must stay grounded in selected or cited evidence.
@@ -1341,8 +1343,8 @@ Required top-level fields: version, title, concept, summary, teachingMode, confi
 - version must be 1.
 - teachingMode: visual-intuition | worked-derivation | interactive-experiment | diagram-annotation | code-execution | compare-contrast | simplified | advanced.
 - confidence: verified-module | source-grounded | exploratory.
-- primitives may use only: id, kind, x, y, x2, y2, width, height, radius, text, color, fill, strokeWidth, dashed, points, stepId, sourceRegionId. Coordinates are 0-1000. color/fill should be cyan | amber | violet | mint | coral. kind must be circle | rect | line | arrow | curved-arrow | label | equation | path | highlight | spotlight | point | vector | bracket | axis | callout.
-- line/arrow/curved-arrow/vector/axis need x2,y2; path needs points; rect/highlight need width,height; circle/spotlight need radius; text kinds need text.
+- primitives may use only: id, kind, x, y, x2, y2, width, height, radius, text, color, fill, strokeWidth, dashed, points, stepId, sourceRegionId. Coordinates are 0-1000. color/fill should be cyan | amber | violet | mint | coral. kind must be circle | rect | line | arrow | curved-arrow | label | equation | path | highlight | spotlight | point | vector | bracket | axis | underline | callout.
+- line/arrow/curved-arrow/vector/axis/underline need x2,y2; path needs points; rect/highlight need width,height; circle/spotlight need radius; text kinds need text.
 - rect/highlight must satisfy x+width<=1000 and y+height<=1000, and must tightly mark one source object rather than frame most of the screen.
 - every step requires id, title, narration, primitiveIds, durationMs. durationMs is 250-30000. Every primitiveIds value must name a real primitive.
 - diagnosticProbe is optional: {"prompt":"Which part is unclear?","choices":[{"label":"short self-report","focusStepId":"real-step-id"}]}.
@@ -1607,69 +1609,51 @@ export function createGroundedFallbackPlan(
   const noteOnRight = focusCenter.x < 520;
   const noteX = noteOnRight ? 690 : 55;
   const noteY = focusCenter.y > 360 ? 110 : 760;
-  const arrowStartX = noteOnRight ? noteX : noteX + 230;
   const compactQuestion = request.question.replace(/\s+/g, " ").trim().slice(0, 90);
   const requestedSimulation = requestedSimulationKind(request.question);
   const simulation = requestedSimulation ? fallbackSimulation(requestedSimulation) : undefined;
   const title = compactQuestion
-    ? `Keep the selected idea in view: ${compactQuestion}`.slice(0, 120)
-    : "Keep the selected idea in view";
+    ? `Visual lesson interrupted: ${compactQuestion}`.slice(0, 120)
+    : "Visual lesson interrupted";
   const plan: LessonPlan = {
     version: 1,
     id: crypto.randomUUID(),
     title,
     concept: (compactQuestion || "Selected screen evidence").slice(0, 120),
-    summary:
-      "The provider could not finish a drawable lesson, so ShowME kept a compact retry marker on the selected screen.",
+    summary: "The provider response ended before ShowME could safely render the complete tutorial.",
     teachingMode: simulation ? "interactive-experiment" : "diagram-annotation",
     confidence: simulation ? "verified-module" : "exploratory",
     uncertainty: failureDetail.replace(/\s+/g, " ").slice(0, 500),
     sourceDescription: "The learner's selected screen region",
     narration:
-      "I could not place a complete visual lesson accurately. Use this small marker to select the exact part and try again.",
+      "The visual answer ended before it was complete, so I left your original screen unchanged instead of showing a misleading tutorial.",
     primitives: [
       {
-        id: "fallback-focus",
-        kind: "highlight",
-        ...focus,
-        color: "amber",
-        fill: "amber",
-        strokeWidth: 5,
-      },
-      {
-        id: "fallback-pointer",
-        kind: "arrow",
-        x: arrowStartX,
-        y: noteY,
-        x2: focusCenter.x,
-        y2: focusCenter.y,
+        id: "fallback-anchor",
+        kind: "point",
+        x: focusCenter.x,
+        y: focusCenter.y,
         color: "cyan",
-        strokeWidth: 5,
+        strokeWidth: 1.5,
       },
       {
         id: "fallback-note",
         kind: "callout",
         x: noteX,
         y: noteY,
-        width: 250,
-        text: "Select the exact part and try again",
-        color: "violet",
+        width: 300,
+        text: "The visual answer did not finish safely",
+        color: "coral",
       },
     ],
     steps: [
       {
-        id: "fallback-step-focus",
-        title: "Keep the evidence",
-        narration: "This small marker keeps your place without covering the source.",
-        primitiveIds: ["fallback-focus"],
+        id: "fallback-step",
+        title: "Incomplete visual answer",
+        narration:
+          "The visual answer did not complete, so ShowME did not replace it with guessed content.",
+        primitiveIds: ["fallback-anchor", "fallback-note"],
         durationMs: 1_100,
-      },
-      {
-        id: "fallback-step-retry",
-        title: "Retry from the same place",
-        narration: "Select the exact part you want explained, then ask ShowME again.",
-        primitiveIds: ["fallback-pointer", "fallback-note"],
-        durationMs: 1_300,
       },
     ],
     controls: [],
@@ -2004,9 +1988,17 @@ const PRIMITIVE_KINDS = new Set([
   "vector",
   "bracket",
   "axis",
+  "underline",
   "callout",
 ]);
-const LINEAR_PRIMITIVE_KINDS = new Set(["line", "arrow", "curved-arrow", "vector", "axis"]);
+const LINEAR_PRIMITIVE_KINDS = new Set([
+  "line",
+  "arrow",
+  "curved-arrow",
+  "vector",
+  "axis",
+  "underline",
+]);
 const SIMULATION_BINDINGS: Record<string, ReadonlySet<string>> = {
   orbit: new Set([
     "gravitationalParameter",
@@ -2157,6 +2149,7 @@ export function normalizeModelLessonDraft(value: Record<string, unknown>): Recor
     steps.push(clean);
   }
   draft.steps = steps;
+  ensureRelationshipPrimitive(primitives, steps, usedIds);
   const diagnosticProbe = normalizeDiagnosticProbe(draft.diagnosticProbe, stepIdMap, steps);
   if (diagnosticProbe) draft.diagnosticProbe = diagnosticProbe;
   else delete draft.diagnosticProbe;
@@ -2277,7 +2270,78 @@ const RELATIONSHIP_PRIMITIVE_KINDS = new Set([
   "bracket",
   "vector",
   "axis",
+  "underline",
 ]);
+
+/**
+ * Preserve a complete provider-authored tutorial when its only structural mistake is omitting a
+ * connector. This arrow adds no lesson claim; it only tethers an existing note to the existing
+ * focus geometry using coordinates already supplied by the provider.
+ */
+function ensureRelationshipPrimitive(
+  primitives: Record<string, unknown>[],
+  steps: Record<string, unknown>[],
+  usedIds: Set<string>,
+): void {
+  if (
+    steps.length < 2 ||
+    primitives.some((primitive) => RELATIONSHIP_PRIMITIVE_KINDS.has(String(primitive.kind)))
+  ) {
+    return;
+  }
+  const focus = primitives.find((primitive) =>
+    FOCUS_PRIMITIVE_KINDS.has(String(primitive.kind)),
+  );
+  if (!focus) return;
+  const focusCenter = normalizedPrimitiveCenter(focus);
+  const note = primitives
+    .filter((primitive) => ["label", "equation", "callout"].includes(String(primitive.kind)))
+    .map((primitive) => ({ primitive, center: normalizedPrimitiveCenter(primitive) }))
+    .sort(
+      (left, right) =>
+        Math.hypot(left.center.x - focusCenter.x, left.center.y - focusCenter.y) -
+        Math.hypot(right.center.x - focusCenter.x, right.center.y - focusCenter.y),
+    )[0];
+  if (!note) return;
+  let startX = note.center.x;
+  let startY = note.center.y;
+  if (Math.hypot(startX - focusCenter.x, startY - focusCenter.y) < 48) {
+    startX =
+      focusCenter.x > 500
+        ? Math.max(0, focusCenter.x - 150)
+        : Math.min(1_000, focusCenter.x + 150);
+    startY =
+      focusCenter.y > 220
+        ? Math.max(0, focusCenter.y - 110)
+        : Math.min(1_000, focusCenter.y + 110);
+  }
+  const id = reserveId(undefined, "relationship", primitives.length, usedIds);
+  primitives.push({
+    id,
+    kind: "curved-arrow",
+    x: startX,
+    y: startY,
+    x2: focusCenter.x,
+    y2: focusCenter.y,
+    color: "cyan",
+    strokeWidth: 2,
+  });
+  const owner = steps[1] ?? steps[0];
+  if (owner && Array.isArray(owner.primitiveIds)) owner.primitiveIds.push(id);
+}
+
+function normalizedPrimitiveCenter(primitive: Record<string, unknown>): { x: number; y: number } {
+  const x = finiteNumber(primitive.x) ?? 500;
+  const y = finiteNumber(primitive.y) ?? 500;
+  if (finiteNumber(primitive.radius) !== undefined) return { x, y };
+  const x2 = finiteNumber(primitive.x2);
+  const y2 = finiteNumber(primitive.y2);
+  if (x2 !== undefined && y2 !== undefined) return { x: (x + x2) / 2, y: (y + y2) / 2 };
+  return {
+    x: Math.min(1_000, Math.max(0, x + (finiteNumber(primitive.width) ?? 0) / 2)),
+    y: Math.min(1_000, Math.max(0, y + (finiteNumber(primitive.height) ?? 0) / 2)),
+  };
+}
 
 /**
  * Qwen occasionally returns correct drawable geometry but lists all of it on one narrated beat,
@@ -2675,6 +2739,7 @@ function normalizePrimitiveKind(value: unknown): string | undefined {
     text: "label",
     curved_arrow: "curved-arrow",
     "curve-arrow": "curved-arrow",
+    under_line: "underline",
   };
   return aliases[value];
 }

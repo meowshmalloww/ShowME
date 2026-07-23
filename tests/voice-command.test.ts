@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isLikelyNarrationEcho, parseVoiceLessonCommand } from "../src/shared/voice-command";
+import {
+  isCollaborativeInkRequest,
+  isLikelyNarrationEcho,
+  parseVoiceLessonCommand,
+} from "../src/shared/voice-command";
 
 describe("spoken lesson commands", () => {
   it("accepts natural adaptation phrases with an optional wake prefix", () => {
@@ -59,5 +63,15 @@ describe("spoken lesson commands", () => {
     expect(parseVoiceLessonCommand("show both steps")).toEqual({ kind: "show-both" });
     expect(parseVoiceLessonCommand("keep the formula")).toEqual({ kind: "keep-formula" });
     expect(parseVoiceLessonCommand("clear old marks")).toEqual({ kind: "current-only" });
+  });
+
+  it("opens learner ink only for an explicit collaborative drawing request", () => {
+    expect(parseVoiceLessonCommand("Hey Show Me, can I draw with you?")).toEqual({
+      kind: "draw",
+    });
+    expect(parseVoiceLessonCommand("let me use the pen")).toEqual({ kind: "draw" });
+    expect(isCollaborativeInkRequest("I want to underline this myself")).toBe(true);
+    expect(isCollaborativeInkRequest("Draw an arrow to theta and circle it")).toBe(false);
+    expect(isCollaborativeInkRequest("Highlight the opposite side for me")).toBe(false);
   });
 });

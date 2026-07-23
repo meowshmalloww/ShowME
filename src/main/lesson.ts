@@ -1,16 +1,19 @@
 import { LEARNER_GRADE_LABELS } from "../shared/defaults";
 import { CommandError } from "../shared/errors";
-import { generateLessonRequestSchema } from "../shared/schema";
+import { generateLessonRequestSchema, whiteboardInkContextSchema } from "../shared/schema";
 import type {
   AdaptationKind,
   AppSettings,
   GenerateLessonRequest,
   LessonPresentation,
   LessonProgress,
+  PreparedContext,
+  WhiteboardInkContext,
 } from "../shared/types";
 import type { CaptureService } from "./capture";
 import type { ProviderService } from "./providers";
 import type { AppStore } from "./store";
+import { contextWithWhiteboardInk, describeWhiteboardInk } from "./whiteboard-ink";
 import type { WorkerService } from "./workers";
 
 export class LessonService {
@@ -26,14 +29,15 @@ export class LessonService {
 
   async generate(
     rawRequest: GenerateLessonRequest,
+    preparedContext?: PreparedContext,
   ): Promise<{ requestId: string; presentation: LessonPresentation }> {
     const request = generateLessonRequestSchema.parse(rawRequest) as GenerateLessonRequest;
+    const context = preparedContext ?? this.capture.getPrepared(request.captureId);
     const requestId = crypto.randomUUID();
     const controller = new AbortController();
     this.active.set(requestId, controller);
     try {
       this.emit(requestId, "preparing", "Securing the selected context");
-      const context = this.capture.getPrepared(request.captureId);
       const settings = this.store.getSettings();
       this.emit(requestId, "understanding", "Reading the visual structure");
       if (request.allowWebResearch) this.emit(requestId, "researching", "Checking sources");
@@ -64,6 +68,8 @@ export class LessonService {
         verification,
         createdAt: new Date().toISOString(),
         surface: settings.lessonSurface,
+        contextPreviewDataUrl: context.previewDataUrl,
+        contextPreviewExpiresAt: new Date(Date.now() + 15 * 60_000).toISOString(),
         contextGeometry: {
           display: context.display,
           cropBounds: context.cropBounds,
@@ -95,7 +101,12 @@ export class LessonService {
     presentation: LessonPresentation,
     adaptation: AdaptationKind,
     question?: string,
+    rawInk?: WhiteboardInkContext,
   ): Promise<{ requestId: string; presentation: LessonPresentation }> {
+    const ink = rawInk
+      ? (whiteboardInkContextSchema.parse(rawInk) as WhiteboardInkContext)
+      : undefined;
+    const inkDescription = ink ? describeWhiteboardInk(ink) : "";
     const request: GenerateLessonRequest = {
       ...presentation.request,
       question: adaptationPrompt(adaptation, presentation, question),
@@ -104,6 +115,7 @@ export class LessonService {
         "Prior lesson title: " + presentation.plan.title,
         "Prior lesson summary: " + presentation.plan.summary,
         "Prior lesson narration: " + presentation.plan.narration,
+        inkDescription,
       ]
         .filter(Boolean)
         .join("\n\n")
@@ -117,7 +129,16 @@ export class LessonService {
             ? "advanced"
             : presentation.request.complexity,
     };
-    return this.generate(request);
+    if (!ink) return this.generate(request);
+    const context = await contextWithWhiteboardInk(
+      this.capture.getPrepared(presentation.request.captureId),
+      ink,
+    );
+    const result = await this.generate(request, context);
+    result.presentation.learnerInk = ink.strokes;
+    result.presentation.learnerInkSpace = "screen";
+    this.store.saveLesson(result.presentation);
+    return result;
   }
 
   cancel(requestId: string): void {

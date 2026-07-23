@@ -141,6 +141,7 @@ const relationshipPrimitiveKinds = new Set([
   "vector",
   "bracket",
   "axis",
+  "underline",
 ]);
 
 export const primitiveSchema = z
@@ -161,6 +162,7 @@ export const primitiveSchema = z
       "vector",
       "bracket",
       "axis",
+      "underline",
       "callout",
     ]),
     x: coordinate,
@@ -197,7 +199,9 @@ export const primitiveSchema = z
         visualIssue(`${primitive.kind} ${primitive.id} must stay inside the 0-1000 source canvas`);
       }
     }
-    if (["line", "arrow", "curved-arrow", "vector", "axis"].includes(primitive.kind)) {
+    if (
+      ["line", "arrow", "curved-arrow", "vector", "axis", "underline"].includes(primitive.kind)
+    ) {
       if (primitive.x2 === undefined || primitive.y2 === undefined) {
         visualIssue(`${primitive.kind} ${primitive.id} requires an exact x2 and y2 destination`);
       } else if (Math.hypot(primitive.x2 - primitive.x, primitive.y2 - primitive.y) < 5) {
@@ -730,6 +734,62 @@ export const generateLessonRequestSchema = z
     priorPlanId: id.optional(),
   })
   .strict();
+
+const whiteboardInkPointSchema = pointSchema
+  .extend({ pressure: z.number().finite().min(0).max(1) })
+  .strict();
+
+export const whiteboardInkContextSchema = z
+  .object({
+    imageDataUrl: z
+      .string()
+      .max(8_500_000)
+      .regex(/^data:image\/png;base64,[A-Za-z0-9+/=]+$/),
+    strokes: z
+      .array(
+        z
+          .object({
+            id,
+            tool: z.enum(["pen", "highlighter"]),
+            color: z.string().regex(/^#[0-9a-f]{6}$/i),
+            width: z.number().finite().min(1).max(32),
+            points: z.array(whiteboardInkPointSchema).min(1).max(360),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(48),
+    coordinateSpace: z.literal("screen"),
+    canvas: z
+      .object({
+        width: z.number().finite().positive().max(20_000),
+        height: z.number().finite().positive().max(20_000),
+        sourceRect: z
+          .object({
+            left: z.number().finite().min(0).max(20_000),
+            top: z.number().finite().min(0).max(20_000),
+            width: z.number().finite().positive().max(20_000),
+            height: z.number().finite().positive().max(20_000),
+          })
+          .strict(),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((ink, context) => {
+    const { sourceRect } = ink.canvas;
+    if (
+      sourceRect.left >= ink.canvas.width ||
+      sourceRect.top >= ink.canvas.height ||
+      sourceRect.left + sourceRect.width > ink.canvas.width + 1 ||
+      sourceRect.top + sourceRect.height > ink.canvas.height + 1
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "The selected source rectangle must fit inside the whiteboard canvas",
+      });
+    }
+  });
 
 export const learningCheckSubmissionSchema = z
   .object({

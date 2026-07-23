@@ -6,13 +6,11 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
-  Clock3,
   CloudCog,
   Command,
   Download,
   ExternalLink,
   Eye,
-  Gauge,
   GraduationCap,
   HardDrive,
   Home,
@@ -556,36 +554,60 @@ function HomeView({
   const configured = bootstrap.providers.filter((provider) => provider.configured);
   return (
     <main className="page home-page">
-      <header className="page-heading">
+      <header className="page-heading home-heading">
         <div>
-          <p className="eyebrow">Learning space</p>
-          <h1>Make the next thing visible.</h1>
-          <p>Select part of your screen and turn it into a visual explanation.</p>
-        </div>
-        <div className="date-chip">
-          <Clock3 size={15} />
-          {new Intl.DateTimeFormat(undefined, {
-            weekday: "long",
-            month: "short",
-            day: "numeric",
-          }).format(new Date())}
+          <p className="eyebrow">Screen-aware learning</p>
+          <h1>What should we make clear?</h1>
+          <p>Select something visible and turn the screen itself into the lesson.</p>
         </div>
       </header>
-      <section className="hero-action-card">
-        <div className="hero-action-copy">
-          <span className="hero-icon">
-            <BrandMark size={28} />
-          </span>
-          <div>
-            <p>New explanation</p>
-            <h2>Choose something on your screen</h2>
-            <small>Select an area, point, or the entire display.</small>
-          </div>
+      <section className="home-primary-action">
+        <div className="home-primary-copy">
+          <p className="eyebrow">New lesson</p>
+          <h2>Choose anything on your screen.</h2>
+          <p>
+            Ask naturally. ShowME draws and speaks over the source, then lets you answer with your
+            voice, cursor, or handwriting.
+          </p>
         </div>
-        <button className="hero-capture-button" onClick={onCapture} type="button">
-          Select on screen <ArrowRight size={16} />
-        </button>
+        <div className="home-primary-controls">
+          <button className="hero-capture-button" onClick={onCapture} type="button">
+            Choose on screen <ArrowRight size={16} />
+          </button>
+          <span>
+            <Mic2 size={14} />
+            Say “Show me…”
+          </span>
+          <small className={configured.length ? "ready" : "needs-setup"}>
+            {configured.length
+              ? `${configured.length} provider${configured.length === 1 ? "" : "s"} ready`
+              : "Model setup needed"}
+          </small>
+        </div>
       </section>
+      <ol className="home-method-strip" aria-label="How a ShowME lesson works">
+        <li>
+          <span>01</span>
+          <div>
+            <strong>Select</strong>
+            <small>Frame the exact question.</small>
+          </div>
+        </li>
+        <li>
+          <span>02</span>
+          <div>
+            <strong>See and hear</strong>
+            <small>Follow the explanation in place.</small>
+          </div>
+        </li>
+        <li>
+          <span>03</span>
+          <div>
+            <strong>Respond</strong>
+            <small>Answer with voice, cursor, or ink.</small>
+          </div>
+        </li>
+      </ol>
       {configured.length === 0 ? (
         <button className="configuration-banner" onClick={onSettings} type="button">
           <CloudCog size={20} />
@@ -596,45 +618,27 @@ function HomeView({
           <ChevronRight />
         </button>
       ) : null}
-      <section className="stat-grid">
-        <Stat
-          icon={<BookOpen />}
-          label="Lessons built"
-          value={bootstrap.memorySummary.lessonCount}
-          note="Saved locally"
-        />
-        <Stat
-          icon={<BrainCircuit />}
-          label="Ideas revisited"
-          value={bootstrap.memorySummary.memoryCount}
-          note="Your learning memory"
-        />
-        <Stat
-          icon={<Gauge />}
-          label="Current rhythm"
-          value={
-            bootstrap.memorySummary.currentStreak
-              ? bootstrap.memorySummary.currentStreak + "d"
-              : "—"
-          }
-          note={bootstrap.memorySummary.studiedToday ? "Learned today" : "Ready when you are"}
-        />
-      </section>
-      <section className="content-section">
+      <section className="content-section home-recent-section">
         <div className="section-title">
           <div>
             <p className="eyebrow">Saved locally</p>
             <h2>Recent lessons</h2>
           </div>
           {bootstrap.recentLessons.length ? (
-            <button onClick={() => window.showme.app.openMain("library")} type="button">
-              View library <ArrowRight size={15} />
-            </button>
+            <div className="home-recent-actions">
+              <span>
+                {bootstrap.memorySummary.lessonCount} lessons ·{" "}
+                {bootstrap.memorySummary.memoryCount} ideas revisited
+              </span>
+              <button onClick={() => window.showme.app.openMain("library")} type="button">
+                View library <ArrowRight size={15} />
+              </button>
+            </div>
           ) : null}
         </div>
         {bootstrap.recentLessons.length ? (
           <div className="lesson-card-grid">
-            {bootstrap.recentLessons.slice(0, 4).map((lesson) => (
+            {bootstrap.recentLessons.slice(0, 2).map((lesson) => (
               <LessonCard key={lesson.id} lesson={lesson} onOpen={onOpen} />
             ))}
           </div>
@@ -646,17 +650,6 @@ function HomeView({
           />
         )}
       </section>
-      {bootstrap.memorySummary.topConcepts.length ? (
-        <section className="concept-strip">
-          <span>Growing concepts</span>
-          {bootstrap.memorySummary.topConcepts.map((item) => (
-            <span className="concept-pill" key={item.concept}>
-              {item.concept}
-              <small>{item.count}</small>
-            </span>
-          ))}
-        </section>
-      ) : null}
     </main>
   );
 }
@@ -711,7 +704,7 @@ function LibraryView({
                 </span>
                 <span>
                   <small>{lesson.concept}</small>
-                  <strong>{lesson.title}</strong>
+                  <strong title={lesson.title}>{displayLessonTitle(lesson.title)}</strong>
                   <em>{lesson.question}</em>
                 </span>
               </button>
@@ -777,11 +770,22 @@ function SettingsView({
 
   return (
     <main className="settings-layout">
-      <aside className="settings-nav">
+      <header className="settings-shell-heading">
         <div>
           <p className="eyebrow">Preferences</p>
           <h1>Settings</h1>
+          <p>Configure the services and teaching behavior ShowME uses on this device.</p>
         </div>
+        {page !== "about" ? (
+          <div className="settings-save-rail">
+            <span>Stored on this device</span>
+            <button className="primary-button" onClick={onSaved} type="button">
+              <Check size={16} /> Save changes
+            </button>
+          </div>
+        ) : null}
+      </header>
+      <nav className="settings-nav" aria-label="Settings sections">
         <SettingsNav
           active={page === "models"}
           icon={<CloudCog />}
@@ -818,15 +822,7 @@ function SettingsView({
           label="About"
           onClick={() => selectPage("about")}
         />
-        {page !== "about" ? (
-          <div className="settings-save-rail">
-            <span>Changes stay on this device.</span>
-            <button className="primary-button" onClick={onSaved} type="button">
-              <Check size={16} /> Save changes
-            </button>
-          </div>
-        ) : null}
-      </aside>
+      </nav>
       <section className="settings-panel" ref={panel}>
         {page === "models" ? (
           <ModelsSettings
@@ -2413,7 +2409,6 @@ function SettingsNav({
     <button className={active ? "active" : ""} onClick={onClick} type="button">
       {icon}
       <span>{label}</span>
-      <ChevronRight size={14} />
     </button>
   );
 }
@@ -2434,37 +2429,15 @@ function SettingsHeader({
     </header>
   );
 }
-function Stat({
-  icon,
-  label,
-  value,
-  note,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string | number;
-  note: string;
-}) {
-  return (
-    <article className="stat-card">
-      <span>{icon}</span>
-      <div>
-        <small>{label}</small>
-        <strong>{value}</strong>
-        <em>{note}</em>
-      </div>
-    </article>
-  );
-}
 function LessonCard({ lesson, onOpen }: { lesson: LessonReceipt; onOpen: (id: string) => void }) {
   return (
     <button className="lesson-card" onClick={() => onOpen(lesson.id)} type="button">
-      <span className="lesson-card-art">
+      <span className="lesson-card-art" aria-hidden="true">
         <BookOpen size={22} />
       </span>
       <span className="lesson-card-body">
         <small>{lesson.concept}</small>
-        <strong>{lesson.title}</strong>
+        <strong title={lesson.title}>{displayLessonTitle(lesson.title)}</strong>
         <em>{lesson.question}</em>
         <span>
           <time>{relativeDate(lesson.updatedAt)}</time>
@@ -2473,7 +2446,9 @@ function LessonCard({ lesson, onOpen }: { lesson: LessonReceipt; onOpen: (id: st
               {lesson.learningEvidence.result === "correct" ? "Transfer observed" : "Try recorded"}
             </b>
           ) : null}
-          {confidenceLabel(lesson.confidence)}
+          <b className={`lesson-confidence ${lesson.confidence}`}>
+            {confidenceLabel(lesson.confidence)}
+          </b>
         </span>
       </span>
     </button>
@@ -2496,6 +2471,21 @@ function confidenceLabel(value: LessonReceipt["confidence"]): string {
       ? "Source grounded"
       : "Model inferred";
 }
+
+function displayLessonTitle(value: string): string {
+  const [opening = ""] = value
+    .trim()
+    .replace(/^keep the selected idea in view:\s*/i, "")
+    .split(/[.!?](?:\s|$)/, 1);
+  const firstThought = opening
+    .replace(/^show me how to\s+/i, "How to ")
+    .replace(/^show an?\s+/i, "")
+    .replace(/^show\s+/i, "");
+  const concise =
+    firstThought.length > 76 ? `${firstThought.slice(0, 73).trimEnd()}…` : firstThought;
+  return concise ? concise.charAt(0).toUpperCase() + concise.slice(1) : "Visual lesson";
+}
+
 function relativeDate(value: string): string {
   const elapsed = Date.now() - new Date(value).getTime();
   const day = 86_400_000;

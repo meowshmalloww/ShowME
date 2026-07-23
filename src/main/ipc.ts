@@ -17,8 +17,8 @@ import {
   type IpcResult,
   type WakeInputState,
 } from "../shared/ipc";
-import { lessonCheckForStage } from "../shared/learning-flow";
 import { evaluateLearningCheck } from "../shared/learning-check";
+import { lessonCheckForStage } from "../shared/learning-flow";
 import { providerSummaries } from "../shared/providers";
 import {
   audioProviderIdSchema,
@@ -211,7 +211,12 @@ export function registerIpc(dependencies: IpcDependencies): void {
     windows.setLauncherMode("thinking");
     dependencies.suspendWake();
     try {
-      const result = await lessons.adapt(input.presentation, input.adaptation, input.question);
+      const result = await lessons.adapt(
+        input.presentation,
+        input.adaptation,
+        input.question,
+        input.ink,
+      );
       windows.showLesson(result.presentation);
       dependencies.onVoiceActivity("idle");
       windows.showLauncher();
