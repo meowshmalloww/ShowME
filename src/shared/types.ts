@@ -444,6 +444,33 @@ export interface MotionSceneSimulationSpec {
   beats: MotionSceneBeat[];
 }
 
+export type MotionDesignLayout = MotionSceneLayout | "process" | "spotlight";
+export type MotionDesignVisual = "card" | "kinetic-text" | "stat" | "diagram" | "quote";
+export type MotionDesignTransition = "draw" | "fade" | "slide" | "scale" | "wipe";
+
+export interface MotionDesignBeat {
+  id: string;
+  stepId: string;
+  marker: string;
+  heading: string;
+  caption: string;
+  accent: MotionSceneAccent;
+  visual: MotionDesignVisual;
+  transition: MotionDesignTransition;
+  durationMs: number;
+}
+
+/**
+ * A first-class, code-rendered teaching composition. The model supplies only
+ * validated semantic data; ShowME owns every executable renderer and transition.
+ */
+export interface MotionDesignSpec {
+  kind: "motion-design";
+  title: string;
+  layout: MotionDesignLayout;
+  beats: MotionDesignBeat[];
+}
+
 export interface CustomEntity {
   id: string;
   shape: "circle" | "rect" | "arrow";
@@ -502,6 +529,7 @@ export interface LessonPlan {
   transferCheck?: LearningCheck;
   controls: ControlSpec[];
   simulation?: SimulationSpec;
+  motion?: MotionDesignSpec;
   claims: Claim[];
   citations: Citation[];
   followUps: string[];

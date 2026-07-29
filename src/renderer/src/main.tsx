@@ -4,6 +4,12 @@ import { App } from "./App";
 import { BrandMark } from "./components/BrandMark";
 import "./styles.css";
 
+const windowRole = new URLSearchParams(window.location.search).get("role") ?? "main";
+document.documentElement.dataset.windowRole = windowRole;
+document.documentElement.dataset.theme = window.matchMedia("(prefers-color-scheme: dark)").matches
+  ? "dark"
+  : "light";
+
 const root = document.getElementById("root");
 if (!root) throw new Error("ShowME renderer root is missing");
 

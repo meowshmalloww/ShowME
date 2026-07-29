@@ -34,11 +34,11 @@ function lesson(overrides: Partial<LessonPlan> = {}): LessonPlan {
   };
 }
 
-function render(plan: LessonPlan, contextPreviewDataUrl?: string): string {
+function render(plan: LessonPlan, contextPreviewDataUrl?: string, stepIndex = 0): string {
   return renderToStaticMarkup(
     createElement(LessonCanvas, {
       plan,
-      stepIndex: 0,
+      stepIndex,
       reducedMotion: true,
       contextPreviewDataUrl,
     }),
@@ -145,6 +145,54 @@ describe("visual lesson canvas", () => {
     expect(html).toContain("motion-scene-card");
     expect(html).toContain("Pressure builds");
     expect(html).not.toContain("simulation-error");
+  });
+
+  it("synchronizes first-class motion design to the narrated lesson step", () => {
+    const baseStep = lesson().steps[0];
+    if (!baseStep) throw new Error("Fixture requires a lesson step");
+    const plan = lesson({
+      steps: [
+        { ...baseStep, id: "step-1", title: "Cause" },
+        { ...baseStep, id: "step-2", title: "Effect" },
+      ],
+      motion: {
+        kind: "motion-design",
+        title: "Cause and effect",
+        layout: "cause-effect",
+        beats: [
+          {
+            id: "cause",
+            stepId: "step-1",
+            marker: "01",
+            heading: "Pressure builds",
+            caption: "The condition changes.",
+            accent: "amber",
+            visual: "diagram",
+            transition: "draw",
+            durationMs: 800,
+          },
+          {
+            id: "effect",
+            stepId: "step-2",
+            marker: "02",
+            heading: "The result appears",
+            caption: "The consequence follows.",
+            accent: "mint",
+            visual: "kinetic-text",
+            transition: "slide",
+            durationMs: 900,
+          },
+        ],
+      },
+    });
+
+    const first = render(plan, undefined, 0);
+    const second = render(plan, undefined, 1);
+    expect(first).toContain('data-active-beat="cause"');
+    expect(second).toContain('data-active-beat="effect"');
+    expect(second).toContain("transition-slide");
+    expect(second).toContain("Live visual explanation");
+    expect(second).not.toContain("simulation-error");
   });
 
   it.each([

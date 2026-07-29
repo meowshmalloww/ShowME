@@ -10,6 +10,7 @@ import type {
   ControlSpec,
   LessonPlan,
   LessonPrimitive,
+  MotionDesignSpec,
   MotionSceneSimulationSpec,
   SimulationSpec,
 } from "../../../shared/types";
@@ -33,7 +34,7 @@ export function LessonCanvas({
   const primitives = plan.primitives.filter(
     (primitive) => !primitive.stepId || visibleIds.has(primitive.id),
   );
-  const showContextPreview = Boolean(contextPreviewDataUrl && !plan.simulation);
+  const showContextPreview = Boolean(contextPreviewDataUrl && !plan.simulation && !plan.motion);
   const drawablePrimitives = primitives;
   const contextAspect =
     loadedContext && loadedContext.source === contextPreviewDataUrl
@@ -70,14 +71,21 @@ export function LessonCanvas({
           }}
         />
       ) : null}
-      {plan.simulation ? (
+      {plan.motion ? (
+        <MotionDesignGraphic
+          motion={plan.motion}
+          steps={plan.steps}
+          stepIndex={stepIndex}
+          reducedMotion={reducedMotion}
+        />
+      ) : plan.simulation ? (
         <SimulationView
           simulation={plan.simulation}
           controls={plan.controls}
           reducedMotion={reducedMotion}
         />
       ) : null}
-      {!plan.simulation && !showContextPreview ? (
+      {!plan.simulation && !plan.motion && !showContextPreview ? (
         <div className="lesson-context-expired">
           <svg viewBox="0 0 32 32" aria-hidden="true">
             <path d="M10 4H5a1 1 0 0 0-1 1v5M22 4h5a1 1 0 0 1 1 1v5M10 28H5a1 1 0 0 1-1-1v-5M22 28h5a1 1 0 0 0 1-1v-5" />
@@ -709,11 +717,7 @@ export function SimulationGraphic({
     }
     if (simulation.kind === "motion-scene") {
       return (
-        <MotionSceneGraphic
-          simulation={simulation}
-          time={time}
-          reducedMotion={reducedMotion}
-        />
+        <MotionSceneGraphic simulation={simulation} time={time} reducedMotion={reducedMotion} />
       );
     }
     const duration = simulation.durationSeconds * 1000;
@@ -798,6 +802,88 @@ const MOTION_SCENE_COLORS = {
   coral: "#ff8b7b",
 } as const;
 
+export function MotionDesignGraphic({
+  motion,
+  steps,
+  stepIndex,
+  reducedMotion,
+}: {
+  motion: MotionDesignSpec;
+  steps: LessonPlan["steps"];
+  stepIndex: number;
+  reducedMotion: boolean;
+}) {
+  const stepPositions = new Map(steps.map((step, index) => [step.id, index]));
+  const eligible = motion.beats
+    .map((beat, index) => ({ index, stepIndex: stepPositions.get(beat.stepId) ?? 0 }))
+    .filter((beat) => beat.stepIndex <= stepIndex);
+  const activeIndex = eligible.at(-1)?.index ?? 0;
+  const activeBeat = motion.beats[activeIndex] ?? motion.beats[0];
+
+  return (
+    <section
+      className={`motion-design-graphic layout-${motion.layout}${reducedMotion ? " reduced-motion" : ""}`}
+      role="img"
+      aria-label={`Animated visual explanation: ${motion.title}`}
+      data-active-beat={activeBeat?.id}
+    >
+      <header className="motion-design-header">
+        <span>Live visual explanation</span>
+        <strong>{motion.title}</strong>
+      </header>
+      <div className="motion-design-stage">
+        <div className="motion-design-rail" aria-hidden="true" />
+        {motion.beats.map((beat, index) => {
+          const revealed = index <= activeIndex;
+          const active = index === activeIndex;
+          const accent = MOTION_SCENE_COLORS[beat.accent];
+          const style = {
+            "--motion-accent": accent,
+            "--motion-duration": `${String(reducedMotion ? 0 : beat.durationMs)}ms`,
+            "--motion-order": index,
+          } as CSSProperties;
+          return (
+            <article
+              key={beat.id}
+              className={`motion-design-beat visual-${beat.visual} transition-${beat.transition}${revealed ? " revealed" : ""}${active ? " active" : ""}`}
+              style={style}
+              aria-current={active ? "step" : undefined}
+            >
+              <span className="motion-design-marker">{beat.marker}</span>
+              <div className="motion-design-copy">
+                <strong>{beat.heading}</strong>
+                <p>{beat.caption}</p>
+              </div>
+              {index < motion.beats.length - 1 ? (
+                <svg className="motion-design-connector" viewBox="0 0 90 24" aria-hidden="true">
+                  <path d="M2 12 C28 3 58 21 84 12" />
+                  <path d="m78 7 8 5-8 5" />
+                </svg>
+              ) : null}
+            </article>
+          );
+        })}
+      </div>
+      <footer
+        className="motion-design-progress"
+        role="progressbar"
+        aria-label="Explanation progress"
+        aria-valuemin={1}
+        aria-valuemax={motion.beats.length}
+        aria-valuenow={activeIndex + 1}
+      >
+        {motion.beats.map((beat, index) => (
+          <span
+            key={`progress-${beat.id}`}
+            className={index <= activeIndex ? "complete" : ""}
+            style={{ "--motion-accent": MOTION_SCENE_COLORS[beat.accent] } as CSSProperties}
+          />
+        ))}
+      </footer>
+    </section>
+  );
+}
+
 function MotionSceneGraphic({
   simulation,
   time,
@@ -834,7 +920,10 @@ function MotionSceneGraphic({
           {activeBeat.marker}
         </text>
         <foreignObject x="135" y="125" width="530" height="210">
-          <div className="motion-scene-quote" style={{ "--motion-accent": accent } as CSSProperties}>
+          <div
+            className="motion-scene-quote"
+            style={{ "--motion-accent": accent } as CSSProperties}
+          >
             <strong>{activeBeat.heading}</strong>
             <span>{activeBeat.caption}</span>
           </div>
@@ -906,7 +995,14 @@ function MotionSceneGraphic({
             className={`motion-scene-node${revealed ? " revealed" : ""}${index === activeIndex ? " active" : ""}`}
           >
             <circle cx={position.x} cy={position.y} r="8" fill={accent} />
-            <circle cx={position.x} cy={position.y} r="16" fill="none" stroke={accent} opacity=".35" />
+            <circle
+              cx={position.x}
+              cy={position.y}
+              r="16"
+              fill="none"
+              stroke={accent}
+              opacity=".35"
+            />
             <foreignObject x={position.x - 105} y={position.y + 20} width="210" height="108">
               <div
                 className="motion-scene-card"
@@ -924,9 +1020,7 @@ function MotionSceneGraphic({
   );
 }
 
-function motionScenePositions(
-  simulation: MotionSceneSimulationSpec,
-): { x: number; y: number }[] {
+function motionScenePositions(simulation: MotionSceneSimulationSpec): { x: number; y: number }[] {
   const count = simulation.beats.length;
   if (simulation.layout === "compare") {
     const leftCount = Math.ceil(count / 2);
@@ -949,12 +1043,7 @@ function motionScenePositions(
   const gap = 620 / Math.max(1, count - 1);
   return simulation.beats.map((_, index) => ({
     x: 90 + index * gap,
-    y:
-      simulation.layout === "cause-effect"
-        ? index % 2 === 0
-          ? 145
-          : 265
-        : 190,
+    y: simulation.layout === "cause-effect" ? (index % 2 === 0 ? 145 : 265) : 190,
   }));
 }
 

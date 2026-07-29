@@ -1,15 +1,15 @@
 import type { LauncherMode } from "./types";
 
 export function launcherSize(mode: LauncherMode): { width: number; height: number } {
-  if (mode === "idle") return { width: 72, height: 10 };
-  if (mode === "revealed") return { width: 236, height: 40 };
-  if (mode === "thinking") return { width: 252, height: 44 };
+  if (mode === "idle") return { width: 104, height: 38 };
+  if (mode === "revealed") return { width: 260, height: 44 };
+  if (mode === "thinking") return { width: 280, height: 48 };
   if (["capturing", "teaching", "waiting", "checking", "complete"].includes(mode)) {
-    return { width: 268, height: 44 };
+    return { width: 296, height: 48 };
   }
-  if (mode === "transcribing") return { width: 258, height: 44 };
-  if (mode === "listening" || mode === "speaking") return { width: 272, height: 46 };
-  return { width: 388, height: 160 };
+  if (mode === "transcribing") return { width: 286, height: 48 };
+  if (mode === "listening" || mode === "speaking") return { width: 300, height: 50 };
+  return { width: 412, height: 168 };
 }
 
 export type LauncherActivityVisual = "input-waveform" | "progress" | "output-waveform" | "none";

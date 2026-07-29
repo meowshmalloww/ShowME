@@ -9,6 +9,7 @@ import { PROVIDER_DEFINITIONS, providerEndpoints } from "../shared/providers";
 import {
   learningCheckSchema,
   lessonGenerationJsonSchema,
+  motionDesignSchema,
   simulationSchema,
   validateLessonPlan,
 } from "../shared/schema";
@@ -18,6 +19,8 @@ import type {
   CredentialId,
   GenerateLessonRequest,
   LessonPlan,
+  MotionDesignLayout,
+  MotionDesignSpec,
   PreparedContext,
   ProviderCapabilities,
   ProviderId,
@@ -1317,6 +1320,7 @@ Teaching rules:
 - The learner's original screen is the whiteboard. Place handwritten arrows, circles, marker highlights, colored underlines, labels, and equations directly on observed objects; never design an app page, card layout, toolbar, evidence panel, or playback controls.
 - The vision image may contain ShowME's faint cyan x/y coordinate scaffold. It is private calibration, not source content: never mention it. Coordinates are normalized 0-1000 across the crop and its x100/y100 ticks are exact anchors.
 - Target observed geometry precisely. A multi-step lesson needs both a focus mark (circle/highlight/spotlight/point/rectangle) and a relationship mark (line/arrow/path/bracket/vector/axis/underline). At least two narrated steps must reference spatial primitives; later steps may intentionally reuse the same marks while the explanation advances. Text alone is not a visual lesson.
+- Trace observed straight edges from both visible endpoints, not from a guessed midpoint or a partial segment. Decide orientation from the pixels: visually horizontal edges must keep y and y2 equal; visually vertical edges must keep x and x2 equal. Never transpose an edge because of its name.
 - Shapes must be drawable: line/arrow/vector/axis/underline require x2 and y2; path requires at least two points; rect/highlight require width and height; circle/spotlight require radius; label/equation/callout require text. Put explanatory text in nearby empty space and tether it to the source with a spatial mark.
 - Treat visible source material as protected reading space. Put handwritten-style notes and equations in the nearest genuinely empty region, then connect them with a short arrow; never cover the question, diagram, code, or passage being explained.
 - If the selected content is concentrated on one side, use the open opposite side or lower corner for the worked explanation and mirror that layout when the content moves. Keep related words and marks close together without crossing unrelated source content.
@@ -1328,8 +1332,8 @@ Teaching rules:
 - Make 3–7 short spoken steps. Narration is read aloud, so use natural sentences without Markdown, lists, raw URLs, or notation that sounds awkward; say what is being drawn as it appears.
 - Choose the smallest useful teaching medium for this question. Not every lesson needs an equation, external image, or simulation. The renderer can sequence animated handwritten arrows, circles, shapes, paths, underlines, numbers, labels, equations, marker highlights, and declarative motion directly over the screen; use only the pieces that make the explanation clearer.
 - Keep the complete JSON compact enough to finish in one response. Prefer 3–5 steps, 900–2400 ms visual durations, and no more than 12 primitives unless the screen genuinely requires more.
-- Use trusted simulation modules only when motion materially teaches the idea: orbit, projectile, trigonometry, wave, circuit, event-loop, function-graph, motion-scene, or constrained custom entities/motions. They are declarative; never return executable code.
-- For history, literature, reading, causal chains, or ordered processes, motion-scene can create a compact code-rendered explainer. Choose timeline, cause-effect, sequence, compare, or quote; use 2-5 concise beats with marker, heading, caption, and semantic accent. It is motion graphics, not a replacement page, and must stay grounded in selected or cited evidence.
+- Use trusted simulation modules only when a real deterministic model materially teaches the idea: orbit, projectile, trigonometry, wave, circuit, event-loop, function-graph, or constrained custom entities/motions. They are declarative; never return executable code.
+- Use the separate top-level motion field for code-rendered motion design. Each beat must reference a real lesson stepId so the animation follows narration instead of an unrelated timer. Choose timeline, cause-effect, sequence, compare, quote, process, or spotlight; use 2-6 concise beats with a semantic accent, visual treatment, transition, and 300-12000 ms transition duration. It is motion graphics, not a fake video or deterministic simulation, and must stay grounded in selected or cited evidence.
 - Controls may bind only to real numeric fields of that simulation. Do not fake controls.
 - Use equations sparingly and pair each with plain language.
 - Questions and follow-ups must help the learner test understanding, not merely repeat the answer.
@@ -1349,8 +1353,8 @@ Required top-level fields: version, title, concept, summary, teachingMode, confi
 - every step requires id, title, narration, primitiveIds, durationMs. durationMs is 250-30000. Every primitiveIds value must name a real primitive.
 - diagnosticProbe is optional: {"prompt":"Which part is unclear?","choices":[{"label":"short self-report","focusStepId":"real-step-id"}]}.
 - learningCheck and transferCheck are optional. Exact variants: {"kind":"multiple-choice","prompt":"question","choices":["two to four choices"],"answer":"exact choice text","explanation":"why"}; {"kind":"numeric","prompt":"question","expected":number,"tolerance":number>=0,"unit":"short or empty","explanation":"why"}; {"kind":"keywords","prompt":"question","keywords":["one to five required ideas"],"minimumMatches":number,"explanation":"why"}; or {"kind":"point","prompt":"what to point at","target":{"x":number,"y":number,"width":number,"height":number},"voiceAnswers":["complete spoken alternative"],"explanation":"why"}.
-- Unless a supported simulation or grounded motion-scene is genuinely useful, return controls as [] and omit simulation. motion-scene never has controls and never justifies verified-module confidence by itself.
-- motion-scene exact shape: {"kind":"motion-scene","durationSeconds":number,"title":"short title","layout":"timeline|cause-effect|sequence|compare|quote","beats":[{"id":"unique-id","marker":"short cue","heading":"short heading","caption":"one concise sentence","accent":"cyan|amber|violet|mint|coral"}]}; include 2-5 beats.
+- Unless a supported deterministic simulation is genuinely useful, return controls as [] and omit simulation. Motion design never has controls and never justifies verified-module confidence by itself.
+- top-level motion exact shape: {"kind":"motion-design","title":"short title","layout":"timeline|cause-effect|sequence|compare|quote|process|spotlight","beats":[{"id":"globally-unique-id","stepId":"real-lesson-step-id","marker":"short cue","heading":"short heading","caption":"one concise sentence","accent":"cyan|amber|violet|mint|coral","visual":"card|kinetic-text|stat|diagram|quote","transition":"draw|fade|slide|scale|wipe","durationMs":number}]}; include 2-6 beats.
 - every claim requires id, text, evidence, citationIds. evidence: selected-source | calculation | web-source | model-inference.
 - without observed web results, citations must be [] and citationIds must be [].
 - IDs must be unique. Do not add keys that are not listed.
@@ -1389,6 +1393,7 @@ export function requestedSimulationKind(question: string): RequestedSimulationKi
   if (/\b(?:function|graph|quadratic|exponential|inverse)\b/i.test(question)) {
     return "function-graph";
   }
+  if (isMotionDesignRequest(question)) return undefined;
   return "custom";
 }
 
@@ -1421,15 +1426,15 @@ export function simulationRequestHint(question: string): string {
   );
 }
 
+export function isMotionDesignRequest(question: string): boolean {
+  return /\b(?:motion[\s-]+(?:art|graphic|graphics|design|video)|code(?:d|-rendered)?[\s-]+(?:motion|animated)[\s-]+(?:video|graphic|graphics|explanation)|animated?[\s-]+(?:story|timeline|explanation|sequence|process|cause|comparison)|animate\s+(?:the\s+)?(?:history|story|sequence|process|cause|comparison|explanation))\b/i.test(
+    question,
+  );
+}
+
 export function motionSceneRequestHint(question: string): string {
-  if (
-    !/\b(?:motion\s+(?:art|graphic|graphics)|animated?\s+(?:story|timeline|explanation)|animate\s+(?:the\s+)?(?:history|story|sequence|process|cause|comparison))\b/i.test(
-      question,
-    )
-  ) {
-    return "";
-  }
-  return 'The learner explicitly requested code-rendered motion graphics. Prefer simulation={"kind":"motion-scene","durationSeconds":3..30,"title":"short title","layout":"timeline|cause-effect|sequence|compare|quote","beats":[{"id":"unique","marker":"short cue","heading":"short heading","caption":"one concise sentence","accent":"cyan|amber|violet|mint|coral"}]} with 2-5 evidence-grounded beats and controls=[]. Do not return code, HTML, SVG, or a diffusion-video request.';
+  if (!isMotionDesignRequest(question)) return "";
+  return 'The learner explicitly requested code-rendered motion graphics. Include top-level motion={"kind":"motion-design","title":"short title","layout":"timeline|cause-effect|sequence|compare|quote|process|spotlight","beats":[{"id":"globally unique","stepId":"real lesson step id","marker":"short cue","heading":"short heading","caption":"one concise sentence","accent":"cyan|amber|violet|mint|coral","visual":"card|kinetic-text|stat|diagram|quote","transition":"draw|fade|slide|scale|wipe","durationMs":300..12000}]} with 2-6 evidence-grounded beats. Keep controls=[] unless a separate deterministic simulation is also genuinely needed. Do not return code, HTML, SVG, a diffusion-video request, or motion-scene under simulation.';
 }
 
 function buildUserPrompt(
@@ -1475,7 +1480,7 @@ function buildUserPrompt(
       visualRepair
         ? "Your previous JSON was not a drawable visual lesson. Re-read the attached coordinate-scaffolded image and return a corrected plan with 3 compact steps and no more than 10 primitives. Every shape must have complete geometry, and all source marks must land on observed pixels."
         : simulationHint || motionHint
-          ? "Your previous JSON failed validation or omitted the explicitly requested trusted simulation. Return one corrected compact JSON object with no more than 3 steps and 8 primitives, and include the exact simulation module described above."
+          ? "Your previous JSON failed validation or omitted the explicitly requested visual engine. Return one corrected compact JSON object with no more than 3 steps and 8 primitives, and include the exact motion design or trusted simulation described above."
           : "Your previous JSON failed validation. Return one completely corrected, compact JSON object. Keep no more than 3 steps and 8 primitives; use empty arrays and omit simulation and controls if uncertain.",
       "Repair these exact validation issues:\n" +
         formatValidationFeedback(validationError, previousFinishReason),
@@ -1493,18 +1498,22 @@ function finalizePlan(response: ModelResponse, request: GenerateLessonRequest): 
   draft.provider = { id: request.provider, model: request.model };
   if (!draft.id || typeof draft.id !== "string") draft.id = crypto.randomUUID();
   let plan = validateLessonPlan(draft) as LessonPlan;
+  if (isMotionDesignRequest(request.question) && !plan.motion) {
+    const discardGenericSimulation = plan.simulation?.kind === "custom";
+    plan = validateLessonPlan({
+      ...plan,
+      teachingMode: "visual-intuition",
+      confidence:
+        discardGenericSimulation && plan.confidence === "verified-module"
+          ? "exploratory"
+          : plan.confidence,
+      controls: discardGenericSimulation ? [] : plan.controls,
+      simulation: discardGenericSimulation ? undefined : plan.simulation,
+      motion: motionDesignFromGeneratedPlan(plan, request.question),
+    }) as LessonPlan;
+  }
   const requestedSimulation = requestedSimulationKind(request.question);
   if (requestedSimulation && plan.simulation?.kind !== requestedSimulation) {
-    if (requestedSimulation === "custom") {
-      plan = validateLessonPlan({
-        ...plan,
-        teachingMode: "interactive-experiment",
-        confidence: "verified-module",
-        controls: [],
-        simulation: customSimulationFromGeneratedPlan(plan),
-      }) as LessonPlan;
-      return reconcileCitations(plan, response.citations, request.allowWebResearch);
-    }
     throw new Error(
       "The learner explicitly requested a " +
         requestedSimulation +
@@ -1514,81 +1523,59 @@ function finalizePlan(response: ModelResponse, request: GenerateLessonRequest): 
   return reconcileCitations(plan, response.citations, request.allowWebResearch);
 }
 
-function customSimulationFromGeneratedPlan(
-  plan: LessonPlan,
-): NonNullable<LessonPlan["simulation"]> {
-  const textPrimitives = plan.primitives.filter(
-    (primitive) =>
-      ["label", "equation", "callout"].includes(primitive.kind) && Boolean(primitive.text?.trim()),
-  );
-  const spatial = plan.primitives
-    .filter((primitive) =>
-      ["circle", "point", "rect", "highlight", "arrow", "curved-arrow", "vector", "line"].includes(
-        primitive.kind,
-      ),
-    )
-    .slice(0, 6);
-  const colors = ["#65dcff", "#ffc857", "#b79cff", "#67e8b5", "#ff8b7b"];
-  const entities = spatial.map((primitive, index) => {
-    const x2 = primitive.x2 ?? primitive.x;
-    const y2 = primitive.y2 ?? primitive.y;
-    const arrowLike = ["arrow", "curved-arrow", "vector", "line"].includes(primitive.kind);
-    const circular = ["circle", "point"].includes(primitive.kind);
-    const radius = primitive.radius ?? (primitive.kind === "point" ? 16 : 48);
-    const centerX = arrowLike ? (primitive.x + x2) / 2 : primitive.x + (primitive.width ?? 0) / 2;
-    const centerY = arrowLike ? (primitive.y + y2) / 2 : primitive.y + (primitive.height ?? 0) / 2;
-    const nearestText = textPrimitives
-      .map((candidate) => ({
-        candidate,
-        distance: Math.hypot(candidate.x - centerX, candidate.y - centerY),
-      }))
-      .sort((left, right) => left.distance - right.distance)[0];
-    return {
-      id: `generated-motion-${String(index + 1)}`,
-      shape: circular ? ("circle" as const) : arrowLike ? ("arrow" as const) : ("rect" as const),
-      x: clampNumber(centerX, 50, 950),
-      y: clampNumber(centerY, 50, 950),
-      width: circular
-        ? clampNumber(radius * 2, 24, 180)
-        : arrowLike
-          ? clampNumber(Math.hypot(x2 - primitive.x, y2 - primitive.y), 90, 320)
-          : clampNumber(primitive.width ?? 180, 70, 300),
-      height: circular
-        ? clampNumber(radius * 2, 24, 180)
-        : arrowLike
-          ? 8
-          : clampNumber(primitive.height ?? 90, 35, 180),
-      color: colors[index % colors.length] ?? "#65dcff",
-      ...(nearestText?.candidate.text
-        ? { label: nearestText.candidate.text.trim().slice(0, 54) }
-        : {}),
-    };
-  });
-  const derivedEntities =
-    entities.length > 0
-      ? entities
-      : plan.steps.slice(0, 4).map((step, index, steps) => ({
-          id: `generated-step-${String(index + 1)}`,
-          shape: "rect" as const,
-          x: ((index + 1) / (steps.length + 1)) * 800 + 100,
-          y: 500,
-          width: 190,
-          height: 105,
-          color: colors[index % colors.length] ?? "#65dcff",
-          label: step.title.slice(0, 54),
-        }));
+function motionDesignFromGeneratedPlan(plan: LessonPlan, question: string): MotionDesignSpec {
+  const usedIds = new Set([
+    ...plan.primitives.map((item) => item.id),
+    ...plan.steps.map((item) => item.id),
+    ...plan.controls.map((item) => item.id),
+    ...plan.claims.map((item) => item.id),
+    ...plan.citations.map((item) => item.id),
+  ]);
+  const firstStep = plan.steps[0];
+  const sourceSteps =
+    plan.steps.length >= 2
+      ? plan.steps.slice(0, 6)
+      : firstStep
+        ? [
+            firstStep,
+            {
+              ...firstStep,
+              title: plan.summary.slice(0, 120),
+              narration: plan.summary,
+            },
+          ]
+        : [];
+  const accents = ["cyan", "amber", "violet", "mint", "coral"] as const;
+  const visuals = ["diagram", "kinetic-text", "card", "stat", "quote"] as const;
+  const transitions = ["draw", "slide", "wipe", "scale", "fade"] as const;
+
   return {
-    kind: "custom",
-    durationSeconds: 6,
-    entities: derivedEntities,
-    motions: derivedEntities.map((entity, index) => ({
-      entityId: entity.id,
-      kind: entity.shape === "circle" ? ("pulse" as const) : ("oscillate-x" as const),
-      amplitude: entity.shape === "circle" ? 14 : 18 + index * 3,
-      frequency: 0.45 + index * 0.08,
-      phase: index * 0.7,
+    kind: "motion-design",
+    title: plan.title.slice(0, 100),
+    layout: inferMotionDesignLayout(question, plan),
+    beats: sourceSteps.map((step, index) => ({
+      id: reserveId(undefined, "motion-beat", index, usedIds),
+      stepId: step.id,
+      marker: String(index + 1).padStart(2, "0"),
+      heading: step.title.slice(0, 90),
+      caption: step.narration.slice(0, 180),
+      accent: accents[index % accents.length] ?? "cyan",
+      visual: visuals[index % visuals.length] ?? "card",
+      transition: transitions[index % transitions.length] ?? "fade",
+      durationMs: Math.round(clampNumber(step.durationMs, 500, 4_500)),
     })),
   };
+}
+
+function inferMotionDesignLayout(question: string, plan: LessonPlan): MotionDesignLayout {
+  const text = `${question} ${plan.title} ${plan.concept}`.toLowerCase();
+  if (/\b(?:compare|comparison|contrast|versus|vs\.?)\b/.test(text)) return "compare";
+  if (/\b(?:timeline|history|historical|chronolog|era|year|date)\b/.test(text)) return "timeline";
+  if (/\b(?:cause|effect|consequence|because|why)\b/.test(text)) return "cause-effect";
+  if (/\b(?:quote|passage|poem|literature|reading)\b/.test(text)) return "quote";
+  if (/\b(?:focus|spotlight|key point|important)\b/.test(text)) return "spotlight";
+  if (/\b(?:process|how|workflow|cycle)\b/.test(text)) return "process";
+  return "sequence";
 }
 
 /**
@@ -1610,8 +1597,6 @@ export function createGroundedFallbackPlan(
   const noteX = noteOnRight ? 690 : 55;
   const noteY = focusCenter.y > 360 ? 110 : 760;
   const compactQuestion = request.question.replace(/\s+/g, " ").trim().slice(0, 90);
-  const requestedSimulation = requestedSimulationKind(request.question);
-  const simulation = requestedSimulation ? fallbackSimulation(requestedSimulation) : undefined;
   const title = compactQuestion
     ? `Visual lesson interrupted: ${compactQuestion}`.slice(0, 120)
     : "Visual lesson interrupted";
@@ -1621,8 +1606,8 @@ export function createGroundedFallbackPlan(
     title,
     concept: (compactQuestion || "Selected screen evidence").slice(0, 120),
     summary: "The provider response ended before ShowME could safely render the complete tutorial.",
-    teachingMode: simulation ? "interactive-experiment" : "diagram-annotation",
-    confidence: simulation ? "verified-module" : "exploratory",
+    teachingMode: "diagram-annotation",
+    confidence: "exploratory",
     uncertainty: failureDetail.replace(/\s+/g, " ").slice(0, 500),
     sourceDescription: "The learner's selected screen region",
     narration:
@@ -1657,7 +1642,6 @@ export function createGroundedFallbackPlan(
       },
     ],
     controls: [],
-    ...(simulation ? { simulation } : {}),
     claims: [],
     citations: [],
     followUps: ["Try this explanation again", "Explain only the highlighted part"],
@@ -1695,83 +1679,6 @@ function fallbackFocusBounds(context: PreparedContext): {
   const width = Math.round(rawWidth);
   const height = Math.round(rawHeight);
   return { x, y, width, height };
-}
-
-function fallbackSimulation(kind: RequestedSimulationKind): LessonPlan["simulation"] {
-  if (kind === "projectile") {
-    return {
-      kind,
-      gravity: 9.81,
-      speed: 24,
-      angleDegrees: 48,
-      initialHeight: 0,
-      dragCoefficient: 0,
-    };
-  }
-  if (kind === "trigonometry") {
-    return { kind, function: "sin", amplitude: 1, frequency: 1, phase: 0, angleDegrees: 45 };
-  }
-  if (kind === "wave") {
-    return { kind, amplitude: 1, frequency: 1, wavelength: 4, phase: 0 };
-  }
-  if (kind === "circuit") return { kind, voltage: 9, resistance: 100, capacitance: 0 };
-  if (kind === "orbit") {
-    return {
-      kind,
-      gravitationalParameter: 3.986004418e14,
-      planetRadius: 6_371_000,
-      initialAltitude: 400_000,
-      initialVelocity: 7_670,
-      timeScale: 30,
-      showTrail: true,
-    };
-  }
-  if (kind === "function-graph") {
-    return { kind, expression: "quadratic", a: 1, b: 0, c: 0, xMin: -5, xMax: 5 };
-  }
-  if (kind === "event-loop") {
-    return {
-      kind,
-      source:
-        "console.log('Start'); Promise.resolve().then(() => console.log('Micro')); setTimeout(() => console.log('Task'), 0);",
-      trace: [
-        { id: "fallback-script", phase: "script", action: "execute", label: "Run script", line: 1 },
-        {
-          id: "fallback-micro",
-          phase: "microtask",
-          action: "dequeue",
-          label: "Run Promise",
-          value: "Micro",
-        },
-        {
-          id: "fallback-task",
-          phase: "task",
-          action: "dequeue",
-          label: "Run timer",
-          value: "Task",
-        },
-      ],
-    };
-  }
-  return {
-    kind: "custom",
-    durationSeconds: 4,
-    entities: [
-      {
-        id: "fallback-entity",
-        shape: "circle",
-        x: 50,
-        y: 50,
-        width: 12,
-        height: 12,
-        color: "cyan",
-        label: "Focus",
-      },
-    ],
-    motions: [
-      { entityId: "fallback-entity", kind: "pulse", amplitude: 0.2, frequency: 1, phase: 0 },
-    ],
-  };
 }
 
 function clampNumber(value: number, minimum: number, maximum: number): number {
@@ -2036,6 +1943,7 @@ export function normalizeModelLessonDraft(value: Record<string, unknown>): Recor
     "transferCheck",
     "controls",
     "simulation",
+    "motion",
     "claims",
     "citations",
     "followUps",
@@ -2185,16 +2093,18 @@ export function normalizeModelLessonDraft(value: Record<string, unknown>): Recor
     }
   }
 
-  const simulation = normalizeSimulation(draft.simulation);
+  let simulation = normalizeSimulation(draft.simulation);
+  let motion = normalizeMotionDesign(draft.motion, stepIdMap, steps, usedIds);
+  if (!motion && simulation?.kind === "motion-scene") {
+    motion = normalizeLegacyMotionScene(simulation, steps, usedIds);
+    simulation = undefined;
+  }
+  if (motion) draft.motion = motion;
+  else delete draft.motion;
   if (simulation) draft.simulation = simulation;
-  else {
-    delete draft.simulation;
-    reconcileSpatialStepReferences(primitives, steps);
-  }
+  else delete draft.simulation;
+  if (!simulation && !motion) reconcileSpatialStepReferences(primitives, steps);
   if (!simulation && draft.confidence === "verified-module") draft.confidence = "exploratory";
-  if (simulation?.kind === "motion-scene" && draft.confidence === "verified-module") {
-    draft.confidence = "exploratory";
-  }
 
   const bindings = simulation ? SIMULATION_BINDINGS[String(simulation.kind)] : undefined;
   const controls: Record<string, unknown>[] = [];
@@ -2289,9 +2199,7 @@ function ensureRelationshipPrimitive(
   ) {
     return;
   }
-  const focus = primitives.find((primitive) =>
-    FOCUS_PRIMITIVE_KINDS.has(String(primitive.kind)),
-  );
+  const focus = primitives.find((primitive) => FOCUS_PRIMITIVE_KINDS.has(String(primitive.kind)));
   if (!focus) return;
   const focusCenter = normalizedPrimitiveCenter(focus);
   const note = primitives
@@ -2307,13 +2215,9 @@ function ensureRelationshipPrimitive(
   let startY = note.center.y;
   if (Math.hypot(startX - focusCenter.x, startY - focusCenter.y) < 48) {
     startX =
-      focusCenter.x > 500
-        ? Math.max(0, focusCenter.x - 150)
-        : Math.min(1_000, focusCenter.x + 150);
+      focusCenter.x > 500 ? Math.max(0, focusCenter.x - 150) : Math.min(1_000, focusCenter.x + 150);
     startY =
-      focusCenter.y > 220
-        ? Math.max(0, focusCenter.y - 110)
-        : Math.min(1_000, focusCenter.y + 110);
+      focusCenter.y > 220 ? Math.max(0, focusCenter.y - 110) : Math.min(1_000, focusCenter.y + 110);
   }
   const id = reserveId(undefined, "relationship", primitives.length, usedIds);
   primitives.push({
@@ -2395,6 +2299,104 @@ function reconcileSpatialStepReferences(
     const preferred = preferredIds[Math.min(index, preferredIds.length - 1)];
     if (preferred && !step.primitiveIds.includes(preferred)) step.primitiveIds.push(preferred);
   }
+}
+
+function normalizeMotionDesign(
+  value: unknown,
+  stepIdMap: ReadonlyMap<string, string>,
+  steps: Record<string, unknown>[],
+  usedIds: Set<string>,
+): Record<string, unknown> | undefined {
+  const input = asRecord(value);
+  const kind =
+    input.kind === "motion_design" || input.kind === "motionDesign" ? "motion-design" : input.kind;
+  if (kind !== "motion-design" || steps.length === 0) return undefined;
+
+  const layouts = new Set([
+    "timeline",
+    "cause-effect",
+    "sequence",
+    "compare",
+    "quote",
+    "process",
+    "spotlight",
+  ]);
+  const accents = ["cyan", "amber", "violet", "mint", "coral"] as const;
+  const visuals = ["card", "kinetic-text", "stat", "diagram", "quote"] as const;
+  const transitions = ["draw", "fade", "slide", "scale", "wipe"] as const;
+  const stepIds = new Set(steps.flatMap((step) => (typeof step.id === "string" ? [step.id] : [])));
+  const beats = arrayRecords(input.beats)
+    .slice(0, 6)
+    .flatMap((beat, index) => {
+      const fallbackStep = steps[Math.min(index, steps.length - 1)];
+      const rawStepId = cleanText(beat.stepId, 100);
+      const stepId = rawStepId
+        ? (stepIdMap.get(rawStepId) ?? (stepIds.has(rawStepId) ? rawStepId : undefined))
+        : typeof fallbackStep?.id === "string"
+          ? fallbackStep.id
+          : undefined;
+      const marker = firstText(32, beat.marker, String(index + 1).padStart(2, "0"));
+      const heading = firstText(90, beat.heading, fallbackStep?.title);
+      const caption = firstText(180, beat.caption, fallbackStep?.narration);
+      if (!stepId || !marker || !heading || !caption) return [];
+      const accent = accents.includes(beat.accent as (typeof accents)[number])
+        ? beat.accent
+        : (accents[index % accents.length] ?? "cyan");
+      const visual = visuals.includes(beat.visual as (typeof visuals)[number])
+        ? beat.visual
+        : (visuals[index % visuals.length] ?? "card");
+      const transition = transitions.includes(beat.transition as (typeof transitions)[number])
+        ? beat.transition
+        : (transitions[index % transitions.length] ?? "fade");
+      return [
+        {
+          id: reserveId(cleanText(beat.id, 100), "motion-beat", index, usedIds),
+          stepId,
+          marker,
+          heading,
+          caption,
+          accent,
+          visual,
+          transition,
+          durationMs:
+            boundedNumber(beat.durationMs, 300, 12_000, true) ??
+            boundedNumber(fallbackStep?.durationMs, 300, 12_000, true) ??
+            1_200,
+        },
+      ];
+    });
+  const clean = {
+    kind: "motion-design",
+    title: firstText(100, input.title, "Visual explanation"),
+    layout: layouts.has(String(input.layout)) ? input.layout : "sequence",
+    beats,
+  };
+  const parsed = motionDesignSchema.safeParse(clean);
+  return parsed.success ? parsed.data : undefined;
+}
+
+function normalizeLegacyMotionScene(
+  simulation: Record<string, unknown>,
+  steps: Record<string, unknown>[],
+  usedIds: Set<string>,
+): Record<string, unknown> | undefined {
+  return normalizeMotionDesign(
+    {
+      kind: "motion-design",
+      title: simulation.title,
+      layout: simulation.layout,
+      beats: arrayRecords(simulation.beats).map((beat, index) => ({
+        ...beat,
+        stepId: steps[Math.min(index, steps.length - 1)]?.id,
+        visual: index === 0 ? "kinetic-text" : "card",
+        transition: index === 0 ? "draw" : "slide",
+        durationMs: steps[Math.min(index, steps.length - 1)]?.durationMs,
+      })),
+    },
+    new Map(),
+    steps,
+    usedIds,
+  );
 }
 
 function normalizeSimulation(value: unknown): Record<string, unknown> | undefined {
@@ -2689,6 +2691,46 @@ function repairLinearPrimitiveEndpoint(
     if (endX < 0 || endX > 1_000 || endY < 0 || endY > 1_000) {
       endX = originX - deltaX;
       endY = originY - deltaY;
+    }
+  }
+
+  deltaX = endX - originX;
+  deltaY = endY - originY;
+  const repairedDistance = Math.hypot(deltaX, deltaY);
+  const kind = String(target.kind ?? "");
+  if (kind !== "curved-arrow" && repairedDistance >= 5) {
+    const semanticHint =
+      `${idHint ?? ""} ${cleanText(source.text, 120) ?? ""} ${cleanText(source.sourceRegionId, 100) ?? ""}`.toLowerCase();
+    const verticalHint =
+      /(?:^|[\s_-])(?:vertical|y-axis|y component|height|altitude|upright)(?:$|[\s_-])/.test(
+        semanticHint,
+      );
+    const horizontalHint =
+      /(?:^|[\s_-])(?:horizontal|x-axis|x component|top edge|bottom edge|upper edge|lower edge|base line|baseline)(?:$|[\s_-])/.test(
+        semanticHint,
+      );
+    const semanticGeometryKind = ["line", "vector", "axis"].includes(kind);
+    const nearHorizontal =
+      Math.abs(deltaX) >= 24 && Math.abs(deltaY) <= Math.max(8, Math.abs(deltaX) * 0.08);
+    const nearVertical =
+      Math.abs(deltaY) >= 24 && Math.abs(deltaX) <= Math.max(8, Math.abs(deltaY) * 0.08);
+
+    if (semanticGeometryKind && verticalHint !== horizontalHint) {
+      if (verticalHint) {
+        const direction =
+          Math.abs(deltaY) > 2 ? Math.sign(deltaY) : 1_000 - originY >= originY ? 1 : -1;
+        endX = originX;
+        endY = originY + direction * repairedDistance;
+      } else {
+        const direction =
+          Math.abs(deltaX) > 2 ? Math.sign(deltaX) : 1_000 - originX >= originX ? 1 : -1;
+        endX = originX + direction * repairedDistance;
+        endY = originY;
+      }
+    } else if (nearHorizontal && !nearVertical) {
+      endY = originY;
+    } else if (nearVertical && !nearHorizontal) {
+      endX = originX;
     }
   }
 

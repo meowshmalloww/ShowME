@@ -43,7 +43,6 @@ export function Launcher() {
   const [, setRecording] = useState(false);
   const [, setTranscribing] = useState(false);
   const [voiceLevels, setVoiceLevels] = useState(EMPTY_LEVELS);
-  const [wakeLevel, setWakeLevel] = useState(0);
   const [wakeStatus, setWakeStatus] = useState<WakeListenerStatus | null>(null);
   const leaveTimer = useRef<number | null>(null);
   const monitorTimer = useRef<number | null>(null);
@@ -62,6 +61,22 @@ export function Launcher() {
 
   bootstrapRef.current = bootstrap;
   contextRef.current = context;
+
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const applyTheme = (): void => {
+      const preference = bootstrap?.settings.theme ?? "system";
+      document.documentElement.dataset.theme =
+        preference === "system" ? (media.matches ? "dark" : "light") : preference;
+      document.documentElement.classList.toggle(
+        "reduced-motion",
+        bootstrap?.settings.reducedMotion ?? false,
+      );
+    };
+    applyTheme();
+    media.addEventListener("change", applyTheme);
+    return () => media.removeEventListener("change", applyTheme);
+  }, [bootstrap?.settings.reducedMotion, bootstrap?.settings.theme]);
 
   const stopAudioMonitoring = useCallback((): void => {
     if (monitorTimer.current) window.clearTimeout(monitorTimer.current);
@@ -89,8 +104,10 @@ export function Launcher() {
       wakeStream.current = null;
       const context = wakeContext.current;
       wakeContext.current = null;
-      if (context && context.state !== "closed") void context.close();
-      setWakeLevel(0);
+      if (context && context.state !== "closed") {
+        if (preserveStream) audioContext.current = context;
+        else void context.close();
+      }
       if (reportStopped) {
         window.showme.wake.inputState({
           state: "stopped",
@@ -149,7 +166,6 @@ export function Launcher() {
           if (wakeGeneration.current !== generation) return;
           const samples = event.inputBuffer.getChannelData(0);
           const rms = floatRmsLevel(samples);
-          setWakeLevel(Math.min(1, rms * 26));
           if (performance.now() - openedAt < 800 && !utterances.isActive()) {
             noiseFloor = Math.min(noiseFloor, rms);
           }
@@ -215,6 +231,22 @@ export function Launcher() {
     setMode("waiting");
     await window.showme.launcher.setMode("waiting");
     await window.showme.voice.activity("idle");
+  }, []);
+
+  const finishSilentVoiceTurn = useCallback(async (intent: RecordingIntent): Promise<void> => {
+    setError("");
+    setQuestion("");
+    await window.showme.voice.activity("idle");
+    if (intent === "lesson-command") {
+      setMode("waiting");
+      await window.showme.launcher.setMode("waiting");
+      return;
+    }
+    setContext(null);
+    contextRef.current = null;
+    await window.showme.capture.clear();
+    setMode("idle");
+    await window.showme.launcher.setMode("idle");
   }, []);
 
   const submitText = useCallback(
@@ -291,7 +323,10 @@ export function Launcher() {
           ? "audio/webm;codecs=opus"
           : "audio/webm";
         const next = new MediaRecorder(recordingStream, { mimeType: preferred });
-        const nextAudioContext = new AudioContext({ latencyHint: "interactive" });
+        const nextAudioContext =
+          audioContext.current && audioContext.current.state !== "closed"
+            ? audioContext.current
+            : new AudioContext({ latencyHint: "interactive" });
         await nextAudioContext.resume();
         const source = nextAudioContext.createMediaStreamSource(recordingStream);
         const analyser = nextAudioContext.createAnalyser();
@@ -334,13 +369,7 @@ export function Launcher() {
           for (const track of recordingStream.getTracks()) track.stop();
           const blob = new Blob(chunks.current, { type: next.mimeType });
           if (blob.size === 0 || !endpoint.hasHeardSpeech()) {
-            if (intent === "lesson-command") {
-              await finishLessonCommandWithError(
-                "Say “ShowME,” wait for Listening, then speak your answer.",
-              );
-            } else {
-              await finishVoiceWithError("ShowME did not hear a question. Please try again.");
-            }
+            await finishSilentVoiceTurn(intent);
             return;
           }
           setTranscribing(true);
@@ -353,7 +382,10 @@ export function Launcher() {
                 mimeType: next.mimeType,
               })
             ).trim();
-            if (!text) throw new Error("ShowME did not hear any speech. Please try again.");
+            if (!text) {
+              await finishSilentVoiceTurn(intent);
+              return;
+            }
             if (intent === "lesson-command") {
               await window.showme.voice.command(text);
               setMode("waiting");
@@ -374,13 +406,14 @@ export function Launcher() {
           }
         };
         recorder.current = next;
-        next.start(160);
+        next.start(80);
         setRecording(true);
         setMode("listening");
         await window.showme.voice.activity("listening");
         monitor();
       } catch (reason) {
         for (const track of stream?.getTracks() ?? []) track.stop();
+        stopAudioMonitoring();
         if (intent === "lesson-command") {
           await finishLessonCommandWithError(errorMessage(reason));
         } else {
@@ -390,6 +423,7 @@ export function Launcher() {
     },
     [
       finishLessonCommandWithError,
+      finishSilentVoiceTurn,
       finishVoiceWithError,
       stopAudioMonitoring,
       stopWakeInput,
@@ -429,7 +463,6 @@ export function Launcher() {
         setProgress(value);
         setMode("thinking");
       }),
-      window.showme.events.onVoiceLevel(setWakeLevel),
       window.showme.events.onWakeDetected((event) => {
         contextRef.current = event.context;
         setContext(event.context);
@@ -549,13 +582,7 @@ export function Launcher() {
           onClick={reveal}
           onPointerEnter={reveal}
           type="button"
-        >
-          {wakeEnabled ? (
-            <StandbyWave level={wakeLevel} ready={Boolean(listenerReady)} />
-          ) : (
-            <span className="island-grip-mark" />
-          )}
-        </button>
+        />
       </div>
     );
   }
@@ -670,8 +697,18 @@ export function Launcher() {
             <span className="activity-loader" aria-hidden="true">
               <LoaderCircle size={15} />
             </span>
+          ) : mode === "waiting" ? (
+            <button
+              aria-label="End lesson"
+              className="runtime-dismiss-button"
+              onClick={() => void window.showme.lesson.close()}
+              title="End lesson"
+              type="button"
+            >
+              <X size={14} strokeWidth={1.9} />
+            </button>
           ) : (
-            <span className="runtime-state-dot" aria-hidden="true" />
+            <span className="runtime-state-mark" aria-hidden="true" />
           )}
         </div>
       </div>
@@ -741,23 +778,6 @@ export function Launcher() {
         )}
       </section>
     </div>
-  );
-}
-
-function StandbyWave({ level, ready }: { level: number; ready: boolean }) {
-  const shape = [0.26, 0.42, 0.58, 0.76, 0.92, 0.68, 1, 0.7, 0.9, 0.74, 0.56, 0.4, 0.24];
-  return (
-    <span className={"standby-wave" + (ready ? "" : " listener-error")} aria-hidden="true">
-      {shape.map((weight, index) => (
-        <span
-          key={String(index)}
-          style={{
-            height: Math.max(1, Math.min(7, Math.round(1 + level * 8 * weight))),
-            opacity: 0.42 + level * 0.58,
-          }}
-        />
-      ))}
-    </span>
   );
 }
 

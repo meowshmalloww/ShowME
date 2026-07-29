@@ -168,6 +168,15 @@ export function LessonWindow() {
     [clearBoardTimers],
   );
 
+  const dismissLearningCheck = useCallback((): void => {
+    activeCheckStage.current = undefined;
+    learningCheckRef.current = undefined;
+    checkSubmitting.current = false;
+    setLearningCheck(undefined);
+    stopPlayback(false);
+    fadeAndCloseBoard(bootstrapRef.current?.settings.reducedMotion ?? false, true);
+  }, [fadeAndCloseBoard, stopPlayback]);
+
   const scheduleBoardRetirement = useCallback(
     (value: LessonPresentation, settings: AppSettings): void => {
       clearBoardTimers();
@@ -208,7 +217,7 @@ export function LessonWindow() {
         for (let attempt = 0; attempt < 2; attempt += 1) {
           if (signal.aborted || version !== narrationVersion.current) return;
           synthesis.cancel();
-          await delayWithSignal(attempt === 0 ? 45 : 140, signal);
+          if (attempt > 0) await delayWithSignal(100, signal);
           const utterance = new SpeechSynthesisUtterance(chunk);
           utterance.lang = settings.language;
           utterance.rate = rate;
@@ -359,12 +368,23 @@ export function LessonWindow() {
       const controller = new AbortController();
       narrationController.current = controller;
       const steps = value.plan.steps.slice(startIndex);
-      const segments = steps.length
-        ? steps.map((lessonStep) => lessonStep.narration)
-        : [value.plan.narration];
       let cloudAvailable = settings.voiceOutputProvider !== "system";
+      const segments = steps.length
+        ? steps.flatMap((lessonStep, stepOffset) => {
+            const speech = cloudAvailable
+              ? splitSpokenText(lessonStep.narration, 190)
+              : [lessonStep.narration];
+            return (speech.length ? speech : [lessonStep.narration]).map((text) => ({
+              text,
+              stepOffset,
+            }));
+          })
+        : (cloudAvailable
+            ? splitSpokenText(value.plan.narration, 190)
+            : [value.plan.narration]
+          ).map((text) => ({ text, stepOffset: 0 }));
       let preparedCloud = cloudAvailable
-        ? prepareCloudSpeech(segments[0] ?? value.plan.narration)
+        ? prepareCloudSpeech(segments[0]?.text ?? value.plan.narration)
         : undefined;
       let waitingForCheck = false;
       await window.showme.launcher.setMode("teaching");
@@ -375,10 +395,11 @@ export function LessonWindow() {
           const prepared = preparedCloud ? await preparedCloud : undefined;
           preparedCloud =
             cloudAvailable && index + 1 < segments.length
-              ? prepareCloudSpeech(segments[index + 1] ?? value.plan.narration)
+              ? prepareCloudSpeech(segments[index + 1]?.text ?? value.plan.narration)
               : undefined;
-          setStep(startIndex + index);
-          currentNarration.current = segments[index] || value.plan.narration;
+          const segment = segments[index] ?? { text: value.plan.narration, stepOffset: 0 };
+          setStep(startIndex + segment.stepOffset);
+          currentNarration.current = segment.text || value.plan.narration;
           await waitForWhiteboardPaint(settings.reducedMotion);
           const usedCloud = await speakSegment(
             currentNarration.current,
@@ -858,7 +879,11 @@ export function LessonWindow() {
 
   useEffect(() => {
     let cancelled = false;
-    if (!presentation?.request.allowImageAids || presentation.plan.simulation) {
+    if (
+      !presentation?.request.allowImageAids ||
+      presentation.plan.simulation ||
+      presentation.plan.motion
+    ) {
       setImageAsset(undefined);
       return;
     }
@@ -874,6 +899,7 @@ export function LessonWindow() {
   }, [
     presentation?.plan.concept,
     presentation?.plan.simulation,
+    presentation?.plan.motion,
     presentation?.plan.title,
     presentation?.request.allowImageAids,
   ]);
@@ -888,6 +914,7 @@ export function LessonWindow() {
       historyMode={historyMode}
       pinnedPrimitiveIds={pinnedPrimitiveIds}
       onPointAnswer={(point) => void submitActiveCheck({ point })}
+      onDismissLearningCheck={dismissLearningCheck}
       {...(inkMode
         ? {
             inkBusy,

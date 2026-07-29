@@ -107,7 +107,7 @@ export const appSettingsSchema = z
     noiseSuppression: z.boolean(),
     autoGainControl: z.boolean(),
     wakeSensitivity: z.number().finite().min(0.55).max(0.9),
-    voiceSilenceMs: z.number().int().min(800).max(2500),
+    voiceSilenceMs: z.number().int().min(500).max(2500),
     voiceMaxSeconds: z.number().int().min(10).max(90),
     systemVoice: z.string().min(1).max(500),
     deepgramVoice: z
@@ -199,9 +199,7 @@ export const primitiveSchema = z
         visualIssue(`${primitive.kind} ${primitive.id} must stay inside the 0-1000 source canvas`);
       }
     }
-    if (
-      ["line", "arrow", "curved-arrow", "vector", "axis", "underline"].includes(primitive.kind)
-    ) {
+    if (["line", "arrow", "curved-arrow", "vector", "axis", "underline"].includes(primitive.kind)) {
       if (primitive.x2 === undefined || primitive.y2 === undefined) {
         visualIssue(`${primitive.kind} ${primitive.id} requires an exact x2 and y2 destination`);
       } else if (Math.hypot(primitive.x2 - primitive.x, primitive.y2 - primitive.y) < 5) {
@@ -331,6 +329,37 @@ const motionSceneSchema = z
     title: z.string().min(1).max(100),
     layout: z.enum(["timeline", "cause-effect", "sequence", "compare", "quote"]),
     beats: z.array(motionSceneBeatSchema).min(2).max(6),
+  })
+  .strict();
+
+export const motionDesignBeatSchema = z
+  .object({
+    id,
+    stepId: id,
+    marker: z.string().min(1).max(32),
+    heading: z.string().min(1).max(90),
+    caption: z.string().min(1).max(180),
+    accent: z.enum(["cyan", "amber", "violet", "mint", "coral"]),
+    visual: z.enum(["card", "kinetic-text", "stat", "diagram", "quote"]),
+    transition: z.enum(["draw", "fade", "slide", "scale", "wipe"]),
+    durationMs: z.number().int().min(300).max(12_000),
+  })
+  .strict();
+
+export const motionDesignSchema = z
+  .object({
+    kind: z.literal("motion-design"),
+    title: z.string().min(1).max(100),
+    layout: z.enum([
+      "timeline",
+      "cause-effect",
+      "sequence",
+      "compare",
+      "quote",
+      "process",
+      "spotlight",
+    ]),
+    beats: z.array(motionDesignBeatSchema).min(2).max(6),
   })
   .strict();
 
@@ -530,6 +559,7 @@ export const lessonPlanSchema = z
     transferCheck: learningCheckSchema.optional(),
     controls: z.array(controlSchema).max(12),
     simulation: simulationSchema.optional(),
+    motion: motionDesignSchema.optional(),
     claims: z
       .array(
         z
@@ -569,6 +599,14 @@ export const lessonPlanSchema = z
     const primitiveIds = new Set(plan.primitives.map((item) => item.id));
     const stepIds = new Set(plan.steps.map((item) => item.id));
     const citationIds = new Set(plan.citations.map((item) => item.id));
+    for (const beat of plan.motion?.beats ?? []) {
+      if (!stepIds.has(beat.stepId)) {
+        context.addIssue({
+          code: "custom",
+          message: "Motion beat " + beat.id + " references unknown step " + beat.stepId,
+        });
+      }
+    }
     for (const choice of plan.diagnosticProbe?.choices ?? []) {
       if (!stepIds.has(choice.focusStepId)) {
         context.addIssue({
@@ -597,6 +635,7 @@ export const lessonPlanSchema = z
     const allIds = [
       ...plan.primitives.map((item) => item.id),
       ...plan.steps.map((item) => item.id),
+      ...(plan.motion?.beats.map((item) => item.id) ?? []),
       ...plan.controls.map((item) => item.id),
       ...plan.claims.map((item) => item.id),
       ...plan.citations.map((item) => item.id),
@@ -625,7 +664,8 @@ export const lessonPlanSchema = z
     // narration advances. Requiring three different spatially-backed steps rejected
     // otherwise complete provider output. Two visual beats plus the focus/relationship
     // checks below distinguish a lesson from text-only output without redundant marks.
-    const requiredSpatialSteps = plan.simulation ? 0 : Math.min(2, plan.steps.length);
+    const requiredSpatialSteps =
+      plan.simulation || plan.motion ? 0 : Math.min(2, plan.steps.length);
     if (spatialStepCount < requiredSpatialSteps) {
       context.addIssue({
         code: "custom",
@@ -635,7 +675,7 @@ export const lessonPlanSchema = z
           " lesson step(s) must introduce a renderable shape, focus mark, or connector",
       });
     }
-    if (plan.steps.length >= 2 && !plan.simulation) {
+    if (plan.steps.length >= 2 && !plan.simulation && !plan.motion) {
       if (!spatialPrimitives.some((primitive) => focusPrimitiveKinds.has(primitive.kind))) {
         context.addIssue({
           code: "custom",

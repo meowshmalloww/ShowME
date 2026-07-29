@@ -210,6 +210,56 @@ describe("desktop whiteboard projection", () => {
     expect(html).not.toContain("whiteboard-simulation sim-projectile aid-right");
   });
 
+  it("renders narration-synchronized motion design as a side whiteboard aid", () => {
+    const firstStep = plan.steps[0];
+    if (!firstStep) throw new Error("Whiteboard fixture requires one lesson step");
+    const motionPlan: LessonPlan = {
+      ...plan,
+      motion: {
+        kind: "motion-design",
+        title: "Tangent in two beats",
+        layout: "process",
+        beats: [
+          {
+            id: "motion-1",
+            stepId: firstStep.id,
+            marker: "01",
+            heading: "Choose tangent",
+            caption: "Use opposite over adjacent.",
+            accent: "cyan",
+            visual: "diagram",
+            transition: "draw",
+            durationMs: 800,
+          },
+          {
+            id: "motion-2",
+            stepId: firstStep.id,
+            marker: "02",
+            heading: "Substitute",
+            caption: "Insert the visible side lengths.",
+            accent: "amber",
+            visual: "kinetic-text",
+            transition: "wipe",
+            durationMs: 900,
+          },
+        ],
+      },
+    };
+    const html = renderToStaticMarkup(
+      createElement(WhiteboardCanvas, {
+        plan: motionPlan,
+        stepIndex: 0,
+        reducedMotion: true,
+        contextGeometry: geometry,
+      }),
+    );
+
+    expect(html).toContain("whiteboard-motion-design");
+    expect(html).toContain("motion-design-graphic layout-process");
+    expect(html).toContain("Tangent in two beats");
+    expect(html).not.toContain("sim-motion-scene");
+  });
+
   it("adds a compact text-only contrast surface over bright screen pixels", () => {
     const firstStep = plan.steps[0];
     if (!firstStep) throw new Error("Whiteboard fixture requires one lesson step");
@@ -315,11 +365,14 @@ describe("desktop whiteboard projection", () => {
           choices: ["11.9", "10"],
           attemptCount: 0,
         },
+        onDismissLearningCheck: () => undefined,
       }),
     );
 
     expect(html).toContain("whiteboard-learning-check whiteboard-hand-note check-awaiting");
     expect(html).toContain("Which side is opposite theta?");
+    expect(html).toContain("End lesson without answering");
+    expect(html).toContain(">End<");
     expect(html).toContain("Say “ShowME, my answer is …”");
     expect(html).toContain("wait for Listening");
     expect(html.match(/teaching-cursor-pointer/g)).toHaveLength(1);

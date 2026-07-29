@@ -27,8 +27,8 @@ describe("local narration voice selection", () => {
 });
 
 describe("voice question endpointing", () => {
-  it("finishes promptly after a real utterance and a 1.2 second pause", () => {
-    const endpoint = new VoiceEndpointDetector(1_200, 45_000);
+  it("finishes promptly after a real utterance and a conversational pause", () => {
+    const endpoint = new VoiceEndpointDetector(650, 45_000);
     let now = 0;
     for (let frame = 0; frame < 12; frame += 1) {
       expect(endpoint.push(0.08, now)).toBe("continue");
@@ -41,11 +41,11 @@ describe("voice question endpointing", () => {
       decision = endpoint.push(0.004, now);
     }
     expect(decision).toBe("finish-silence");
-    expect(now).toBeLessThan(1_700);
+    expect(now).toBeLessThan(1_100);
   });
 
   it("does not let steady room noise keep the recorder open", () => {
-    const endpoint = new VoiceEndpointDetector(1_200, 45_000);
+    const endpoint = new VoiceEndpointDetector(650, 45_000);
     let now = 0;
     for (let frame = 0; frame < 10; frame += 1) {
       endpoint.push(0.08, now);
@@ -57,37 +57,37 @@ describe("voice question endpointing", () => {
       decision = endpoint.push(0.02, now);
     }
     expect(decision).toBe("finish-silence");
-    expect(now).toBeLessThan(1_900);
+    expect(now).toBeLessThan(1_350);
   });
 
   it("allows a short natural pause and waits longer for initial speech", () => {
-    const endpoint = new VoiceEndpointDetector(1_200, 45_000);
+    const endpoint = new VoiceEndpointDetector(650, 45_000);
     expect(endpoint.push(0, 0)).toBe("continue");
     expect(endpoint.push(0, 1_500)).toBe("continue");
     for (const now of [1_600, 1_632, 1_664, 1_696]) endpoint.push(0.07, now);
     expect(endpoint.hasHeardSpeech()).toBe(true);
-    expect(endpoint.push(0.003, 2_500)).toBe("continue");
-    expect(endpoint.push(0.07, 2_600)).toBe("continue");
-    expect(endpoint.push(0.003, 3_700)).toBe("continue");
-    expect(endpoint.push(0.003, 3_801)).toBe("finish-silence");
+    expect(endpoint.push(0.003, 2_200)).toBe("continue");
+    expect(endpoint.push(0.07, 2_250)).toBe("continue");
+    expect(endpoint.push(0.003, 2_850)).toBe("continue");
+    expect(endpoint.push(0.003, 2_901)).toBe("finish-silence");
   });
 
   it("stops an empty recording after the separate no-speech timeout", () => {
-    const endpoint = new VoiceEndpointDetector(1_200, 45_000);
+    const endpoint = new VoiceEndpointDetector(650, 45_000);
     expect(endpoint.push(0.003, 0)).toBe("continue");
-    expect(endpoint.push(0.003, 3_999)).toBe("continue");
-    expect(endpoint.push(0.003, 4_000)).toBe("finish-no-speech");
+    expect(endpoint.push(0.003, 2_999)).toBe("continue");
+    expect(endpoint.push(0.003, 3_000)).toBe("finish-no-speech");
     expect(endpoint.hasHeardSpeech()).toBe(false);
   });
 
   it("accepts quiet AirPods speech at the same floor used by wake listening", () => {
-    const endpoint = new VoiceEndpointDetector(1_200, 45_000);
+    const endpoint = new VoiceEndpointDetector(650, 45_000);
     for (const now of [0, 32, 64, 96]) endpoint.push(0.007, now);
     expect(endpoint.hasHeardSpeech()).toBe(true);
   });
 
   it("does not classify steady energy below the calibrated floor as speech", () => {
-    const endpoint = new VoiceEndpointDetector(1_200, 45_000);
+    const endpoint = new VoiceEndpointDetector(650, 45_000);
     for (let now = 0; now <= 3_500; now += 32) endpoint.push(0.005, now);
     expect(endpoint.hasHeardSpeech()).toBe(false);
   });

@@ -33,7 +33,7 @@ export class VoiceEndpointDetector {
   constructor(
     private readonly silenceMs: number,
     private readonly maxDurationMs: number,
-    noSpeechMs = Math.max(4_000, silenceMs * 2),
+    noSpeechMs = Math.max(3_000, silenceMs * 3),
   ) {
     this.noSpeechMs = noSpeechMs;
   }

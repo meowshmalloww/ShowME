@@ -56,7 +56,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   noiseSuppression: true,
   autoGainControl: true,
   wakeSensitivity: 0.6,
-  voiceSilenceMs: 1200,
+  voiceSilenceMs: 650,
   voiceMaxSeconds: 45,
   systemVoice: "default",
   deepgramVoice: "aura-2-helena-en",

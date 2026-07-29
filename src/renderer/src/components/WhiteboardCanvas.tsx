@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { type CSSProperties, type PointerEvent, useEffect, useMemo, useState } from "react";
 import rough from "roughjs";
 import type {
@@ -8,7 +9,7 @@ import type {
   ScreenContrastMap,
   WhiteboardInkContext,
 } from "../../../shared/types";
-import { SimulationGraphic } from "./LessonCanvas";
+import { MotionDesignGraphic, SimulationGraphic } from "./LessonCanvas";
 import { WhiteboardInkLayer } from "./WhiteboardInkLayer";
 
 interface Viewport {
@@ -95,6 +96,7 @@ export function WhiteboardCanvas({
   historyMode = "context",
   pinnedPrimitiveIds = [],
   onPointAnswer,
+  onDismissLearningCheck,
   inkSessionId,
   inkBusy = false,
   onInkAsk,
@@ -117,6 +119,7 @@ export function WhiteboardCanvas({
   historyMode?: "current" | "context";
   pinnedPrimitiveIds?: string[];
   onPointAnswer?: (point: { x: number; y: number }) => void;
+  onDismissLearningCheck?: () => void;
   inkSessionId?: string;
   inkBusy?: boolean;
   onInkAsk?: (ink: WhiteboardInkContext) => Promise<void>;
@@ -181,8 +184,14 @@ export function WhiteboardCanvas({
     () =>
       simulationHost
         ? []
-        : whiteboardAidObstacles(viewport, aidOnLeft, plan.simulation?.kind, Boolean(imageAsset)),
-    [aidOnLeft, imageAsset, plan.simulation, simulationHost, viewport],
+        : whiteboardAidObstacles(
+            viewport,
+            aidOnLeft,
+            plan.simulation?.kind,
+            Boolean(plan.motion),
+            Boolean(imageAsset),
+          ),
+    [aidOnLeft, imageAsset, plan.motion, plan.simulation, simulationHost, viewport],
   );
   const simulationStyle = useMemo(
     () => (simulationHost ? groundedSimulationStyle(simulationHost, source) : undefined),
@@ -207,7 +216,18 @@ export function WhiteboardCanvas({
   );
 
   const handlePoint = (event: PointerEvent<HTMLElement>): void => {
-    if (!pointMode || !onPointAnswer) return;
+    if (!pointMode || !onPointAnswer) {
+      const target = event.target;
+      if (
+        learningCheck &&
+        onDismissLearningCheck &&
+        target instanceof Element &&
+        !target.closest(".whiteboard-learning-check")
+      ) {
+        onDismissLearningCheck();
+      }
+      return;
+    }
     const x = ((event.clientX - source.left) / Math.max(1, source.width)) * 1000;
     const y = ((event.clientY - source.top) / Math.max(1, source.height)) * 1000;
     if (x < 0 || x > 1000 || y < 0 || y > 1000) return;
@@ -324,7 +344,19 @@ export function WhiteboardCanvas({
         />
       ) : null}
 
-      {plan.simulation ? (
+      {plan.motion ? (
+        <section
+          className={`whiteboard-motion-design ${aidOnLeft ? "aid-left" : "aid-right"}`}
+          aria-label="Narration-synchronized motion design"
+        >
+          <MotionDesignGraphic
+            motion={plan.motion}
+            steps={plan.steps}
+            stepIndex={stepIndex}
+            reducedMotion={reducedMotion}
+          />
+        </section>
+      ) : plan.simulation ? (
         <section
           className={`whiteboard-simulation sim-${plan.simulation.kind} ${
             simulationHost ? "grounded" : aidOnLeft ? "aid-left" : "aid-right"
@@ -350,20 +382,38 @@ export function WhiteboardCanvas({
           }`}
           aria-live="polite"
         >
-          <span className="learning-check-kicker">
-            {learningCheck.phase === "correct"
-              ? learningCheck.stage === "transfer"
-                ? "Transfer observed"
-                : learningCheck.stage === "diagnostic"
-                  ? "Focus selected"
-                  : "Try completed"
-              : learningCheck.phase === "retry"
-                ? "Try once more"
-                : learningCheck.stage === "diagnostic"
-                  ? "Choose a focus"
-                  : learningCheck.stage === "transfer"
-                    ? "Transfer"
-                    : "Try this"}
+          <span className="learning-check-heading">
+            <span className="learning-check-kicker">
+              {learningCheck.phase === "correct"
+                ? learningCheck.stage === "transfer"
+                  ? "Transfer observed"
+                  : learningCheck.stage === "diagnostic"
+                    ? "Focus selected"
+                    : "Try completed"
+                : learningCheck.phase === "retry"
+                  ? "Try once more"
+                  : learningCheck.stage === "diagnostic"
+                    ? "Choose a focus"
+                    : learningCheck.stage === "transfer"
+                      ? "Transfer"
+                      : "Try this"}
+            </span>
+            {onDismissLearningCheck ? (
+              <button
+                aria-label="End lesson without answering"
+                className="learning-check-dismiss"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onDismissLearningCheck();
+                }}
+                onPointerDown={(event) => event.stopPropagation()}
+                title="End lesson"
+                type="button"
+              >
+                <X aria-hidden="true" size={16} strokeWidth={1.8} />
+                <span>End</span>
+              </button>
+            ) : null}
           </span>
           <strong>{learningCheck.prompt}</strong>
           {learningCheck.choices?.length ? (
@@ -1008,26 +1058,31 @@ function whiteboardAidObstacles(
   viewport: Viewport,
   aidOnLeft: boolean,
   simulationKind: NonNullable<LessonPlan["simulation"]>["kind"] | undefined,
+  hasMotionDesign: boolean,
   hasImage: boolean,
 ): LayoutRect[] {
   const hasSimulation = Boolean(simulationKind);
-  if (!hasSimulation && !hasImage) return [];
+  if (!hasSimulation && !hasMotionDesign && !hasImage) return [];
   const compactCustom = simulationKind === "custom";
-  const width = compactCustom
-    ? Math.min(320, Math.max(220, viewport.width * 0.24))
-    : hasSimulation
-      ? Math.min(520, Math.max(280, viewport.width * 0.39))
-      : Math.min(320, Math.max(180, viewport.width * 0.28));
-  const height = compactCustom
-    ? Math.min(320, viewport.height * 0.32)
-    : hasSimulation
-      ? Math.min(480, viewport.height * 0.55)
-      : viewport.height * 0.45;
+  const width = hasMotionDesign
+    ? Math.min(610, Math.max(360, viewport.width * 0.46))
+    : compactCustom
+      ? Math.min(320, Math.max(220, viewport.width * 0.24))
+      : hasSimulation
+        ? Math.min(520, Math.max(280, viewport.width * 0.39))
+        : Math.min(320, Math.max(180, viewport.width * 0.28));
+  const height = hasMotionDesign
+    ? Math.min(500, viewport.height * 0.58)
+    : compactCustom
+      ? Math.min(320, viewport.height * 0.32)
+      : hasSimulation
+        ? Math.min(480, viewport.height * 0.55)
+        : viewport.height * 0.45;
   const side = viewport.width * 0.03;
   const left = aidOnLeft ? side : viewport.width - side - width;
   const top = compactCustom
     ? viewport.height - viewport.height * 0.03 - height
-    : viewport.height * (hasSimulation ? 0.17 : 0.18);
+    : viewport.height * (hasMotionDesign ? 0.12 : hasSimulation ? 0.17 : 0.18);
   return [{ left, top, right: left + width, bottom: top + height }];
 }
 

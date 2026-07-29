@@ -1,7 +1,6 @@
 import {
   Archive,
   ArrowRight,
-  BookOpen,
   BrainCircuit,
   Check,
   ChevronDown,
@@ -557,14 +556,20 @@ function HomeView({
       <header className="page-heading home-heading">
         <div>
           <p className="eyebrow">Screen-aware learning</p>
-          <h1>What should we make clear?</h1>
-          <p>Select something visible and turn the screen itself into the lesson.</p>
+          <h1>What should we figure out together?</h1>
+          <span aria-hidden="true" className="home-handwritten-promise">
+            I&rsquo;ll draw it out.
+          </span>
+          <p>Choose the part that does not make sense. ShowME teaches directly on your screen.</p>
         </div>
       </header>
       <section className="home-primary-action">
+        <span aria-hidden="true" className="home-action-symbol">
+          <MonitorUp size={28} strokeWidth={1.8} />
+        </span>
         <div className="home-primary-copy">
           <p className="eyebrow">New lesson</p>
-          <h2>Choose anything on your screen.</h2>
+          <h2>Choose something on your screen</h2>
           <p>
             Ask naturally. ShowME draws and speaks over the source, then lets you answer with your
             voice, cursor, or handwriting.
@@ -572,39 +577,34 @@ function HomeView({
         </div>
         <div className="home-primary-controls">
           <button className="hero-capture-button" onClick={onCapture} type="button">
-            Choose on screen <ArrowRight size={16} />
+            Choose something on your screen <ArrowRight size={16} />
           </button>
           <span>
             <Mic2 size={14} />
             Say “Show me…”
           </span>
-          <small className={configured.length ? "ready" : "needs-setup"}>
-            {configured.length
-              ? `${configured.length} provider${configured.length === 1 ? "" : "s"} ready`
-              : "Model setup needed"}
-          </small>
         </div>
       </section>
       <ol className="home-method-strip" aria-label="How a ShowME lesson works">
         <li>
-          <span>01</span>
+          <span>1</span>
           <div>
-            <strong>Select</strong>
-            <small>Frame the exact question.</small>
+            <strong>Point</strong>
+            <small>Choose the exact part that is confusing.</small>
           </div>
         </li>
         <li>
-          <span>02</span>
+          <span>2</span>
           <div>
-            <strong>See and hear</strong>
-            <small>Follow the explanation in place.</small>
+            <strong>Watch it unfold</strong>
+            <small>Drawings, motion, and voice explain it together.</small>
           </div>
         </li>
         <li>
-          <span>03</span>
+          <span>3</span>
           <div>
-            <strong>Respond</strong>
-            <small>Answer with voice, cursor, or ink.</small>
+            <strong>Try it</strong>
+            <small>Answer, point, or write directly on the lesson.</small>
           </div>
         </li>
       </ol>
@@ -627,7 +627,7 @@ function HomeView({
           {bootstrap.recentLessons.length ? (
             <div className="home-recent-actions">
               <span>
-                {bootstrap.memorySummary.lessonCount} lessons ·{" "}
+                {bootstrap.memorySummary.lessonCount} lessons &middot;{" "}
                 {bootstrap.memorySummary.memoryCount} ideas revisited
               </span>
               <button onClick={() => window.showme.app.openMain("library")} type="button">
@@ -666,6 +666,7 @@ function LibraryView({
   const [query, setQuery] = useState("");
   const [lessons, setLessons] = useState(initial);
   const [loading, setLoading] = useState(false);
+  const [category, setCategory] = useState("All");
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setLoading(true);
@@ -676,6 +677,9 @@ function LibraryView({
     }, 180);
     return () => window.clearTimeout(timer);
   }, [query]);
+  const categories = Array.from(new Set(lessons.map(lessonCategory))).slice(0, 5);
+  const visibleLessons =
+    category === "All" ? lessons : lessons.filter((lesson) => lessonCategory(lesson) === category);
   return (
     <main className="page library-page">
       <header className="page-heading">
@@ -685,47 +689,44 @@ function LibraryView({
           <p>Search by question, idea, or lesson title.</p>
         </div>
       </header>
-      <div className="library-search">
-        <Search size={18} />
-        <input
-          placeholder="Search your lessons"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
-        {loading ? <Spinner small /> : <span>{lessons.length}</span>}
+      <div className="library-toolbar">
+        <div className="library-search">
+          <Search size={18} />
+          <input
+            aria-label="Search your lessons"
+            placeholder="Search your lessons"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          {loading ? <Spinner small /> : <span>{visibleLessons.length}</span>}
+        </div>
+        <fieldset aria-label="Filter lessons by subject" className="library-filter-row">
+          {["All", ...categories].map((value) => (
+            <button
+              className={category === value ? "active" : ""}
+              key={value}
+              onClick={() => setCategory(value)}
+              type="button"
+            >
+              {value}
+            </button>
+          ))}
+        </fieldset>
       </div>
-      {lessons.length ? (
-        <div className="library-list">
-          {lessons.map((lesson) => (
-            <article className="library-row" key={lesson.id}>
-              <button className="lesson-open-area" onClick={() => onOpen(lesson.id)} type="button">
-                <span className="lesson-type-icon">
-                  <BookOpen size={19} />
-                </span>
-                <span>
-                  <small>{lesson.concept}</small>
-                  <strong title={lesson.title}>{displayLessonTitle(lesson.title)}</strong>
-                  <em>{lesson.question}</em>
-                </span>
-              </button>
-              <span className={"confidence-tag " + lesson.confidence}>
-                {confidenceLabel(lesson.confidence)}
-              </span>
-              <time>{relativeDate(lesson.updatedAt)}</time>
-              <button
-                className="delete-icon"
-                aria-label="Delete lesson"
-                onClick={async () => {
-                  if (!confirm("Delete this lesson from this device?")) return;
-                  await window.showme.memory.deleteLesson(lesson.id);
-                  setLessons((items) => items.filter((item) => item.id !== lesson.id));
-                  onChanged();
-                }}
-                type="button"
-              >
-                <Trash2 size={16} />
-              </button>
-            </article>
+      {visibleLessons.length ? (
+        <div className="library-grid">
+          {visibleLessons.map((lesson) => (
+            <LibraryLessonCard
+              key={lesson.id}
+              lesson={lesson}
+              onDelete={async () => {
+                if (!confirm("Delete this lesson from this device?")) return;
+                await window.showme.memory.deleteLesson(lesson.id);
+                setLessons((items) => items.filter((item) => item.id !== lesson.id));
+                onChanged();
+              }}
+              onOpen={onOpen}
+            />
           ))}
         </div>
       ) : (
@@ -2032,9 +2033,9 @@ function VoiceSettings({
             <input
               className="range-input"
               type="range"
-              min="800"
+              min="500"
               max="2500"
-              step="100"
+              step="50"
               value={draft.voiceSilenceMs}
               onChange={(event) =>
                 setDraft({ ...draft, voiceSilenceMs: Number(event.target.value) })
@@ -2432,11 +2433,11 @@ function SettingsHeader({
 function LessonCard({ lesson, onOpen }: { lesson: LessonReceipt; onOpen: (id: string) => void }) {
   return (
     <button className="lesson-card" onClick={() => onOpen(lesson.id)} type="button">
-      <span className="lesson-card-art" aria-hidden="true">
-        <BookOpen size={22} />
-      </span>
+      <LessonThumbnail lesson={lesson} />
       <span className="lesson-card-body">
-        <small>{lesson.concept}</small>
+        <small>
+          {lessonCategory(lesson)} &middot; {lesson.concept}
+        </small>
         <strong title={lesson.title}>{displayLessonTitle(lesson.title)}</strong>
         <em>{lesson.question}</em>
         <span>
@@ -2454,6 +2455,143 @@ function LessonCard({ lesson, onOpen }: { lesson: LessonReceipt; onOpen: (id: st
     </button>
   );
 }
+
+function LibraryLessonCard({
+  lesson,
+  onDelete,
+  onOpen,
+}: {
+  lesson: LessonReceipt;
+  onDelete: () => Promise<void>;
+  onOpen: (id: string) => void;
+}) {
+  return (
+    <article className="library-card">
+      <button className="library-card-open" onClick={() => onOpen(lesson.id)} type="button">
+        <LessonThumbnail lesson={lesson} />
+        <span className="library-card-body">
+          <small>
+            {lessonCategory(lesson)} &middot; {relativeDate(lesson.updatedAt)}
+          </small>
+          <strong title={lesson.title}>{displayLessonTitle(lesson.title)}</strong>
+          <em>{lesson.question}</em>
+          <span className={`lesson-confidence ${lesson.confidence}`}>
+            {confidenceLabel(lesson.confidence)}
+          </span>
+        </span>
+      </button>
+      <button
+        aria-label={`Delete ${displayLessonTitle(lesson.title)}`}
+        className="library-card-delete"
+        onClick={() => void onDelete()}
+        type="button"
+      >
+        <Trash2 size={15} />
+      </button>
+    </article>
+  );
+}
+
+function LessonThumbnail({ lesson }: { lesson: LessonReceipt }) {
+  const kind = lessonVisualKind(lesson);
+  return (
+    <span aria-hidden="true" className={`lesson-thumbnail ${kind}`}>
+      {kind === "trigonometry" ? (
+        <svg aria-hidden="true" viewBox="0 0 180 112">
+          <path d="M48 91 L48 24 L137 91 Z" />
+          <path className="accent" d="M49 80 L60 80 L60 91" />
+          <text x="35" y="60">
+            12
+          </text>
+          <text x="93" y="66">
+            13
+          </text>
+          <text className="accent-fill" x="119" y="87">
+            θ
+          </text>
+        </svg>
+      ) : kind === "physics" ? (
+        <svg aria-hidden="true" viewBox="0 0 180 112">
+          <path d="M30 90 H154 M36 96 V20" />
+          <path className="accent dashed" d="M38 88 Q90 18 150 88" />
+          <path className="mint" d="M38 88 L72 55 M38 88 H80" />
+          <circle className="accent-fill" cx="92" cy="34" r="4" />
+        </svg>
+      ) : kind === "code" ? (
+        <svg aria-hidden="true" viewBox="0 0 180 112">
+          <rect x="18" y="25" width="43" height="62" rx="5" />
+          <rect className="accent" x="69" y="25" width="43" height="62" rx="5" />
+          <rect x="120" y="25" width="43" height="62" rx="5" />
+          <path className="mint" d="M29 42 H50 M80 42 H101 M131 42 H152" />
+          <path className="accent dashed" d="M52 94 Q90 106 130 94" />
+        </svg>
+      ) : kind === "chemistry" ? (
+        <svg aria-hidden="true" viewBox="0 0 180 112">
+          <path d="M70 25 L111 25 L132 56 L111 88 L70 88 L49 56 Z" />
+          <circle className="accent" cx="90" cy="56" r="22" />
+          <path className="mint" d="M132 56 H155 M49 56 H25" />
+          <text className="accent-fill" x="145" y="50">
+            OH
+          </text>
+        </svg>
+      ) : kind === "history" ? (
+        <svg aria-hidden="true" viewBox="0 0 180 112">
+          <path d="M24 61 H156" />
+          <circle className="amber-fill" cx="43" cy="61" r="7" />
+          <circle className="accent-fill" cx="91" cy="61" r="7" />
+          <circle className="mint-fill" cx="139" cy="61" r="7" />
+          <path className="dashed" d="M43 50 V29 M91 72 V94 M139 50 V29" />
+        </svg>
+      ) : (
+        <svg aria-hidden="true" viewBox="0 0 180 112">
+          <path d="M27 88 H157 M34 94 V19" />
+          <path className="accent" d="M39 80 Q71 22 101 67 T153 36" />
+          <text className="accent-fill formula" x="67" y="27">
+            x² + y²
+          </text>
+        </svg>
+      )}
+    </span>
+  );
+}
+
+function lessonVisualKind(
+  lesson: LessonReceipt,
+): "trigonometry" | "physics" | "code" | "chemistry" | "history" | "general" {
+  const value = `${lesson.concept} ${lesson.title} ${lesson.question}`.toLowerCase();
+  if (/(triangle|trig|angle|sine|cosine|tangent)/.test(value)) return "trigonometry";
+  if (
+    /(history|reading|literature|cause|causal|civilization|war|story|language|timeline|printing press|literacy|public debate)/.test(
+      value,
+    )
+  ) {
+    return "history";
+  }
+  if (/(physics|projectile|velocity|gravity|orbit|wave|circuit|motion)/.test(value)) {
+    return "physics";
+  }
+  if (/(javascript|typescript|code|program|event loop|function|algorithm)/.test(value)) {
+    return "code";
+  }
+  if (/(chem|molecule|benzene|reaction|element|atom)/.test(value)) return "chemistry";
+  return "general";
+}
+
+function lessonCategory(lesson: LessonReceipt): string {
+  const kind = lessonVisualKind(lesson);
+  return kind === "trigonometry"
+    ? "Mathematics"
+    : kind === "physics"
+      ? "Physics"
+      : kind === "code"
+        ? "Coding"
+        : kind === "chemistry"
+          ? "Chemistry"
+          : kind === "history"
+            ? "Humanities"
+            : "General";
+}
+
 async function openLesson(
   id: string,
   notify: (value: { message: string; tone: "error" | "success" | "info" } | null) => void,

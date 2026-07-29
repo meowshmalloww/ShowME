@@ -7,6 +7,7 @@ import {
   extractGeminiResponse,
   extractOpenAiResponse,
   formatValidationFeedback,
+  isMotionDesignRequest,
   motionSceneRequestHint,
   normalizeModelLessonDraft,
   openAiReasoningEffort,
@@ -217,11 +218,17 @@ describe("provider response contracts", () => {
     expect(requestedSimulationKind("Draw an arrow along this trajectory.")).toBeUndefined();
     expect(
       motionSceneRequestHint("Use motion graphics to explain this history timeline."),
-    ).toContain('"kind":"motion-scene"');
+    ).toContain('"kind":"motion-design"');
+    expect(isMotionDesignRequest("Create a code-rendered motion video for this process.")).toBe(
+      true,
+    );
+    expect(
+      requestedSimulationKind("Show an interactive motion-art simulation of this causal chain."),
+    ).toBeUndefined();
     expect(motionSceneRequestHint("Circle the date on this page.")).toBe("");
   });
 
-  it("preserves a valid generated lesson when generic motion art omits its custom module", async () => {
+  it("composes validated motion design from real generated steps when the provider omits it", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(
       new Response(
         JSON.stringify({
@@ -276,11 +283,59 @@ describe("provider response contracts", () => {
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(plan.teachingMode).toBe("interactive-experiment");
-    expect(plan.simulation?.kind).toBe("custom");
-    if (plan.simulation?.kind !== "custom") throw new Error("Expected a custom simulation");
-    expect(plan.simulation.entities).toHaveLength(1);
-    expect(plan.simulation.motions).toHaveLength(1);
+    expect(plan.teachingMode).toBe("visual-intuition");
+    expect(plan.simulation).toBeUndefined();
+    expect(plan.motion?.kind).toBe("motion-design");
+    expect(plan.motion?.beats).toHaveLength(2);
+    expect(plan.motion?.beats.every((beat) => beat.stepId === "step-1")).toBe(true);
+  });
+
+  it("normalizes provider-authored motion beats and preserves their narration links", () => {
+    const normalized = normalizeModelLessonDraft({
+      ...compatiblePlan,
+      steps: [
+        { ...compatiblePlan.steps[0], id: "cause-step", title: "Cause" },
+        { ...compatiblePlan.steps[0], id: "effect-step", title: "Effect" },
+      ],
+      motion: {
+        kind: "motion_design",
+        title: "Cause to effect",
+        layout: "cause-effect",
+        beats: [
+          {
+            id: "cause-beat",
+            stepId: "cause-step",
+            marker: "Cause",
+            heading: "The condition changes",
+            caption: "The first narrated step establishes the cause.",
+            accent: "amber",
+            visual: "diagram",
+            transition: "draw",
+            durationMs: 850,
+          },
+          {
+            id: "effect-beat",
+            stepId: "effect-step",
+            marker: "Effect",
+            heading: "The result follows",
+            caption: "The second narrated step reveals the consequence.",
+            accent: "mint",
+            visual: "kinetic-text",
+            transition: "wipe",
+            durationMs: 950,
+          },
+        ],
+      },
+    });
+    const plan = validateLessonPlan({
+      ...normalized,
+      id: "motion-normalization",
+      provider: { id: "alibaba", model: "qwen3.7-plus" },
+    });
+
+    expect(plan.motion?.beats.map((beat) => beat.stepId)).toEqual(["cause-step", "effect-step"]);
+    expect(plan.motion?.beats[1]?.transition).toBe("wipe");
+    expect(plan.simulation).toBeUndefined();
   });
 
   it("keeps the actual validation error beside the provider finish reason", () => {
@@ -450,7 +505,7 @@ describe("provider response contracts", () => {
     }
   });
 
-  it("builds a validated local fallback that keeps requested simulations usable", () => {
+  it("builds an honest local fallback without inventing a requested simulation", () => {
     const plan = createGroundedFallbackPlan(
       {
         captureId: "capture-fallback",
@@ -488,7 +543,8 @@ describe("provider response contracts", () => {
       },
     );
 
-    expect(plan.simulation?.kind).toBe("projectile");
+    expect(plan.simulation).toBeUndefined();
+    expect(plan.confidence).toBe("exploratory");
     expect(validateLessonPlan(plan).steps).toHaveLength(1);
     expect(plan.primitives.some((primitive) => primitive.kind === "highlight")).toBe(false);
     const fallbackNote = plan.primitives.find((primitive) => primitive.id === "fallback-note");
@@ -857,6 +913,53 @@ describe("provider response contracts", () => {
     ).toBeGreaterThanOrEqual(5);
     expect(arrow?.x2).toBe(arrow?.x);
     expect(arrow?.y2).not.toBe(arrow?.y);
+  });
+
+  it("stabilizes straight screen edges without changing diagonal geometry", () => {
+    const normalized = normalizeModelLessonDraft({
+      ...compatiblePlan,
+      primitives: [
+        { id: "top-edge", kind: "line", x: 120, y: 200, x2: 620, y2: 206 },
+        { id: "side-edge", kind: "line", x: 700, y: 120, x2: 694, y2: 570 },
+        { id: "diagonal", kind: "line", x: 100, y: 100, x2: 500, y2: 520 },
+        { id: "height-line", kind: "line", x: 240, y: 180, x2: 540, y2: 180 },
+      ],
+      steps: [
+        {
+          id: "step-1",
+          title: "Trace the edges",
+          narration: "Trace the visible triangle edges.",
+          primitiveIds: ["top-edge", "side-edge", "diagonal", "height-line"],
+          durationMs: 900,
+        },
+      ],
+    });
+    const primitives = normalized.primitives as Array<Record<string, unknown>>;
+
+    expect(primitives.find((item) => item.id === "top-edge")).toMatchObject({
+      x: 120,
+      y: 200,
+      x2: 620,
+      y2: 200,
+    });
+    expect(primitives.find((item) => item.id === "side-edge")).toMatchObject({
+      x: 700,
+      y: 120,
+      x2: 700,
+      y2: 570,
+    });
+    expect(primitives.find((item) => item.id === "diagonal")).toMatchObject({
+      x: 100,
+      y: 100,
+      x2: 500,
+      y2: 520,
+    });
+    expect(primitives.find((item) => item.id === "height-line")).toMatchObject({
+      x: 240,
+      y: 180,
+      x2: 240,
+      y2: 480,
+    });
   });
 
   it("uses NVIDIA's documented prompt contract with reasoning disabled for the selected VLM", async () => {

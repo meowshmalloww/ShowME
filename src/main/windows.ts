@@ -16,6 +16,7 @@ import type {
 } from "../shared/types";
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url));
+const compactLauncherVisibleHeight = 18;
 
 export class WindowManager {
   private main: BrowserWindow | null = null;
@@ -248,7 +249,11 @@ export class WindowManager {
         this.lesson = null;
         this.lessonDisplayId = null;
         this.unregisterLessonEscape();
-        if (!this.quitting && notify) this.onLessonClosed();
+        if (!this.quitting && notify) {
+          this.setLauncherMode("idle");
+          this.showLauncher(true);
+          this.onLessonClosed();
+        }
       });
     }
     this.positionLesson(display.id);
@@ -298,6 +303,8 @@ export class WindowManager {
       transparent: true,
       backgroundColor: "#00000000",
       resizable: false,
+      thickFrame: false,
+      roundedCorners: false,
       movable: false,
       focusable: false,
       skipTaskbar: true,
@@ -306,6 +313,7 @@ export class WindowManager {
       show: false,
     });
     this.screenReading = window;
+    window.setBackgroundColor("#00000000");
     window.setIgnoreMouseEvents(true, { forward: true });
     window.setAlwaysOnTop(true, "screen-saver", 2);
     window.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
@@ -421,10 +429,11 @@ export class WindowManager {
     if (!launcher) return;
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
     const size = launcherSize(this.launcherMode);
-    const x = Math.round(display.workArea.x + (display.workArea.width - size.width) / 2);
-    const y = display.workArea.y;
+    const x = Math.round(display.bounds.x + (display.bounds.width - size.width) / 2);
+    const y =
+      display.bounds.y -
+      (this.launcherMode === "idle" ? size.height - compactLauncherVisibleHeight : 0);
     launcher.setBounds({ x, y, ...size }, false);
-    this.applyLauncherShape(launcher, size);
   }
 
   private readonly handleDisplayChange = (): void => {
@@ -465,17 +474,16 @@ export class WindowManager {
     });
     const size = launcherSize(this.launcherMode);
     const target = {
-      x: Math.round(display.workArea.x + (display.workArea.width - size.width) / 2),
-      y: display.workArea.y,
+      x: Math.round(display.bounds.x + (display.bounds.width - size.width) / 2),
+      y:
+        display.bounds.y -
+        (this.launcherMode === "idle" ? size.height - compactLauncherVisibleHeight : 0),
       ...size,
     };
     if (this.reducedMotion) {
       launcher.setBounds(target, false);
-      this.applyLauncherShape(launcher, size);
       return;
     }
-
-    if (this.launcherMode !== "idle") this.applyLauncherShape(launcher, size);
 
     const startedAt = performance.now();
     const duration =
@@ -499,19 +507,10 @@ export class WindowManager {
       );
       if (progress < 1) this.launcherAnimation = setTimeout(tick, 16);
       else {
-        this.applyLauncherShape(current, size);
         this.launcherAnimation = null;
       }
     };
     tick();
-  }
-
-  private applyLauncherShape(
-    launcher: BrowserWindow,
-    size: { width: number; height: number },
-  ): void {
-    if (process.platform !== "win32") return;
-    launcher.setShape([{ x: 0, y: 0, width: size.width, height: size.height }]);
   }
 
   private positionLesson(displayId: number): void {

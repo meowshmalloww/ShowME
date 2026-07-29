@@ -64,7 +64,7 @@ describe("local SQLite product state", () => {
     expect(migrated.getSettings().assistantName).toBe("ShowME");
     expect(migrated.getSettings()).not.toHaveProperty("accent");
     expect(migrated.getSettings().wakeEnabled).toBe(true);
-    expect(migrated.getSettings().voiceSilenceMs).toBe(1200);
+    expect(migrated.getSettings().voiceSilenceMs).toBe(650);
     expect(migrated.getSettings().voiceInputProvider).toBe("deepgram");
     expect(migrated.getSettings().voiceOutputProvider).toBe("system");
     migrated.close();

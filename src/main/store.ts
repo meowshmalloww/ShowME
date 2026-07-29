@@ -141,9 +141,11 @@ export class AppStore {
         // Replace the former 3-4 second endpoint with a responsive conversational pause while
         // preserving any already-saved value that falls inside the new supported range.
         voiceSilenceMs:
-          saved.voiceSilenceMs === undefined || saved.voiceSilenceMs >= 3000
+          saved.voiceSilenceMs === undefined ||
+          saved.voiceSilenceMs === 1200 ||
+          saved.voiceSilenceMs >= 3000
             ? DEFAULT_SETTINGS.voiceSilenceMs
-            : Math.max(800, Math.min(2500, saved.voiceSilenceMs)),
+            : Math.max(500, Math.min(2500, saved.voiceSilenceMs)),
         // OpenAI remains available as a lesson-model provider, but ShowME no longer routes audio
         // to it. Retire the pre-release OpenAI speech selections without losing other settings.
         voiceInputProvider:

@@ -164,30 +164,38 @@ describe("trusted lesson schema", () => {
     ).toBe("orbit");
   });
 
-  it("accepts constrained motion graphics and a locally gradable transfer check", () => {
+  it("accepts narration-synchronized motion design and a locally gradable transfer check", () => {
     const plan = validateLessonPlan({
       ...lesson,
       confidence: "exploratory",
       controls: [],
-      simulation: {
-        kind: "motion-scene",
-        durationSeconds: 7,
+      simulation: undefined,
+      motion: {
+        kind: "motion-design",
         title: "A short causal story",
         layout: "cause-effect",
         beats: [
           {
             id: "cause",
+            stepId: "step-1",
             marker: "Cause",
             heading: "Condition",
             caption: "The first event changes the situation.",
             accent: "amber",
+            visual: "diagram",
+            transition: "draw",
+            durationMs: 900,
           },
           {
             id: "effect",
+            stepId: "step-1",
             marker: "Effect",
             heading: "Outcome",
             caption: "The consequence follows from that change.",
             accent: "mint",
+            visual: "kinetic-text",
+            transition: "slide",
+            durationMs: 1_100,
           },
         ],
       },
@@ -199,8 +207,48 @@ describe("trusted lesson schema", () => {
         explanation: "The outcome follows the condition.",
       },
     });
-    expect(plan.simulation?.kind).toBe("motion-scene");
+    expect(plan.motion?.kind).toBe("motion-design");
     expect(plan.learningCheck?.kind).toBe("multiple-choice");
+  });
+
+  it("rejects a motion beat that is not tied to a real narrated step", () => {
+    expect(() =>
+      validateLessonPlan({
+        ...lesson,
+        confidence: "exploratory",
+        controls: [],
+        simulation: undefined,
+        motion: {
+          kind: "motion-design",
+          title: "Broken sequence",
+          layout: "sequence",
+          beats: [
+            {
+              id: "beat-1",
+              stepId: "missing-step",
+              marker: "01",
+              heading: "Start",
+              caption: "This beat has no matching narration.",
+              accent: "cyan",
+              visual: "card",
+              transition: "fade",
+              durationMs: 700,
+            },
+            {
+              id: "beat-2",
+              stepId: "step-1",
+              marker: "02",
+              heading: "Continue",
+              caption: "This beat is linked correctly.",
+              accent: "mint",
+              visual: "diagram",
+              transition: "draw",
+              durationMs: 700,
+            },
+          ],
+        },
+      }),
+    ).toThrow(/references unknown step/i);
   });
 
   it("accepts a focused diagnosis plus distinct Try and point-based Transfer", () => {
